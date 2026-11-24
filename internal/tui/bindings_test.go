@@ -13,6 +13,7 @@ import (
 	uv "github.com/charmbracelet/ultraviolet"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/keymap"
 	"github.com/lezli01/vincent/internal/nerdfont"
 	"github.com/lezli01/vincent/internal/taskstate"
 	"github.com/lezli01/vincent/internal/tui/workflowgraph"
@@ -491,6 +492,26 @@ func declaredFieldRow(t *testing.T, n *newTask, name string) int {
 // the scrolling itself to the follow and mouse-wheel tests.
 var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 	ctxTasks: {
+		"z": func(t *testing.T) {
+			b := taskBoardFixture()
+			b.update(keyPress("z"))
+			if b.sortOrder != "newest" {
+				t.Fatalf("z left the order at %q", b.sortOrder)
+			}
+		},
+		// An echo row (#1073): the board shows `n new`, and the root's own
+		// binding answers it — the board must not claim the key.
+		"n": func(t *testing.T) {
+			m := connectedRoot(t)
+			m.Update(selectViewMsg{id: viewHome})
+			if m.panelOwnsKey("n") {
+				t.Fatal("the board claims n, so the root would yield it")
+			}
+			m.Update(keyPress(opKey(keymap.New)))
+			if m.active != viewNewTask {
+				t.Fatalf("n on the board opened %v, want the new-task form", m.active)
+			}
+		},
 		"H": func(t *testing.T) {
 			s, _ := newShellFixture(t, task(1, stateRunning), task(2, stateBlocked))
 			s.focus = panelTasks
@@ -914,6 +935,13 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		},
 	},
 	ctxCompare: {
+		"esc": func(t *testing.T) {
+			v := compareFixture()
+			_, cmd := v.updateKey(registryKey(t, "esc"))
+			if msg, ok := drain(cmd).(selectViewMsg); !ok || msg.id == viewCompare {
+				t.Fatalf("esc produced %#v, want a way back", drain(cmd))
+			}
+		},
 		"tab": func(t *testing.T) {
 			v := compareFixture()
 			v.updateKey(registryKey(t, "tab"))
@@ -952,6 +980,13 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		},
 	},
 	ctxChatSearch: {
+		"esc": func(t *testing.T) {
+			v := chatSearchFixture()
+			_, cmd := v.updateKey(registryKey(t, "esc"))
+			if _, ok := drain(cmd).(backToTabMsg); !ok {
+				t.Fatalf("esc produced %#v, want back to the tab", drain(cmd))
+			}
+		},
 		"enter": func(t *testing.T) {
 			v := chatSearchFixture()
 			_, cmd := v.updateKey(registryKey(t, "enter"))
@@ -1054,6 +1089,13 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		},
 	},
 	ctxChat: {
+		"alt+l": func(t *testing.T) {
+			v := chatViewFixture()
+			v.updateKey(registryKey(t, "alt+l"))
+			if v.note != "the last turn did not fail — nothing to retry" {
+				t.Fatalf("alt+l with no failed turn said %q", v.note)
+			}
+		},
 		// Task 164: recall's way back, the stash and the history picker.
 		"down": func(t *testing.T) {
 			v := chatViewFixture()
@@ -1501,6 +1543,13 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		},
 	},
 	ctxIssues: {
+		"z": func(t *testing.T) {
+			v := issuesFixture()
+			v.update(keyPress("z"))
+			if v.sortOrder != "newest" {
+				t.Fatalf("z left the order at %q", v.sortOrder)
+			}
+		},
 		// T on an issue a chat already holds is a navigation (task 140.9):
 		// the probe needs no daemon to prove the key is handled.
 		"T": func(t *testing.T) {
@@ -2422,6 +2471,12 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 	},
 
 	ctxWorkflowEditor: {
+		"u": func(t *testing.T) {
+			w := editorFixture(t)
+			if _, cmd := w.updateKey(registryKey(t, "u")); cmd != nil || w.editor.err != "nothing to undo" {
+				t.Fatalf("u with nothing written: err %q", w.editor.err)
+			}
+		},
 		"up/down": func(t *testing.T) {
 			w := editorFixture(t)
 			w.updateKey(registryKey(t, "down"))
@@ -2954,6 +3009,13 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 	},
 
 	ctxSettings: {
+		"u": func(t *testing.T) {
+			v := settingsFixture(t)
+			v.updateKey(registryKey(t, "u"))
+			if v.note != "nothing to undo" {
+				t.Fatalf("u with nothing changed said %q", v.note)
+			}
+		},
 		"down": func(t *testing.T) {
 			v := settingsFixture(t)
 			before := v.selected
@@ -3477,8 +3539,12 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		"x": func(t *testing.T) {
 			v := chatDiffFixture(t)
 			v.updateKey(registryKey(t, "]"))
-			if _, cmd := v.updateKey(registryKey(t, "x")); cmd == nil || !v.diff.busy {
-				t.Fatal("x did not send a reject")
+			// x asks first (#1055); y sends the reject.
+			if _, cmd := v.updateKey(registryKey(t, "x")); cmd != nil || v.diff.rejectAsk == nil {
+				t.Fatal("x did not ask before rejecting")
+			}
+			if _, cmd := v.updateKey(registryKey(t, "y")); cmd == nil || !v.diff.busy {
+				t.Fatal("x then y did not send a reject")
 			}
 		},
 		"a": func(t *testing.T) {
@@ -3662,7 +3728,7 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		"enter": func(t *testing.T) {
 			v := chatFindFixture(t)
 			v.openSearchLine()
-			v.search.buf = "question"
+			v.search.buf.Set("question")
 			v.updateKey(registryKey(t, "enter"))
 			if v.search.typing || v.search.query != "question" || len(v.search.matches) == 0 {
 				t.Fatalf("enter: typing %v, query %q, %d matches", v.search.typing, v.search.query, len(v.search.matches))
@@ -3974,6 +4040,10 @@ var vocabularyExceptions = map[string]string{
 	"panel/task workflow/d":     "issue #595 — the workspace's Output⇄Diff toggle, where no draft is ever open",
 	"panel/task step details/d": "issue #595 — the workspace's Output⇄Diff toggle, where no draft is ever open",
 	"panel/task pull request/d": "issue #595 — the workspace's Output⇄Diff toggle, where no draft is ever open",
+	// #1074: a search on Output or Diff is a layer of its own, as the chat's
+	// conversation search is; N is its previous match only while it runs,
+	// and next failure again the moment esc ends it.
+	"panel/find in pane/N": "issue #1074 — the previous match, only while a search on Output or Diff runs",
 }
 
 // TestVocabularyIsOneKeyPerOperation: the table itself, before any row is

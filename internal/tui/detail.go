@@ -92,9 +92,17 @@ type (
 // the selected attempt below. PR K adds the diff tab and the action bar to
 // the same shell.
 type detail struct {
-	ctx    context.Context
-	client *apiclient.Client
-	now    func() time.Time
+	// find is the Output pane's search (#1074); feedLines is the content it
+	// last built, which the search scans, and findShown what the viewport
+	// holds with the current match drawn, so a render only re-sets it when
+	// the match moved.
+	find      paneFind
+	feedLines []string
+	findShown string
+	findJump  bool
+	ctx       context.Context
+	client    *apiclient.Client
+	now       func() time.Time
 
 	taskID  int64
 	task    apiclient.TaskDetail
@@ -746,6 +754,12 @@ func (d *detail) updateGlobalNote(n apiclient.Note) tea.Cmd {
 	if ev.Event.TaskID == nil || *ev.Event.TaskID != d.taskID {
 		return nil
 	}
+	// A step that moved on changed the worktree, so a diff that was read is
+	// read again (#1074); the fetch guard keeps a burst to one at a time.
+	if d.diff.loaded && !d.diff.review && d.diff.taskID == d.taskID &&
+		(ev.Event.Type == "task.step_advanced" || ev.Event.Type == "task.state_changed") {
+		return tea.Batch(d.scheduleRefresh(), d.diff.fetch(d.client))
+	}
 	return d.scheduleRefresh()
 }
 
@@ -882,15 +896,7 @@ func (d *detail) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	case opKey(keymap.Editor):
 		return d.openTranscript()
 	case opKey(keymap.EditRetry):
-		// The same gate the hint line and the palette use: retry on offer
-		// *and* a step carrying text to edit. A fan_out parent parked in
-		// `awaiting_children` offers retry — as the cascade (task 090) — and
-		// its cursor step has no editable text, which the daemon answers with
-		// a 400 rather than an edited snapshot.
-		if d.target().has(apiclient.ActionRetry) && d.stepEditable() {
-			return d.editRetry()
-		}
-		return nil
+		return d.editRetryKey()
 	case opKey(keymap.Repair):
 		// The repair form (§6, task 025). `r` is retry and `E` is edit+retry;
 		// `R` is free in the task workspace, where the takeover screens that use
@@ -904,6 +910,8 @@ func (d *detail) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		return taskChatCmd(d.client, d.target(), d.actions)
 	case opKey(keymap.ChatWith):
 		return taskChatWithCmd(d.client, d.target(), d.actions)
+	case opKey(keymap.Diagnose):
+		return diagnoseCmd(d.client, d.target(), d.actions)
 	case "f":
 		d.setFollowing(true)
 		return nil
@@ -916,10 +924,20 @@ func (d *detail) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	case rawToggleKey:
 		return d.toggleRaw()
 	case copyPickKey:
-		return openCopyPicker(copyDocsFromRecords(d.records, d.recordSeqs()),
-			func(seq int64) (string, bool) {
+		// The task's own references first (#1076), then what the output says.
+		items := copyDocs(copyDocsFromRecords(d.records, d.recordSeqs()))
+		if out, ok := d.outputCopyItem(); ok {
+			// The whole attempt, command output included (#1076).
+			items = append([]copyItem{out}, items...)
+		}
+		if d.loaded {
+			items = append(taskCopyItems(d.task.Task), items...)
+		}
+		return func() tea.Msg {
+			return openCopyPickerMsg{items: items, resolve: func(seq int64) (string, bool) {
 				return resolveDocs(d.records, d.recordSeqs(), seq)
-			})
+			}}
+		}
 	case linkPickKey:
 		return openLinkPicker(copyDocsFromRecords(d.records, d.recordSeqs()),
 			func(seq int64) (string, bool) {
@@ -1279,7 +1297,7 @@ func (d *detail) runByID(id int64) apiclient.StepRun {
 // a y/n confirmation. (The answer form's text entry is captured by
 // taskView's popup routing, updatePopupKey, before keys reach here.)
 func (d *detail) capturesInput() bool {
-	return d.actions.capturing()
+	return d.actions.capturing() || d.find.typing || d.diff.find.typing
 }
 
 // openRepair opens the repair form for a blocked task, fetching the adapter
@@ -1311,6 +1329,25 @@ func (d *detail) openFollowUp() tea.Cmd {
 	return d.followUp.load(d.client)
 }
 
+// editRetryKey is `E`. The same gate the hint line and the palette use:
+// retry on offer *and* a step carrying text to edit. A fan_out parent parked
+// in `awaiting_children` offers retry — as the cascade (task 090) — and its
+// cursor step has no editable text, which the daemon answers with a 400
+// rather than an edited snapshot.
+func (d *detail) editRetryKey() tea.Cmd {
+	if d.target().has(apiclient.ActionRetry) && d.stepEditable() {
+		return d.editRetry()
+	}
+	// Hinted wherever retry is, so it says why it did nothing (#1059).
+	if d.target().has(apiclient.ActionRetry) {
+		d.actions.setStatus("edit+retry: this step has no prompt or command to edit — "+
+			opKey(keymap.Retry)+" retries it as it is", false)
+	} else {
+		d.actions.setStatus(unavailableText("edit+retry", d.target()), false)
+	}
+	return nil
+}
+
 // currentStepName names the step the task is blocked at, for the form's
 // subject line; "" when the snapshot has not arrived.
 func (d *detail) currentStepName() string {
@@ -1327,6 +1364,7 @@ func (d *detail) target() taskActions {
 		id: d.taskID, state: d.task.State, actions: d.task.AvailableActions,
 		openChatID: derefID(d.task.OpenChatID),
 		projectID:  d.task.ProjectID,
+		editRetry:  d.loaded && d.stepEditable(),
 	}
 }
 

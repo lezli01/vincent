@@ -4,7 +4,9 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/taskstate"
 )
@@ -48,17 +50,39 @@ func TestActionBarOffersExactlyTheValidActions(t *testing.T) {
 	}
 }
 
-// TestActionKeyIsIgnoredWhenTheActionIsNotOffered: an unavailable key falls
-// through to the view, so j/k keep navigating on a row that cannot be skipped.
-func TestActionKeyIsIgnoredWhenTheActionIsNotOffered(t *testing.T) {
+// TestActionKeyNotOfferedSaysWhy is #1059: an action key the task does not
+// offer sends nothing and says why, rather than doing nothing; a key that is
+// no action still falls through, so j/k keep navigating.
+func TestActionKeyNotOfferedSaysWhy(t *testing.T) {
 	var bar actionBar
 	running := targetFor(taskstate.Running)
 
-	if cmd, handled := bar.handleKey("s", nil, running); handled || cmd != nil {
-		t.Errorf("skip on a running task: handled = %v, want the key to fall through", handled)
+	if cmd, handled := bar.handleKey("s", nil, running); !handled || cmd != nil {
+		t.Errorf("skip on a running task: handled = %v, cmd = %v", handled, cmd != nil)
+	}
+	if bar.status != "skip: not available while running" {
+		t.Errorf("status = %q", bar.status)
 	}
 	if _, handled := bar.handleKey("p", nil, running); !handled {
 		t.Error("pause on a running task was not handled")
+	}
+	if _, handled := bar.handleKey("j", nil, running); handled {
+		t.Error("j was taken as an action key")
+	}
+	done := targetFor(taskstate.Done)
+	bar.handleKey("a", nil, done)
+	if bar.status != "approve: not available while done" {
+		t.Errorf("approve on a done task: status = %q", bar.status)
+	}
+	bar.handleKey("r", nil, taskActions{})
+	if !strings.Contains(bar.status, "select a task") {
+		t.Errorf("retry on a group row: status = %q", bar.status)
+	}
+	locked := targetFor(taskstate.Blocked)
+	locked.actions, locked.openChatID = nil, 9
+	bar.handleKey("r", nil, locked)
+	if !strings.Contains(bar.status, "chat #9 holds the task") {
+		t.Errorf("retry on a locked task: status = %q", bar.status)
 	}
 }
 
@@ -170,5 +194,75 @@ func TestSuccessReportsTheNewState(t *testing.T) {
 	})
 	if !strings.Contains(bar.status, "queued") || bar.statusBad {
 		t.Errorf("status = %q (bad = %v), want the new state", bar.status, bar.statusBad)
+	}
+}
+
+// TestSkipAndRejectAskFirst is #1055: skip and reject wait for y and name
+// what they do; n sends nothing.
+func TestSkipAndRejectAskFirst(t *testing.T) {
+	for _, tc := range []struct {
+		key, state, want string
+	}{
+		{"s", stateBlocked, "skip #7's current step? (y/n) · it is marked skipped and the task goes on without it"},
+		{"x", stateAwaitingGate, "reject #7's gate? (y/n) · the task is blocked there until you retry, skip or cancel"},
+	} {
+		var bar actionBar
+		target := taskActions{id: 7, state: tc.state, actions: []string{apiclient.ActionSkip, apiclient.ActionReject}}
+		if cmd, handled := bar.handleKey(tc.key, nil, target); !handled || cmd != nil || !bar.capturing() {
+			t.Fatalf("%s acted without asking", tc.key)
+		}
+		if got := bar.confirmPrompt(); got != tc.want {
+			t.Errorf("%s asks %q, want %q", tc.key, got, tc.want)
+		}
+		if cmd, _ := bar.handleKey("n", nil, target); cmd != nil || bar.capturing() {
+			t.Errorf("%s: n did not cancel", tc.key)
+		}
+	}
+}
+
+// TestConfirmationActsOnTheTaskItAskedAbout is review finding 1: the cursor
+// can move on its own while a question is on screen (a card leaves its
+// column and #1058 keeps the cursor there), so `y` must go to the task the
+// question named, not to the row under the cursor when it is answered.
+func TestConfirmationActsOnTheTaskItAskedAbout(t *testing.T) {
+	srv := newBulkServer(t)
+	var bar actionBar
+	asked := taskActions{id: 21, state: "running", actions: []string{apiclient.ActionCancel}}
+	if _, handled := bar.handleKey("c", srv.client(), asked); !handled || !bar.capturing() {
+		t.Fatal("c did not ask")
+	}
+	moved := taskActions{id: 22, state: "running", actions: []string{apiclient.ActionCancel}}
+	if got := bar.confirmPrompt(); !strings.Contains(got, "#21") {
+		t.Errorf("the question no longer names #21 after the cursor moved: %q", got)
+	}
+	cmd, _ := bar.handleKey("y", srv.client(), moved)
+	if cmd == nil {
+		t.Fatal("y dispatched nothing")
+	}
+	runCmd(t, cmd, 30*time.Second)
+	if got := srv.seen(); len(got) != 1 || got[0] != "cancel 21" {
+		t.Errorf("calls = %v, want [cancel 21]", got)
+	}
+}
+
+// TestQuestionsKeepTheirAnswerKeysAt80Columns is review finding 4: the
+// footer is cut from the right, so every question the bar asks has to carry
+// its "(y/n)" before the cut at 80 columns.
+func TestQuestionsKeepTheirAnswerKeysAt80Columns(t *testing.T) {
+	all := []string{
+		apiclient.ActionCancel, apiclient.ActionArchive, apiclient.ActionSkip, apiclient.ActionReject,
+	}
+	for _, action := range all {
+		for _, marked := range []bool{false, true} {
+			bar := &actionBar{pending: action, pendingID: 6}
+			target := taskActions{id: 6, state: stateBlocked, actions: all}
+			if marked {
+				bar.pendingIDs = []int64{6, 7, 8}
+			}
+			line, _ := buildFooter(80, bindingsFor(ctxTasks), bar, target, attentionTally{}, false, false)
+			if got := ansi.Strip(line); !strings.Contains(got, "(y/n)") {
+				t.Errorf("%s (bulk %v) lost its answer keys at 80 columns: %q", action, marked, got)
+			}
+		}
 	}
 }

@@ -88,6 +88,9 @@ type taskView struct {
 	// evidence is the Overview failure card's one transcript fetch (task
 	// 129.13), keyed by the failing attempt so an event never refetches it.
 	evidence failureEvidence
+	// diagnosis is the failure card's read of the chat that last diagnosed
+	// this stop (#1087), keyed by that chat.
+	diagnosis taskDiagnosis
 	// outcome is the Overview outcome card's diff and commits fetches (task
 	// 129.14), one each per open of the task, never refetched on an event.
 	outcome outcomeFetch
@@ -99,6 +102,11 @@ type taskView struct {
 
 	// pull is this task's pull-request row (task 052.6), refetched rather
 	// than snapshotted: draft, state and merged status are live by nature.
+	// thenOp is a task operation the board asked for with the open
+	// (selectTaskMsg.then), run once the task has loaded; thenID is the
+	// task it is for.
+	thenOp keymap.Op
+	thenID int64
 	// pullFormPending is a create-a-pull-request intent that arrived before
 	// the section it needs (task 069). The Pull Requests takeover picks a
 	// task and navigates here, and the form needs the daemon's prefill, so
@@ -199,6 +207,11 @@ type taskView struct {
 	// selector, the Pull Request tab's rows, the `l` jump — walks merge order.
 	lanes       []apiclient.Task
 	lanesTaskID int64
+	// laneAts is where each unsettled lane of a parent waiting on its lanes
+	// is — step, attempt, a repeated failure (#1067) — keyed by lane and
+	// read once per change of its row; laneAtsParent is the parent it is for.
+	laneAts       map[int64]laneAt
+	laneAtsParent int64
 	// laneSel indexes lanes for the Output pane's lane selector. -1 is the
 	// task's own output, which is where the pane starts and returns to.
 	laneSel int
@@ -314,6 +327,9 @@ func (t *taskView) bindingContext() bindingContext {
 			return ctxForm
 		}
 	}
+	if t.tab == taskTabOutput && t.detail.find.active() || t.tab == taskTabDiff && t.detail.diff.find.active() {
+		return ctxPaneFind
+	}
 	switch t.tab {
 	case taskTabOverview:
 		return ctxTaskOverview
@@ -341,6 +357,9 @@ func (t *taskView) update(msg tea.Msg) (panel, tea.Cmd) {
 	case failureEvidenceMsg:
 		t.applyFailureEvidence(m)
 		return t, nil
+	case taskDiagnosisMsg:
+		t.applyDiagnosis(m)
+		return t, nil
 	case outcomeDiffMsg:
 		t.applyOutcomeDiff(m)
 		return t, nil
@@ -355,7 +374,7 @@ func (t *taskView) update(msg tea.Msg) (panel, tea.Cmd) {
 	// After every message: the one that loaded a blocked or finished task,
 	// or moved the reader onto the Overview, is the one that fetches the
 	// failure card's evidence and the outcome card's diff and commits.
-	return p, tea.Batch(cmd, t.syncFailureEvidence(), t.syncOutcome(), t.landPendingFailure(), t.syncHandoff(),
+	return p, tea.Batch(cmd, t.syncFailureEvidence(), t.syncDiagnosis(), t.syncOutcome(), t.landPendingFailure(), t.syncHandoff(),
 		t.syncDiffScope())
 }
 
@@ -417,6 +436,7 @@ func (t *taskView) route(msg tea.Msg) (panel, tea.Cmd) {
 		t.pullNote, t.pullNoteBad = "", false
 		t.pullTab = taskPullTab{}
 		t.pullFormPending = msg.openPR
+		t.thenOp, t.thenID = msg.then, msg.id
 		t.chats, t.chatsErr = nil, ""
 		t.outcome = outcomeFetch{}
 		t.detail.active = true
@@ -433,7 +453,9 @@ func (t *taskView) route(msg tea.Msg) (panel, tea.Cmd) {
 		} else {
 			tabCmd = t.setTab(landing)
 		}
-		return t, tea.Batch(openCmd, tabCmd, t.pullCmd(), laneCmd, t.lanesCmd(), t.chatsCmd())
+		// A task already loaded (reopened) runs the board's operation now;
+		// otherwise the fetch that loads it does.
+		return t, tea.Batch(openCmd, tabCmd, t.pullCmd(), laneCmd, t.lanesCmd(), t.chatsCmd(), t.runThen())
 	case viewActivatedMsg:
 		if msg.id != viewTask {
 			return t, nil
@@ -465,7 +487,10 @@ func (t *taskView) route(msg tea.Msg) (panel, tea.Cmd) {
 		t.applyLanes(msg)
 		return t, nil
 	case taskLaneListMsg:
-		return t, t.applyLaneList(msg)
+		return t, tea.Batch(t.applyLaneList(msg), t.syncLaneAts())
+	case laneAtMsg:
+		t.applyLaneAt(msg)
+		return t, nil
 	case taskLanePullsMsg:
 		t.applyLanePulls(msg)
 		return t, nil
@@ -540,7 +565,42 @@ func (t *taskView) route(msg tea.Msg) (panel, tea.Cmd) {
 	// detail rather than a second, thinner copy of one.
 	cmd := tea.Batch(t.detail.update(msg), t.laneUpdate(msg))
 	t.dropEmptyPopup()
-	return t, cmd
+	return t, tea.Batch(cmd, t.runThen())
+}
+
+// runThen runs the operation the board's open asked for, once the task it
+// is for has loaded — exactly once, and never for a task opened since.
+func (t *taskView) runThen() tea.Cmd {
+	if t.thenOp == "" || !t.detail.loaded || t.detail.taskID != t.thenID {
+		return nil
+	}
+	op := t.thenOp
+	t.thenOp, t.thenID = "", 0
+	// The task may have moved on between the key and the load: say so
+	// rather than open nothing.
+	for _, w := range workspaceOps {
+		if w.op == op && !t.detail.target().has(w.action) {
+			t.detail.actions.setStatus(unavailableText(w.name, t.detail.target()), false)
+			return nil
+		}
+	}
+	switch op {
+	case keymap.Repair:
+		cmd := t.detail.openRepair()
+		if t.detail.repair != nil {
+			t.openPopup()
+		}
+		return cmd
+	case keymap.FollowUp:
+		cmd := t.detail.openFollowUp()
+		if t.detail.followUp != nil {
+			t.openPopup()
+		}
+		return cmd
+	case keymap.EditRetry:
+		return t.detail.editRetryKey()
+	}
+	return nil
 }
 
 func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
@@ -551,6 +611,30 @@ func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		// The inline y/n owns the keyboard: tab, the digits, esc and the §6
 		// letters are all spent on declining it.
 		return t.updatePullConfirmKey(msg)
+	}
+
+	// A search on Output or Diff takes its own keys first (#1074): n and N
+	// walk its matches while it runs, and mean what they always mean after.
+	switch t.tab {
+	case taskTabOutput:
+		if t.detail.findKey(msg) {
+			return nil
+		}
+		if msg.String() == opKey(keymap.Filter) {
+			t.detail.find.open()
+			return nil
+		}
+	case taskTabDiff:
+		if t.detail.diff.findKey(msg) {
+			return nil
+		}
+		switch msg.String() {
+		case opKey(keymap.Filter):
+			t.detail.diff.find.open()
+			return nil
+		case diffReloadKey:
+			return t.detail.diff.fetch(t.detail.client)
+		}
 	}
 
 	// On the Diff tab, and only there, `]` and `[` walk the hunks (task 169
@@ -600,6 +684,23 @@ func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		if cmd := t.openParentCmd(); cmd != nil {
 			return cmd
 		}
+	case copyPickKey:
+		// The Output tab adds its messages to these (detail.go); every other
+		// tab copies the task's references (#1076).
+		if t.tab != taskTabOutput && t.detail.loaded {
+			items := taskCopyItems(t.detail.task.Task)
+			if t.tab == taskTabDiff {
+				// The hunk and the file's diff first (#1076): on the Diff tab
+				// they are what is being read.
+				items = append(t.detail.diff.diffCopyItems(), items...)
+			}
+			return openCopyItems(items)
+		}
+	case opKey(keymap.NextItem):
+		// The neighbouring task in the board's order (#1077).
+		return stepItemCmd(t.detail.taskID, 1, false)
+	case opKey(keymap.PrevItem):
+		return stepItemCmd(t.detail.taskID, -1, false)
 	case opKey(keymap.NextFailure):
 		// A pending y/n owns N — it is the popups' no — so the key falls
 		// through to the tab, which hands it to the confirmation.
@@ -664,7 +765,7 @@ func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 			t.openPopup()
 		}
 		return cmd
-	case opKey(keymap.Chat), opKey(keymap.ChatWith):
+	case opKey(keymap.Chat), opKey(keymap.ChatWith), opKey(keymap.Diagnose):
 		// Ahead of the tabs' own handlers, as R and F are: the key acts on
 		// the task, so it means the same thing on every tab.
 		return t.detail.update(msg)

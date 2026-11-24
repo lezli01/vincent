@@ -100,6 +100,19 @@ type daemonView struct {
 	// logDirty defers rebuilding the viewport's content until render, which
 	// is the only place the pane's width and height are known.
 	logDirty bool
+	// showRequests shows the successful `http request` lines, most of them
+	// this TUI's own polling, which the pane hides by default (#1081).
+	showRequests bool
+	// logSearch narrows the pane to lines containing it; searching is true
+	// while it has the keyboard.
+	logSearch textField
+	searching bool
+	// restartAsk is the open restart question; restarting is set once it is
+	// answered yes, until the view is rebuilt by the reconnect.
+	restartAsk bool
+	restarting bool
+	// restartErr is why the last restart could not stop the daemon.
+	restartErr error
 
 	// statusLine is the open §16 status-line flow, nil when it is not open.
 	// It is a takeover for the same reason the config editor is.
@@ -163,6 +176,7 @@ func newDaemonView() *daemonView {
 		fontEnv:      os.Getenv,
 		vp:           viewport.New(),
 		following:    true,
+		logSearch:    newLogSearch(),
 	}
 }
 
@@ -312,6 +326,12 @@ func (d *daemonView) update(msg tea.Msg) (panel, tea.Cmd) {
 	case viewDeactivatedMsg:
 		if msg.id == viewDaemon {
 			d.visible = false
+		}
+		return d, nil
+	case daemonStoppedMsg:
+		d.restarting = false
+		if msg.err != nil {
+			d.restartErr = msg.err
 		}
 		return d, nil
 	case daemonTickMsg:
@@ -464,10 +484,32 @@ func (d *daemonView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		}
 		return d, nil
 	}
+	if d.restartAsk {
+		return d, d.updateRestartAsk(msg)
+	}
+	if d.searching {
+		return d, d.updateSearch(msg)
+	}
 	switch msg.String() {
 	case "esc":
+		if d.logSearch.Value() != "" {
+			// One layer per press (§15): the search clears first.
+			d.logSearch.SetValue("")
+			d.logDirty = true
+			return d, nil
+		}
 		// The takeover layer of the §15 esc stack: back to the human's tab.
 		return d, backToTab
+	case daemonRestartKey:
+		d.restartAsk, d.restartErr = true, nil
+		return d, nil
+	case daemonRequestsKey:
+		d.showRequests = !d.showRequests
+		d.logDirty = true
+		return d, nil
+	case opKey(keymap.Filter):
+		d.searching = true
+		return d, d.logSearch.Focus()
 	case opKey(keymap.Refresh):
 		return d, d.refreshCmd()
 	case "enter":
@@ -523,7 +565,7 @@ func (d *daemonView) syncFollowToViewport() {
 
 // capturesInput is true while one of the view's flows owns the keyboard.
 func (d *daemonView) capturesInput() bool {
-	return d.statusLine != nil || d.skills != nil || d.fonts != nil
+	return d.statusLine != nil || d.skills != nil || d.fonts != nil || d.searching || d.restartAsk
 }
 
 // bindingContext names the layer that owns the keyboard (#803): each of the

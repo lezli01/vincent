@@ -765,15 +765,51 @@ func humanBytes(n int64) string {
 	return strconv.FormatInt(n, 10) + "B"
 }
 
+// restartLine is the restart question, its progress or its failure, or ""
+// when no restart is under way.
+func (d *daemonView) restartLine() string {
+	switch {
+	case d.restartAsk:
+		return styleWarn.Render("  restart the daemon? y restart · any other key keeps it · running steps are interrupted and re-run when it is back")
+	case d.restarting:
+		return styleDim.Render("  restarting the daemon…")
+	case d.restartErr != nil:
+		return styleWarn.Render("  could not restart: " + errString(d.restartErr))
+	}
+	return ""
+}
+
 func (d *daemonView) renderLog(height int) string {
 	header := " " + styleTitle.Render("recent daemon log")
+	// The restart question and what the pane leaves out sit on the pane's
+	// first line, which the wide layout keeps (it drops only the header).
+	restart := d.restartLine()
 	if body, ok := d.logEmptyState(); ok {
+		// The question is drawn over an empty log too: `r` arms it either
+		// way, and an unseen question would let the next `y` restart the
+		// daemon and swallow any other key (review finding 5).
+		if restart != "" {
+			header += "\n" + restart
+		}
 		return header + "\n" + styleDim.Render("   "+body)
 	}
+	info := restart
+	if info == "" {
+		info = styleDim.Render(d.logHeader())
+	}
+	vpH := height - 1
+	if info != "" {
+		header += "\n" + info
+		vpH--
+	}
 	d.vp.SetWidth(max(d.width, 1))
-	d.vp.SetHeight(max(height-1, 1))
+	d.vp.SetHeight(max(vpH, 1))
 	if d.logDirty {
-		d.vp.SetContent(strings.Join(d.logLines, "\n"))
+		shown, _ := d.shownLogLines()
+		if len(shown) == 0 {
+			shown = []string{styleDim.Render("   no line matches")}
+		}
+		d.vp.SetContent(strings.Join(shown, "\n"))
 		d.logDirty = false
 	}
 	// Re-anchored on every render, not only on new content: tab changes the

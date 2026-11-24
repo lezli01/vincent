@@ -52,6 +52,24 @@ func formRowMark(focused bool) string {
 type formStack struct {
 	lines    []string
 	from, to int
+	// tags is, per line, what a click on it is about — a setting's path —
+	// and "" for borders and gaps (#1065). Only a stack built with tags
+	// keeps it in step with lines.
+	tags []string
+}
+
+// addTagged is add with a tag for each line of block.
+func (s *formStack) addTagged(block, tags []string, focused bool) {
+	s.add(block, focused)
+	s.tags = append(s.tags, tags...)
+	for len(s.tags) < len(s.lines) {
+		s.tags = append(s.tags, "")
+	}
+}
+
+// viewStart is the first line view shows.
+func (s *formStack) viewStart(height int) int {
+	return windowRangeStart(len(s.lines), s.from, s.to, height)
 }
 
 // add appends a block, marking it as the focused one when it is.
@@ -65,6 +83,9 @@ func (s *formStack) add(block []string, focused bool) {
 // extend appends a block that belongs to the focused one, so both stay in view.
 func (s *formStack) extend(block []string) {
 	s.lines = append(s.lines, block...)
+	for len(s.tags) < len(s.lines) {
+		s.tags = append(s.tags, "")
+	}
 	s.to = len(s.lines)
 }
 

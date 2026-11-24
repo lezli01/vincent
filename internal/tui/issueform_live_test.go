@@ -39,8 +39,7 @@ func TestIssueWritesAgainstTheRealAPI(t *testing.T) {
 		t.Fatalf("n did not open a create form on the row's project: %+v", f)
 	}
 	h.p.until(10*time.Second, "the form's project list", func() bool { return len(f.projects) > 0 })
-	h.sendKey(keyPress("enter"))
-	h.typeText("Crash on start")
+	h.typeText("Crash on start") // the title takes text at once (#1063)
 	h.sendKey(keyPress("enter"))
 	f.body.SetValue("It crashes.")
 	f.labels = []string{"p1"}

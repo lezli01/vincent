@@ -434,19 +434,24 @@ func (v *triggersView) renderCreate(width, height int) string {
 		project = styleBad.Render("no project is selected")
 	}
 	out = append(out, mark(trigCreateRowProject)+label("project")+project)
-	f.command.SetWidth(fieldW)
-	out = append(out, indentRows(mark(trigCreateRowCommand)+label("command"), f.command.rows())...)
-	f.interval.SetWidth(fieldW)
-	out = append(out, indentRows(mark(trigCreateRowInterval)+label("poll every"), f.interval.rows())...)
+	// #1123: the source is picked here, each with what its starter does.
+	src := trigCreateSources[f.source]
+	out = append(out, mark(trigCreateRowSource)+label("source")+styleKey.Render("‹ "+src.value+" ›")+"  "+styleDim.Render(src.does))
+	if f.isCommand() {
+		f.command.SetWidth(fieldW)
+		out = append(out, indentRows(mark(trigCreateRowCommand)+label("command"), f.command.rows())...)
+		f.interval.SetWidth(fieldW)
+		out = append(out, indentRows(mark(trigCreateRowInterval)+label("poll every"), f.interval.rows())...)
+	}
 	out = append(out, "", styleDim.Render(
-		"  writes a type: command trigger, disabled and with no on_fire line (so propose); the form opens on it next"))
+		"  writes a type: "+src.value+" trigger, disabled and with no on_fire line (so propose); the form opens on it next"))
 	if f.saving {
 		out = append(out, "", styleDim.Render("  writing…"))
 	}
 	if f.err != "" {
 		out = append(out, "", "  "+styleBad.Render(f.err))
 	}
-	out = append(out, "", styleDim.Render("  tab row · enter create · esc cancel"))
+	out = append(out, "", styleDim.Render("  tab row · ←/→ source · enter create · esc cancel"))
 	return clampLines(truncateRows(out, width), height)
 }
 

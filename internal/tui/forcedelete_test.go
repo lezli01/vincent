@@ -92,7 +92,7 @@ func TestBulkStuckArchiveOffersForceDeleteForThoseOnly(t *testing.T) {
 	if bar.pending != actionForceDelete || len(bar.pendingIDs) != 1 || bar.pendingIDs[0] != 2 {
 		t.Fatalf("pending %q over %v, want a force delete of task 2 only", bar.pending, bar.pendingIDs)
 	}
-	if got := bar.confirmPrompt(taskActions{id: 9}); !strings.Contains(got, "1 of 3") {
+	if got := bar.confirmPrompt(); !strings.Contains(got, "1 of 3") {
 		t.Errorf("prompt = %q, want it to name the subset", got)
 	}
 }

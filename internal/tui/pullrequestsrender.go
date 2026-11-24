@@ -44,6 +44,29 @@ func (v *pullRequestsView) render(width, height int) string {
 	body, from, to := v.bodyLines(width)
 	footer := v.footerLines(width)
 	room := max(height-len(lines)-len(footer), 1)
+	// Where each listed row lands, so a click selects it in this layout too
+	// (#1064). The selected row carries its detail lines under it.
+	v.hits = nil
+	if rows := v.rows(); v.loaded && len(rows) > 0 && v.cursor < len(rows) && len(body) >= len(rows) {
+		start := windowRangeStart(len(body), from, to, room)
+		for k := 0; k < room && start+k < len(body); k++ {
+			line := start + k
+			row := line
+			switch {
+			case line >= to:
+				row = v.cursor + 1 + (line - to)
+			case line >= from:
+				row = v.cursor
+			}
+			if row < len(rows) {
+				// The root draws this layout inside its frame, one cell in
+				// from the body's top-left (framedView), and delivers clicks
+				// relative to the body.
+				y := 1 + len(lines) + k
+				v.hits = append(v.hits, mgmtHit{1, 1 + width, y, y + 1, row})
+			}
+		}
+	}
 	lines = append(lines, windowRange(body, from, to, room)...)
 	lines = append(lines, footer...)
 	for i, line := range lines {
@@ -159,9 +182,10 @@ func (v *pullRequestsView) bodyLines(width int) (lines []string, from, to int) {
 
 func emptyPullsNote(state string, total int, query string) string {
 	if total == 0 {
-		return "no " + pullsNoun(state)
+		// The way to one is named (#1082): P opens one for a task.
+		return "no " + pullsNoun(state) + " — P starts one for a task"
 	}
-	return fmt.Sprintf("none of %s match %q",
+	return fmt.Sprintf("none of %s match %q — esc clears the filter",
 		plural(total, "pull request", "pull requests"), query)
 }
 

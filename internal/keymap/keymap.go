@@ -97,6 +97,10 @@ const (
 	// decision 3): a pane swap on a key, not a tab strip. alt+d for "diff":
 	// the composer owns every printable key and nothing answered alt+d.
 	ChatDiff Op = "chat_diff"
+	// Conversation moves the keyboard from a chat's composer into its
+	// conversation, and back (#1078): expanding a tool call, jumping between
+	// prompts or attaching a shell card had needed ctrl+f, esc, then j/k.
+	Conversation Op = "conversation"
 	// Stash sets the composer's draft aside in the chat's one stash slot, or
 	// pops the stash back into an empty composer (task 164 decision 2).
 	// alt+s, not ctrl+s: that is Steer, which task 156 decision 5 keeps.
@@ -115,6 +119,12 @@ const (
 	// merge train.
 	NextChat Op = "next_chat"
 	PrevChat Op = "prev_chat"
+	// NextItem and PrevItem step to the neighbouring task from inside a
+	// task, and to the neighbouring issue from inside an issue, in the
+	// board's order (#1077) — the chat switch's keys, on the surfaces the
+	// chat switch is not on.
+	NextItem Op = "next_item"
+	PrevItem Op = "prev_item"
 	// ShellCommand opens the chat's one-line shell prompt, which runs a
 	// command in the chat's directory and draws it as a card in the
 	// conversation (task 170). alt+x for "execute": the composer owns every
@@ -164,11 +174,17 @@ const (
 	// ChatWith is Chat with a choice of agent, model and effort first (task
 	// 161 decision 7). `T` stays instant; alt+t is its considered twin.
 	ChatWith Op = "chat_with"
+	// Diagnose is Chat on a stopped task with the question why already sent,
+	// carrying what the failure card shows (#1087).
+	Diagnose Op = "diagnose"
 )
 
 // The global chrome.
 const (
-	Palette       Op = "palette"
+	Palette Op = "palette"
+	// GoTo opens the screens menu (#1080): every screen with a letter, so the
+	// management screens are named on screen and two keys away.
+	GoTo          Op = "go_to"
 	PaletteAlt    Op = "palette_alt"
 	Help          Op = "help"
 	HelpAlt       Op = "help_alt"
@@ -237,7 +253,7 @@ var catalog = []Info{
 	}},
 	{Op: FreeText, Default: "t", Meaning: "type free text instead of picking", Kind: KindTerm, Surfaces: []Surface{
 		"new task", "new chat", "workflow editor", "answer form", "repair form", "follow-up form",
-		"issue form",
+		"issue form", "key bindings",
 	}},
 	{Op: Browser, Default: "o", Meaning: "open in a browser", Kind: KindTerm, Surfaces: []Surface{
 		"task overview", "task details", "task pull request", "pull requests", "issues", "issue",
@@ -251,7 +267,7 @@ var catalog = []Info{
 	}},
 	{Op: Filter, Default: "/", Meaning: "filter", Kind: KindTerm, Surfaces: []Surface{
 		"settings", "new task", "task table", "archived tasks", "archived chats", "chats", "projects", "pull requests", "triggers",
-		"issues", "chat conversation",
+		"issues", "chat conversation", "output", "diff", "find in pane", "daemon",
 	}},
 	{Op: Lane, Default: "l", Meaning: "open a fan-out lane", Kind: KindTerm, Surfaces: []Surface{
 		"task overview", "timeline", "task details", "output", "diff", "task workflow", "task step details", "task pull request",
@@ -314,6 +330,11 @@ var catalog = []Info{
 	{Op: ChatDiff, Default: "alt+d", Meaning: "show the chat's diff in place of the conversation, to review it hunk by hunk", Kind: KindTerm, Surfaces: []Surface{
 		"chat",
 	}, Typing: true},
+	// Typing too: it is pressed from the composer, and pressed again from the
+	// conversation it goes back.
+	{Op: Conversation, Default: "alt+i", Meaning: "move the keyboard into the chat's conversation, or back to the composer", Kind: KindTerm, Surfaces: []Surface{
+		"chat", "chat conversation",
+	}, Typing: true},
 	// Typing for the same reason: the shell prompt is opened from the
 	// composer (task 170).
 	{Op: ShellCommand, Default: "alt+x", Meaning: "run a shell command in the chat's directory, shown as a card in the conversation", Kind: KindTerm, Surfaces: []Surface{
@@ -329,6 +350,12 @@ var catalog = []Info{
 	// question's popup.
 	{Op: NextChat, Default: "alt+n", Meaning: "open the next chat of the project", Kind: KindTerm, Surfaces: []Surface{"chats", "chat"}, Typing: true},
 	{Op: PrevChat, Default: "alt+shift+n", Meaning: "open the previous chat of the project", Kind: KindTerm, Surfaces: []Surface{"chats", "chat"}, Typing: true},
+	{Op: NextItem, Default: "alt+n", Meaning: "open the next task, or the next issue, in the board's order", Kind: KindTerm, Surfaces: []Surface{
+		"task overview", "timeline", "task details", "output", "diff", "task workflow", "task step details", "task pull request", "issue",
+	}},
+	{Op: PrevItem, Default: "alt+shift+n", Meaning: "open the previous task, or the previous issue, in the board's order", Kind: KindTerm, Surfaces: []Surface{
+		"task overview", "timeline", "task details", "output", "diff", "task workflow", "task step details", "task pull request", "issue",
+	}},
 	{Op: Chat1, Default: "alt+1", Meaning: "open the project's 1st chat", Kind: KindTerm, Surfaces: []Surface{"chats", "chat"}, Typing: true},
 	{Op: Chat2, Default: "alt+2", Meaning: "open the project's 2nd chat", Kind: KindTerm, Surfaces: []Surface{"chats", "chat"}, Typing: true},
 	{Op: Chat3, Default: "alt+3", Meaning: "open the project's 3rd chat", Kind: KindTerm, Surfaces: []Surface{"chats", "chat"}, Typing: true},
@@ -353,9 +380,11 @@ var catalog = []Info{
 	// so — so it is this operation and moves with it, the way `new` is one
 	// operation across the chats board and the issue screens.
 	{Op: Chat, Default: "T", Meaning: "chat in the task's worktree or on the issue's main worktree, or reopen its open chat", Kind: KindAction, Surfaces: []Surface{Actions, "issues", "issue"}},
+	{Op: Diagnose, Default: "Q", Meaning: "ask an agent why the stopped task stopped, in a chat on its worktree", Kind: KindAction, Surfaces: []Surface{Actions}},
 	{Op: ChatWith, Default: "alt+t", Meaning: "chat as chat does, choosing the agent, model and effort first", Kind: KindAction, Surfaces: []Surface{Actions, "issues", "issue"}},
 
 	{Op: Palette, Default: ":", Meaning: "open the command palette", Kind: KindGlobal, Surfaces: []Surface{Global}},
+	{Op: GoTo, Default: "`", Meaning: "open the screens menu: every screen, each on a letter", Kind: KindGlobal, Surfaces: []Surface{Global}},
 	{Op: PaletteAlt, Default: "ctrl+p", Meaning: "open the command palette from a text field", Kind: KindGlobal, Surfaces: []Surface{Global, "chat", "new chat"}, Typing: true},
 	{Op: Help, Default: "?", Meaning: "toggle the help", Kind: KindGlobal, Surfaces: []Surface{Global}},
 	{Op: HelpAlt, Default: "f1", Meaning: "toggle the help from a text field", Kind: KindGlobal, Surfaces: []Surface{Global, "chat", "new chat"}, Typing: true},
@@ -496,6 +525,8 @@ var exceptions = []exception{
 	{key: "ctrl+s", ops: []Op{Steer}, anyFixed: true, why: "task 156 decision 5: ctrl+s is the forms' save or start, and steer is on the chat surface, which is no form and answers no other ctrl+s"},
 	{key: "S", ops: []Op{ChatSearch}, anyFixed: true, why: "task 158: S installs skills on the daemon screen and syncs on the issues list, and neither is the chats board"},
 	{key: "T", ops: []Op{Chat}, anyFixed: true, why: "task 119: T dry-runs a trigger on the triggers takeover, which offers no available_actions"},
+	{key: "alt+n", ops: []Op{NextChat, NextItem}, why: "#1077: next chat and next task or issue are one move, the next one, on surfaces that never meet: the chats and a chat, and the task workspace and an issue"},
+	{key: "alt+shift+n", ops: []Op{PrevChat, PrevItem}, why: "#1077: the previous one, as alt+n is the next"},
 	{key: "shift+tab", ops: []Op{ChatMode}, anyFixed: true, why: "task 162 decision 9: shift+tab switches main tabs and moves between form rows, and the chat surface captures input, so neither reaches it — tab there is the skills list's (task 124 decision 69)"},
 }
 

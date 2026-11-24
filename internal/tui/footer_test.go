@@ -83,7 +83,7 @@ func footerMore(line string) int {
 func footerHiddenRows(line string, rows []binding) int {
 	n := 0
 	for _, b := range rows {
-		if b.noPalette || b.aliased {
+		if (b.noPalette && !b.echo) || b.aliased {
 			continue
 		}
 		if b.hint != "" && strings.Contains(line, b.hint) {
@@ -313,5 +313,19 @@ func TestFooterFollowsPanelFocus(t *testing.T) {
 	m.Update(selectViewMsg{id: viewProjects})
 	if got := ansi.Strip(m.footerLine()); !strings.Contains(got, "a add") {
 		t.Fatalf("projects footer = %q, want its keys", got)
+	}
+}
+
+// #1060: `! next attention` is not offered while a text field has the
+// keyboard — `!` would be typed into it.
+func TestFooterAttentionHiddenInATextField(t *testing.T) {
+	attention := attentionTally{here: 2}
+	line, _ := buildFooter(200, nil, &actionBar{}, taskActions{}, attention, false, false)
+	if !strings.Contains(ansi.Strip(line), "next attention (2)") {
+		t.Fatalf("the board's footer drops the attention count: %q", ansi.Strip(line))
+	}
+	line, _ = buildFooter(200, nil, &actionBar{}, taskActions{}, attention, false, true)
+	if strings.Contains(ansi.Strip(line), "next attention") {
+		t.Errorf("a text field's footer offers ! next attention: %q", ansi.Strip(line))
 	}
 }

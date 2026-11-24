@@ -83,8 +83,8 @@ func TestIssuesWithNoProjectLoadNothing(t *testing.T) {
 	}
 	v.setProjects(nil)
 	out := ansi.Strip(v.render(120, 20))
-	if !strings.Contains(out, "No projects registered") || !strings.Contains(out, "overview") {
-		t.Errorf("the empty selection does not point at the overview:\n%s", out)
+	if !strings.Contains(out, "No projects registered") || !strings.Contains(out, "to add one") {
+		t.Errorf("the empty selection does not say how to add one:\n%s", out)
 	}
 }
 
@@ -383,14 +383,29 @@ func TestSyncedNoteSaysNothingToSync(t *testing.T) {
 		status apiclient.IssueSyncStatus
 		want   string
 	}{
-		{apiclient.IssueSyncStatus{Provider: "none", Reason: "not_github"}, "nothing to sync (not_github)"},
-		{apiclient.IssueSyncStatus{Provider: "none", Reason: "source_not_github"}, "nothing to sync (source_not_github)"},
-		{apiclient.IssueSyncStatus{Provider: "github", Enabled: true, Reason: "not_github"}, "nothing to sync (not_github)"},
-		{apiclient.IssueSyncStatus{Provider: "jira", Reason: "disabled"}, "sync requested, but import is off (disabled)"},
+		{apiclient.IssueSyncStatus{Provider: "none", Reason: "not_github"}, "nothing to sync: the project's origin is not a github.com repository"},
+		{apiclient.IssueSyncStatus{Provider: "none", Reason: "source_not_github"}, "nothing to sync: the project has no issue source"},
+		{apiclient.IssueSyncStatus{Provider: "github", Enabled: true, Reason: "not_github"}, "nothing to sync: the project's origin is not a github.com repository"},
+		{apiclient.IssueSyncStatus{Provider: "jira", Reason: "disabled"}, "sync requested, but import is off: the issue source is switched off in config.yaml"},
 		{apiclient.IssueSyncStatus{Provider: "github", Enabled: true, Repo: "o/r", Reason: "pending"}, "sync requested from o/r — the list updates as it lands"},
 	} {
 		if got := syncedNote(issuesSyncedMsg{status: tc.status}); got != tc.want {
 			t.Errorf("%+v: note = %q, want %q", tc.status, got, tc.want)
 		}
+	}
+}
+
+// #1058: clearing a filter keeps the issue that was selected, not the index.
+func TestIssuesKeepTheSelectionAcrossAFilter(t *testing.T) {
+	v := issuesFixture()
+	v.selectIssue(4)
+	v.updateKey(keyPress("/"))
+	for _, r := range "crash" {
+		v.updateKey(keyPress(string(r)))
+	}
+	v.updateKey(keyPress("esc"))
+	row, ok := v.current()
+	if !ok || row.issue.ID != 4 {
+		t.Fatalf("after clearing the filter the cursor is on %+v, want #4", row.issue)
 	}
 }

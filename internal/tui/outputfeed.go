@@ -195,7 +195,9 @@ func (d *detail) feedStatus(width int) string {
 		return ""
 	}
 	run := runs[i]
-	right := styleDim.Render(fmt.Sprintf("attempt %d/%d  ← →", i+1, len(runs)))
+	// A position among the task's runs, not the step's attempt number
+	// (#1071): attempt 2 of the third step is run 5 of the task.
+	right := styleDim.Render(fmt.Sprintf("run %d of %d  ← →", i+1, len(runs)))
 	var left string
 	if run.Live() {
 		left = toneCyan.Render(ProgressLabel(d.frame, d.now().Sub(run.StartedAt)))

@@ -102,7 +102,7 @@ func buildFooter(width int, panelRows []binding, bar *actionBar, target taskActi
 		rest = []footerSeg{{text: strings.TrimPrefix(bar.render(target), " ")}}
 	} else {
 		hints = footerHintSegs(panelRows)
-		rest = footerRestSegs(bar, target, attention, retry)
+		rest = footerRestSegs(bar, target, attention, retry, textField)
 	}
 
 	if width > 0 {
@@ -433,7 +433,7 @@ func footerMoreSeg(n int) footerSeg {
 func footerCountable(rows []binding) int {
 	n := 0
 	for _, b := range rows {
-		if !b.noPalette && !b.aliased {
+		if (!b.noPalette || b.echo) && !b.aliased {
 			n++
 		}
 	}
@@ -510,6 +510,9 @@ var footerActionOps = []struct {
 	{apiclient.ActionRepair, keymap.Repair, "repair"},
 	{apiclient.ActionSkip, keymap.Skip, ""},
 	{apiclient.ActionCancel, keymap.Cancel, ""},
+	// A finished task's next step (#1068): F opens the follow-up form, so it
+	// is a labelled row, withheld under a selection like E and R.
+	{apiclient.ActionFollowUp, keymap.FollowUp, "follow up"},
 	{apiclient.ActionArchive, keymap.Archive, ""},
 }
 
@@ -559,12 +562,22 @@ func footerAdmitActions(rest []footerSeg, countable, avail int) []footerSeg {
 // footerRestSegs is everything to the right of the hints: the task's valid
 // actions, the answer/attention/retry extras, and the action bar's last
 // status.
-func footerRestSegs(bar *actionBar, target taskActions, attention attentionTally, retry bool) []footerSeg {
+func footerRestSegs(bar *actionBar, target taskActions, attention attentionTally, retry, textField bool) []footerSeg {
 	segs := make([]footerSeg, 0, 8)
+	if target.bulk() {
+		// The way out of a selection leads it (#1073): esc clears it, and
+		// nothing else on the line says the selection is there to clear.
+		segs = append(segs, footerSeg{
+			text: styleKey.Render("esc") + " " + fmt.Sprintf("clear (%d)", len(target.marked)), key: "esc",
+		})
+	}
 	if bar != nil && (target.id != 0 || target.bulk()) {
 		for _, o := range footerActionOps {
 			if !target.has(o.action) || (o.label != "" && target.bulk()) {
 				continue
+			}
+			if o.op == keymap.EditRetry && !target.editRetry {
+				continue // nothing to edit here, or no editor (#1059)
 			}
 			key := opKey(o.op)
 			if key == "" {
@@ -586,6 +599,13 @@ func footerRestSegs(bar *actionBar, target taskActions, attention attentionTally
 		// hands back the task, and it is on the line anyway: a locked task
 		// offers `c cancel` or nothing, and the chat holding the lock is the
 		// one thing that explains why (task 119).
+		// `Q` beside it on a stopped task (#1087), and only while no chat
+		// holds the task: then the key reopens that chat, which `T` says.
+		if target.offersDiagnose() && target.openChatID == 0 && opKey(keymap.Diagnose) != "" {
+			segs = append(segs, footerSeg{
+				text: styleKey.Render(opKey(keymap.Diagnose)) + " ask why", key: opKey(keymap.Diagnose), counts: true, droppable: true,
+			})
+		}
 		if target.offersChat() && opKey(keymap.Chat) != "" {
 			label := "chat"
 			if target.openChatID != 0 {
@@ -596,7 +616,9 @@ func footerRestSegs(bar *actionBar, target taskActions, attention attentionTally
 			})
 		}
 	}
-	if n := attention.total(); n > 0 && opKey(keymap.NextAttention) != "" {
+	// Not while a text field has the keyboard (#1060): `!` is typed there,
+	// as footerPinnedSegs already says of the other single-key globals.
+	if n := attention.total(); n > 0 && opKey(keymap.NextAttention) != "" && !textField {
 		// `!` is a global row, and the pinned segment stands for those: shown
 		// here, never counted. The count is every project's and carries no
 		// label (task 132 decision 53): `!` crosses projects, and the app
@@ -638,7 +660,9 @@ func footerHintSegs(rows []binding) []footerSeg {
 		// A hinted row the palette does not list — the popup surfaces — is
 		// shown but never counted: `+N` points at a palette that would list
 		// none of these keys.
-		seg := footerSeg{key: r.key, counts: !r.noPalette}
+		// An echo row is a global key the palette lists under its own global
+		// row, so it counts as one of the surface's main keys (#1073).
+		seg := footerSeg{key: r.key, counts: !r.noPalette || r.echo}
 		key, rest, ok := strings.Cut(r.hint, " ")
 		if !ok {
 			seg.text = styleKey.Render(r.hint)

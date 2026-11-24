@@ -254,8 +254,13 @@ func TestPopupEscOnDetailsReturnsToTheForm(t *testing.T) {
 		t.Fatalf("esc discarded the draft: prompt = %q", f.prompt)
 	}
 
-	// esc on the form tab keeps its own meaning: the follow-up closes.
+	// esc on the form tab keeps its own meaning: the follow-up closes —
+	// after asking, since it holds typed text (#1053).
 	v.updateKey(tea.KeyPressMsg{Code: tea.KeyEscape})
+	if !v.popup || !f.confirming {
+		t.Fatal("esc on a touched follow-up did not ask before closing")
+	}
+	v.updateKey(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	if v.popup || v.detail.followUp != nil {
 		t.Fatal("esc on the form tab did not close the follow-up popup")
 	}

@@ -200,6 +200,9 @@ type root struct {
 	// decision 36): drawn as the status line's y/n question, and applied or
 	// dropped — with any open waiting on it — by the answer.
 	pending *pendingSwitch
+	// leave is a quit or a screen switch waiting on the human's answer
+	// because the active view holds a draft it would drop (#1051).
+	leave *pendingLeave
 	// globalPause is the daemon-wide pause (task 149): the header badge, the
 	// status line under it and `Z`'s question are drawn from it.
 	globalPause globalPauseState
@@ -286,6 +289,11 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateKey(msg)
 	case tea.FocusMsg, tea.BlurMsg:
 		return m, m.updateFocus(msg)
+	case stepItemMsg:
+		return m, m.stepItem(msg)
+	case showNoticeMsg:
+		m.notice.active, m.notice.again = true, true
+		return m, nil
 	case selectTaskMsg, openTaskMsg, openIssueMsg, openChatMsg, taskCreatedMsg:
 		// Every open follows its object into its project first (task 132.6):
 		// openObject switches when it must, then routes.
@@ -392,6 +400,15 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateConnected(msg)
 	case projectListMsg:
 		return m, m.updateProjectList(msg)
+	case restartDaemonMsg:
+		// #1081: stop the daemon, then the connect flow starts a new one.
+		return m, stopDaemonCmd(m.dataDir)
+	case daemonStoppedMsg:
+		cmd := m.deliver(viewDaemon, msg)
+		if msg.err != nil {
+			return m, cmd
+		}
+		return m, tea.Batch(cmd, m.restartConnect())
 	case probeFailedMsg:
 		m.phase = phaseStarting
 		m.setDataDir(msg.dataDir)
@@ -480,7 +497,7 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // field to receive it is dropped rather than treated as keystrokes: replaying
 // a pasted path as single keys on the board would fire its action letters.
 func (m *root) updatePaste(text string) tea.Cmd {
-	if text == "" || m.notice.active || m.help || m.pending != nil {
+	if text == "" || m.notice.active || m.help || m.pending != nil || m.leave != nil {
 		return nil
 	}
 	if m.reader != nil {
@@ -519,9 +536,13 @@ func (m *root) updatePaste(text string) tea.Cmd {
 // updateMouseClick is §15's click scope: a footer hint fires its key, the
 // header's `◆` segment opens the project picker (task 132.4), a main-tab
 // strip label switches to its tab (task 136.3), the rest of the header is
-// inert, and everything else lands in the active screen's body. Popups stay keyboard; right-clicks
-// and the rest are out of scope.
+// inert, and everything else lands in the active screen's body. The palette
+// and the project picker take a click on a row (#1065); the other popups stay
+// keyboard; right-clicks and the rest are out of scope.
 func (m *root) updateMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
+	if msg.Button == tea.MouseLeft && !m.notice.active && !m.help && (m.palette != nil || m.projPick != nil) {
+		return m.updatePopupClick(msg)
+	}
 	if msg.Button != tea.MouseLeft || m.notice.active || m.popupOpen() || m.help {
 		return m, nil
 	}
@@ -571,6 +592,10 @@ func (m *root) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// (task 132 decision 36): it is the question on screen.
 	if m.pending != nil && msg.String() != "ctrl+c" {
 		return m, m.updatePendingSwitchKey(msg)
+	}
+	// So does a quit or a screen switch asking about a draft (#1051).
+	if m.leave != nil && msg.String() != "ctrl+c" {
+		return m, m.updatePendingLeaveKey(msg)
 	}
 	// `Z`'s question (task 149) owns the keyboard the same way: it is the
 	// question on screen, and y must not reach the view under it.
@@ -782,11 +807,24 @@ func (m *root) issuesSyncable() bool {
 // `!` while disconnected, `n` on the new-task form — is the caller's to route.
 func (m *root) globalKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	switch key := msg.String(); key {
-	case opKey(keymap.Quit), "ctrl+c":
+	case "ctrl+c":
+		return tea.Quit, true
+	case opKey(keymap.Quit):
+		// A touched form asks before its draft goes with the TUI (#1051);
+		// ctrl+c above never asks, so the TUI is always killable.
+		if m.askLeave(true, 0) {
+			return nil, true
+		}
 		return tea.Quit, true
 	case opKey(keymap.Palette), opKey(keymap.PaletteAlt):
 		m.openPalette()
 		return nil, true
+	case opKey(keymap.GoTo):
+		// #1080: the screens, named and on a letter each.
+		if m.phase == phaseConnected || m.phase == phaseReconnecting {
+			m.palette = newGoToMenu(m.githubAvailable())
+			return nil, true
+		}
 	case opKey(keymap.Help), opKey(keymap.HelpAlt):
 		m.help = !m.help
 		m.helpPane = newScrollPane(1, 1, true)
@@ -809,6 +847,11 @@ func (m *root) globalKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 			return m.pressPauseAll(), true
 		}
 	case opKey(keymap.Project):
+		// #1082: with nothing registered, the picker would list nothing, so
+		// @ opens the add form instead — the empty state's key adds one.
+		if m.phase == phaseConnected && m.startup.done && len(m.projects) == 0 && !m.popupOpen() {
+			return tea.Batch(m.deliver(viewProjects, openProjectAddMsg{}), m.switchTo(viewProjects)), true
+		}
 		// While reconnecting too: the picker opens on the cached list.
 		if m.phase == phaseConnected || m.phase == phaseReconnecting {
 			return m.openProjectPicker(), true
@@ -880,7 +923,7 @@ func (m *root) updatePaletteKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// panel's command instead of the navigation the entry names. On the chats
 	// board that is "new task", whose key n now makes a chat.
 	if run.nav && (run.key == "" || m.panelOwnsKey(run.key)) {
-		return m, m.switchTo(run.navTarget)
+		return m, m.goTo(run.navTarget)
 	}
 	if run.isTab {
 		// A tab row switches in place (task 168): synchronously, as the digit
@@ -940,7 +983,7 @@ func (m *root) updateLinksKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 // keyboard while it is, so at most one ever is.
 func (m *root) popupOpen() bool {
 	return m.palette != nil || m.reader != nil || m.linkPick != nil || m.projPick != nil || m.exportForm != nil ||
-		m.pending != nil || m.rename != nil || m.chatWith != nil
+		m.pending != nil || m.leave != nil || m.rename != nil || m.chatWith != nil
 }
 
 // openProjectPicker raises the project picker over whatever is on screen,
@@ -1069,7 +1112,13 @@ func (m *root) openPalette() {
 	s := m.surfaceTarget()
 	entries := paletteEntries(
 		m.activeContext(), s.target, s.editable, m.phase == phaseConnected, m.githubAvailable(), s.live, s.tabs)
-	m.palette = newPalette(append(entries, s.extras...))
+	entries = append(entries, s.extras...)
+	entries = append(entries, paletteEntry{
+		group: "global", label: "show the full-auto notice again — what an agent can do on this machine",
+		action: func() tea.Msg { return showNoticeMsg{} },
+	})
+	m.palette = newPalette(append(entries, m.paletteItems()...))
+	m.palette.input.SetPlaceholder("type to search commands, screens, tasks, chats and issues")
 }
 
 // liveBinder is a surface whose registry rows depend on its state: it drops
@@ -1093,7 +1142,7 @@ type footerBinder interface {
 // the collision rather than a list of view special cases in updateKey.
 func (m *root) panelOwnsKey(key string) bool {
 	for _, b := range bindingsFor(m.activeContext()) {
-		if b.key == key {
+		if b.key == key && !b.echo {
 			return true
 		}
 	}
@@ -1105,7 +1154,7 @@ func (m *root) panelOwnsKey(key string) bool {
 // rows that only describe the root's switch do not count as the surface's.
 func (m *root) panelOwnsLocalKey(key string) bool {
 	for _, b := range bindingsFor(m.activeContext()) {
-		if b.key == key && !b.mainTab {
+		if b.key == key && !b.mainTab && !b.echo {
 			return true
 		}
 	}
@@ -1250,6 +1299,11 @@ func (m *root) updateNoticeKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case "enter":
 		m.notice.acknowledge(m.dataDir)
+	case "esc":
+		// Only a reopened notice: the first one is read to its end (§16).
+		if m.notice.again {
+			m.notice.acknowledge(m.dataDir)
+		}
 	}
 	return m, nil
 }
@@ -1262,6 +1316,19 @@ func (m *root) updateNoticeKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 func (m *root) openNewTask() tea.Cmd {
 	cmd := m.deliver(viewNewTask, newTaskMsg{projectID: m.sel.id})
 	return tea.Batch(cmd, m.switchTo(viewNewTask))
+}
+
+// goTo is a navigation row's switch: the screens menu's and the palette's
+// keyless ones. The new-task form is the one screen that has to be told to
+// open before it is shown, so it goes through openNewTask the way its key
+// does — a bare switch left it on "loading projects, workflows and
+// adapters…" for good (review finding 3). Already on the form, it is left as
+// it is, as `n` leaves it: re-opening would throw the draft away.
+func (m *root) goTo(target viewID) tea.Cmd {
+	if target == viewNewTask && m.active != viewNewTask {
+		return m.openNewTask()
+	}
+	return m.switchTo(target)
 }
 
 // updateNewTaskFromPull opens the new-task form seeded with a pull request
@@ -2031,6 +2098,20 @@ func (m *root) switchTo(id viewID) tea.Cmd {
 	if id == m.active {
 		return nil
 	}
+	// Leaving a form whose draft would be dropped asks first (#1051). The
+	// switch happens on y, through switchNow.
+	if m.askLeave(false, id) {
+		return nil
+	}
+	return m.switchNow(id)
+}
+
+// switchNow is switchTo past its draft guard.
+func (m *root) switchNow(id viewID) tea.Cmd {
+	m.help = false
+	if id == m.active {
+		return nil
+	}
 	prev := m.active
 	m.active = id
 	m.landing = false
@@ -2386,6 +2467,9 @@ func (m *root) statusLine() (string, bool) {
 	}
 	if m.pending != nil {
 		return styleWarn.Render(" " + m.pending.promptFit(m.width-1)), true
+	}
+	if m.leave != nil {
+		return styleWarn.Render(fitStatus(" "+m.leave.prompt(), m.width)), true
 	}
 	if m.globalPause.asking {
 		return styleWarn.Render(fitStatus(" "+m.globalPause.question(), m.width)), true
@@ -2820,6 +2904,10 @@ func (m *root) footerLine() string {
 		bar = s.bar
 		if m.phase == phaseConnected {
 			target = s.board.target()
+			// E reaches the board's detail panes (shell.go), so it is hinted
+			// when they hold this task at a step with text to edit (#1059).
+			d := s.detail
+			target.editRetry = d.loaded && d.taskID == target.id && d.stepEditable()
 			// Answer is opened from the task workspace. On the board, enter
 			// crosses that screen boundary; advertising it as an immediate
 			// answer would describe the second press rather than this one.
@@ -2944,4 +3032,29 @@ func (m *root) updateClipboardResult(msg clipboardResultMsg) tea.Cmd {
 		cmds = append(cmds, tea.SetClipboard(msg.osc))
 	}
 	return tea.Batch(cmds...)
+}
+
+// updatePopupClick is a click while the palette or the project picker is up
+// (#1065): a click on a row runs it as enter does; anywhere else is
+// nothing, so a stray click cannot reach the screen under the popup.
+func (m *root) updatePopupClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
+	top := m.chromeTop()
+	pw, ph := popupBox(m.width, m.height, top)
+	x0 := max((m.width-pw)/2, 0)
+	if msg.X < x0 || msg.X >= x0+pw || msg.Y < top || msg.Y >= top+ph {
+		return m, nil
+	}
+	y := msg.Y - top
+	enter := tea.KeyPressMsg{Code: tea.KeyEnter}
+	if m.palette != nil {
+		if i, ok := m.palette.clickLine(y); ok {
+			m.palette.cursor = i
+			return m.updatePaletteKey(enter)
+		}
+		return m, nil
+	}
+	if m.projPick.clickLine(y) {
+		return m.updateProjectPickerKey(enter)
+	}
+	return m, nil
 }

@@ -225,9 +225,13 @@ type failedReloader interface {
 // a listing has said no project is registered (task 132.7). The keys come from
 // the keymap, so a rebind shows. Nothing force-navigates: the view stays.
 func noProjectsEmpty() string {
-	return "No projects registered — press " + opKey(keymap.Project) +
-		" and open the overview to add one."
+	return "No projects registered — press " + opKey(keymap.Project) + " to add one."
 }
+
+// openProjectAddMsg opens the projects overview with its add form up: what
+// @ does while no project is registered (#1082), so the empty state's key is
+// the one that adds.
+type openProjectAddMsg struct{}
 
 // newViews returns the initial view set. ctx bounds background work a view
 // owns — the detail sub-model's per-task subscription. links is the session's

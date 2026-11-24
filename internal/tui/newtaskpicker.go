@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -255,6 +256,18 @@ func (p *picker) update(msg tea.KeyPressMsg) pickerResult {
 			return pickerResult{}
 		}
 		return pickerResult{closed: true}
+	default:
+		// #1082: typing filters, as the project picker does — a printable
+		// key that is none of the picker's own starts the filter with
+		// itself, so `/` is no longer a step nobody guesses.
+		if r := []rune(msg.Text); len(r) == 1 && unicode.IsPrint(r[0]) && msg.Mod&(tea.ModCtrl|tea.ModAlt) == 0 && len(p.options) > 1 {
+			p.filtering = true
+			p.filter.Focus()
+			var cmd tea.Cmd
+			p.filter, cmd = p.filter.Update(msg)
+			p.applyFilter()
+			return pickerResult{cmd: cmd}
+		}
 	}
 	return pickerResult{}
 }
@@ -321,7 +334,7 @@ func (p *picker) renderBody() []string {
 				p.focusFrom, p.focusTo = len(out), len(out)+1
 			}
 		}
-		out = append(out, "    "+marker+styleDim.Render("type a value not listed…"))
+		out = append(out, "    "+marker+styleDim.Render("type a value not listed… ("+opKey(keymap.FreeText)+")"))
 	}
 	if p.editing {
 		p.input.SetWidth(max(p.width-6, 10))

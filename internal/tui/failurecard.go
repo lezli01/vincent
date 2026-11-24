@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -28,8 +29,13 @@ import (
 
 const (
 	// evidenceLines is how many lines of a transcript's evidence the card
-	// shows at most, fewer when the height budget will not hold them.
-	evidenceLines = 5
+	// shows at most, fewer when the height budget will not hold them (#1086:
+	// five was the tail by position, and cut off the line that named a
+	// failing test).
+	evidenceLines = 12
+	// pinnedEvidenceLines is the evidence the card pinned under the other
+	// tabs carries: the same lines, shortened.
+	pinnedEvidenceLines = 3
 	// actionEditRetry is the card's name for `E`: not a §6 action of its own
 	// but retry with an edited step, so it sits directly after retry.
 	actionEditRetry = "edit_retry"
@@ -54,6 +60,9 @@ type failureCard struct {
 	// status is what the attempt last said about itself: neutral, quoted,
 	// and never the reason (§5.4, task 036 decision 6).
 	status string
+	// repeat says the failure is one the step has had before, attempt
+	// after attempt (#1067): "same failure as attempts 2–5".
+	repeat string
 	blame  laneBlame
 	blamed bool
 }
@@ -103,11 +112,23 @@ func deriveFailureCard(task apiclient.TaskDetail, blame laneBlame, blamed bool) 
 	}
 	if c.hasRun {
 		c.status = statusOf(c.run)
+		if !c.stepless {
+			c.repeat = repeatedFailure(task.Steps, c.run)
+		}
 	}
 	if c.status == "" && task.StatusMessage != nil {
 		c.status = strings.TrimSpace(*task.StatusMessage)
 	}
 	return c
+}
+
+// statusLabel names the status as what it is: the last thing the step said
+// before it stopped, which may be a stage it had already passed (#1086).
+func (c failureCard) statusLabel() string {
+	if c.aborted {
+		return "last status before it stopped"
+	}
+	return "last status before the failure"
 }
 
 // glyph carries the card's kind without colour: ✗ a failure, ⚠ a fan-out a
@@ -183,37 +204,260 @@ func (c failureCard) wantsEvidence() bool {
 	return !c.aborted && c.hasRun && !c.stepless && c.run.TranscriptPath != nil
 }
 
-// selectEvidence picks the last n meaningful lines of a failing attempt's
-// transcript. A `check_failed` is the check's own output — for an agent
-// step, never the agent's final message; any other failure is the
-// attempt's output and errors.
-func selectEvidence(reason string, records []apiclient.TranscriptRecord, n int) []string {
-	var out []string
-	for _, rec := range records {
-		text := ""
-		switch {
-		case reason == reasonCheckFailed:
-			if rec.Phase == "check" {
-				text = rec.Text
-			}
-		case rec.Type == "command.output" || rec.Type == "agent.output" || rec.Type == "vincent.output":
-			text = rec.Text
-		case strings.HasSuffix(rec.Type, ".error"):
-			text = rec.Message
-		}
-		for _, line := range strings.Split(text, "\n") {
-			if line = strings.TrimRight(line, " \t\r"); strings.TrimSpace(line) != "" {
-				out = append(out, line)
+// evidenceLine is one line of a failing attempt's output as the card quotes
+// it. gap marks the dim `⋯` drawn where selected lines are not adjacent in
+// the transcript, so two lines are never read as consecutive when they were
+// not.
+type evidenceLine struct {
+	text   string
+	stderr bool
+	gap    bool
+}
+
+// failurePattern is a line that says what failed in the words of the tool
+// that failed: a Go test's `--- FAIL`, a panic, git's `fatal:`, a compiler's
+// or a CLI's `error:`. These are what the chats opened on stopped tasks
+// quoted first (#1086).
+var failurePattern = regexp.MustCompile(`(?i)(^--- fail\b|^panic:|\bfatal:|\berror(\[[^\]]*\])?:)`)
+
+// weakFailurePattern is a bare `FAIL` summary row: worth more than an
+// arbitrary line, less than the line that names the failing test.
+var weakFailurePattern = regexp.MustCompile(`^(FAIL|FAILED|ERROR)\b`)
+
+// maxContinuation bounds how many more-indented lines after a failure line
+// count as part of it — a test's message under its `--- FAIL`, the first
+// frames of a trace — so one long trace cannot crowd out a second failure.
+const maxContinuation = 4
+
+// failingPhase is the phase of the attempt that failed: "check" when the
+// attempt's last command was its check, "run" for the step's own body. The
+// transcript says which ran last; without a command record the reason does.
+func failingPhase(reason string, records []apiclient.TranscriptRecord) string {
+	for i := len(records) - 1; i >= 0; i-- {
+		if r := records[i]; r.Type == "vincent.command_started" {
+			if ph := firstNonEmpty(r.Phase, fieldOf(r.Raw, "phase")); ph != "" {
+				return ph
 			}
 		}
 	}
-	if len(out) > n {
-		out = out[len(out)-n:]
+	if reason == reasonCheckFailed {
+		return "check"
+	}
+	return "run"
+}
+
+// failingCommand is the script the failing phase ran, as the shell received
+// it — empty for an agent's body, which runs no command.
+func failingCommand(phase string, records []apiclient.TranscriptRecord) string {
+	for i := len(records) - 1; i >= 0; i-- {
+		r := records[i]
+		if r.Type != "vincent.command_started" {
+			continue
+		}
+		if firstNonEmpty(r.Phase, fieldOf(r.Raw, "phase")) == phase {
+			return strings.TrimSpace(fieldOf(r.Raw, "command"))
+		}
+	}
+	return ""
+}
+
+// rankedLine is a candidate line with its position and its rank: 2 a
+// failure line or what is indented under one, 1 stderr or a bare FAIL row,
+// 0 anything else.
+type rankedLine struct {
+	evidenceLine
+	rank int
+}
+
+// phaseLines are the lines a failing phase printed, in transcript order. A
+// check's are the check's own output — for an agent step, never the agent's
+// final message; a body's are everything else the attempt printed, its
+// errors included.
+func phaseLines(phase string, records []apiclient.TranscriptRecord) []rankedLine {
+	var out []rankedLine
+	for _, rec := range records {
+		text, errRec := "", false
+		switch {
+		case phase == "check":
+			if rec.Phase == "check" && (rec.Type == "command.output" || rec.Type == "vincent.output") {
+				text = rec.Text
+			}
+		case rec.Phase == "check":
+		case rec.Type == "command.output" || rec.Type == "agent.output" || rec.Type == "vincent.output":
+			text = rec.Text
+		case strings.HasSuffix(rec.Type, ".error"):
+			text, errRec = rec.Message, true
+		}
+		for _, line := range strings.Split(text, "\n") {
+			if line = strings.TrimRight(line, " \t\r"); strings.TrimSpace(line) == "" {
+				continue
+			}
+			l := rankedLine{evidenceLine: evidenceLine{text: line, stderr: rec.Stream == "stderr"}}
+			switch {
+			case errRec || failurePattern.MatchString(strings.TrimSpace(line)):
+				l.rank = 2
+			case l.stderr || weakFailurePattern.MatchString(strings.TrimSpace(line)):
+				l.rank = 1
+			}
+			out = append(out, l)
+		}
+	}
+	// What is indented under a failure line belongs to it.
+	for i := range out {
+		if out[i].rank != 2 {
+			continue
+		}
+		indent := leadingSpace(out[i].text)
+		for j := i + 1; j < len(out) && j <= i+maxContinuation && leadingSpace(out[j].text) > indent; j++ {
+			out[j].rank = 2
+		}
+	}
+	return out
+}
+
+func leadingSpace(s string) int { return len(s) - len(strings.TrimLeft(s, " \t")) }
+
+// selectEvidence picks at most n rows of a failing attempt's output (#1086):
+// failure lines first, earliest first, since the first failure is usually
+// the cause and the rest its consequences; then stderr and bare FAIL rows,
+// newest first; then the tail by position. The rows come back in transcript
+// order with a gap row wherever the picks are not adjacent, and the gaps
+// count toward n.
+func selectEvidence(phase string, records []apiclient.TranscriptRecord, n int) []evidenceLine {
+	lines := phaseLines(phase, records)
+	if len(lines) == 0 || n <= 0 {
+		return nil
+	}
+	order := make([]int, 0, len(lines))
+	for i, l := range lines {
+		if l.rank == 2 {
+			order = append(order, i)
+		}
+	}
+	for rank := 1; rank >= 0; rank-- {
+		for i := len(lines) - 1; i >= 0; i-- {
+			if lines[i].rank == rank {
+				order = append(order, i)
+			}
+		}
+	}
+	picked := make([]bool, len(lines))
+	rows := func() int {
+		count, prev := 0, -1
+		for i, p := range picked {
+			if !p {
+				continue
+			}
+			if prev >= 0 && i != prev+1 {
+				count++
+			}
+			count++
+			prev = i
+		}
+		return count
+	}
+	kept := 0
+	for _, i := range order {
+		if kept >= n {
+			break
+		}
+		picked[i] = true
+		if rows() > n {
+			picked[i] = false
+			continue
+		}
+		kept++
+	}
+	var out []evidenceLine
+	prev := -1
+	for i, p := range picked {
+		if !p {
+			continue
+		}
+		if prev >= 0 && i != prev+1 {
+			out = append(out, evidenceLine{gap: true})
+		}
+		out = append(out, lines[i].evidenceLine)
+		prev = i
 	}
 	return out
 }
 
 const reasonCheckFailed = "check_failed"
+
+// exitSentence says which part of the attempt failed and how it exited:
+// "the check exited 1", or "the command printed nothing and exited 1" when
+// it left no output to quote (#1086). Empty when no exit code says anything
+// — a timeout or a kill leaves none, and the reason already says it.
+func exitSentence(run apiclient.StepRun, phase string, printed bool) string {
+	code, subject := run.ExitCode, "the step"
+	switch {
+	case phase == "check":
+		code, subject = run.CheckExitCode, "the check"
+	case run.StepType == "command":
+		subject = "the command"
+	case run.StepType == "agent":
+		subject = "the agent"
+	}
+	if code == nil || *code < 0 {
+		return ""
+	}
+	if !printed {
+		return fmt.Sprintf("%s printed nothing and exited %d", subject, *code)
+	}
+	return fmt.Sprintf("%s exited %d", subject, *code)
+}
+
+// commandLine is a script's first line, with how many lines follow it.
+func commandLine(script string) string {
+	first, rest, multi := strings.Cut(script, "\n")
+	line := "$ " + strings.TrimSpace(first)
+	if multi {
+		line += "  (+" + plural(strings.Count(rest, "\n")+1, "line", "lines") + ")"
+	}
+	return line
+}
+
+// cardEvidence is what a failing attempt's transcript says, for both the
+// Overview's card and the one pinned under the other tabs.
+type cardEvidence struct {
+	// loading is a fetch still in flight; ok is evidence to show at all —
+	// false sends the card to the daemon's block_detail or the daemon log.
+	loading, ok bool
+	// command is the failing script's first line as the card draws it, and
+	// script the whole of it, which `Q` hands the agent (#1087).
+	command, script string
+	exit            string
+	lines           []evidenceLine
+}
+
+// readEvidence reads a failing attempt's records for card c, at most n
+// lines of them.
+func readEvidence(c failureCard, records []apiclient.TranscriptRecord, n int) cardEvidence {
+	phase := failingPhase(c.reason, records)
+	out := cardEvidence{lines: selectEvidence(phase, records, n)}
+	if script := failingCommand(phase, records); script != "" {
+		out.command, out.script = commandLine(script), script
+	}
+	out.exit = exitSentence(c.run, phase, len(out.lines) > 0)
+	out.ok = len(out.lines) > 0 || out.exit != ""
+	return out
+}
+
+// cardEvidence reads the fetched transcript for card c, at most n lines.
+func (t *taskView) cardEvidence(c failureCard, n int) cardEvidence {
+	if !c.wantsEvidence() {
+		return cardEvidence{}
+	}
+	ev := t.evidence
+	if ev.taskID != t.detail.taskID || ev.runID != c.run.ID || ev.fetching {
+		return cardEvidence{loading: true}
+	}
+	if ev.err != nil {
+		return cardEvidence{}
+	}
+	return readEvidence(c, ev.records, n)
+}
 
 // cardAction is one action on the card: the wire action, its key and what
 // it does.
@@ -242,6 +486,11 @@ func cardActions(reason string, offered []string) []cardAction {
 	if i := slices.Index(order, apiclient.ActionRetry); i >= 0 {
 		order = slices.Insert(order, i+1, actionEditRetry)
 	}
+	// `Q` sits directly before chat (#1087): the same chat, with the
+	// question already asked.
+	if i := slices.Index(order, apiclient.ActionChat); i >= 0 {
+		order = slices.Insert(order, i, actionDiagnose)
+	}
 	out := make([]cardAction, 0, len(order))
 	for _, name := range order {
 		a, ok := overviewAction(name)
@@ -263,6 +512,10 @@ func cardActions(reason string, offered []string) []cardAction {
 func overviewAction(name string) (overviewActionDef, bool) {
 	if name == actionEditRetry {
 		return overviewActionDef{actionEditRetry, keymap.EditRetry, "edit the step's prompt or command, then run it again"}, true
+	}
+	if name == actionDiagnose {
+		const does = "ask an agent why it stopped, with this card as its first message"
+		return overviewActionDef{actionDiagnose, keymap.Diagnose, does}, true
 	}
 	for _, a := range overviewActions {
 		if a.action == name {
@@ -300,12 +553,13 @@ func (t *taskView) showsFailureCard() bool {
 	return t.detail.loaded && (s == stateBlocked || s == stateAborted)
 }
 
-// syncFailureEvidence issues the evidence fetch the first time the Overview
-// shows a card for a failing attempt, and again only when that attempt
-// changes — a retry that blocks again. It runs after every message, and an
+// syncFailureEvidence issues the evidence fetch the first time the
+// workspace shows a card for a failing attempt — the Overview's, or the one
+// pinned under every other tab (#1086) — and again only when that attempt
+// changes, a retry that blocks again. It runs after every message, and an
 // event that leaves the failing attempt where it was fetches nothing.
 func (t *taskView) syncFailureEvidence() tea.Cmd {
-	if t.tab != taskTabOverview || !t.showsFailureCard() {
+	if !t.showsFailureCard() {
 		return nil
 	}
 	c := t.failureCard()
@@ -353,9 +607,12 @@ type cardParts struct {
 	headline string
 	meaning  []string
 	evidence []string
-	status   []string
-	blame    []string
-	actions  []string
+	// diagnosis is what a chat concluded about this stop, or an earlier one
+	// at the same step for the same reason (#1087).
+	diagnosis []string
+	status    []string
+	blame     []string
+	actions   []string
 }
 
 // essential is the card that must fit whole before anything else is added:
@@ -364,13 +621,16 @@ func (p cardParts) essential() int { return 1 + len(p.blame) + len(p.actions) }
 
 // lines assembles the card in reading order from the sections the budget
 // kept.
-func (p cardParts) lines(meaning, evidence, status bool) []string {
+func (p cardParts) lines(meaning, evidence, diagnosis, status bool) []string {
 	out := []string{p.headline}
 	if meaning {
 		out = append(out, p.meaning...)
 	}
 	if evidence {
 		out = append(out, p.evidence...)
+	}
+	if diagnosis {
+		out = append(out, p.diagnosis...)
 	}
 	if status {
 		out = append(out, p.status...)
@@ -398,7 +658,7 @@ func (t *taskView) failureCardLines(width, budget int) []string {
 	c := t.failureCard()
 	actions := cardActions(c.reason, t.detail.task.AvailableActions)
 	if budget < 0 {
-		return t.cardParts(c, actions, width, math.MaxInt).lines(true, true, true)
+		return t.cardParts(c, actions, width, math.MaxInt).lines(true, true, true, true)
 	}
 	p := t.cardParts(c, actions, width, 1)
 	left := budget - p.essential()
@@ -410,7 +670,13 @@ func (t *taskView) failureCardLines(width, budget int) []string {
 	// least one line of it, or none of it.
 	evidence := false
 	if len(p.evidence) > 0 {
-		if n := left - 3; n >= 1 {
+		n := left - 3
+		// The diagnosis and the status keep their rows when the evidence
+		// can spare them and still show a few lines.
+		if s := len(p.diagnosis) + len(p.status); n-s >= 3 {
+			n -= s
+		}
+		if n >= 1 {
 			p = t.cardParts(c, actions, width, n)
 			evidence = len(p.evidence) <= left
 		}
@@ -418,8 +684,12 @@ func (t *taskView) failureCardLines(width, budget int) []string {
 	if evidence {
 		left -= len(p.evidence)
 	}
+	diagnosis := len(p.diagnosis) > 0 && len(p.diagnosis) <= left
+	if diagnosis {
+		left -= len(p.diagnosis)
+	}
 	status := len(p.status) <= left
-	return p.lines(meaning, evidence, status)
+	return p.lines(meaning, evidence, diagnosis, status)
 }
 
 // minCardRows is how many rows the full card needs at its floor.
@@ -468,12 +738,18 @@ func (t *taskView) cardParts(c failureCard, actions []cardAction, width, n int) 
 			p.meaning = wrapText(m, width, hanging("    "))
 		}
 	}
+	if c.repeat != "" {
+		p.meaning = append(p.meaning, ansi.Truncate("    "+styleWarn.Render(ic("↻ ")+c.repeat), max(width, 1), "…"))
+	}
 	// A fan-out's evidence is the lane it blames, drawn below.
 	if !c.aborted && !c.blamed {
 		p.evidence = append([]string{"", section("Evidence"), ""}, t.evidenceBody(c, width, n)...)
 	}
+	if !c.blamed {
+		p.diagnosis = t.diagnosisLines(c, width)
+	}
 	if c.status != "" {
-		p.status = []string{"", styleDim.Render(ansi.Truncate("  status  “"+c.status+"”", max(width, 1), "…"))}
+		p.status = []string{"", styleDim.Render(ansi.Truncate("  "+c.statusLabel()+"  “"+c.status+"”", max(width, 1), "…"))}
 	}
 	if c.blamed {
 		p.blame = append([]string{""}, c.laneBlameLines(width)...)
@@ -491,19 +767,13 @@ func (t *taskView) cardParts(c failureCard, actions []cardAction, width, n int) 
 }
 
 // evidenceBody is the evidence section's lines, at most n of them. A
-// transcript gives its last evidenceLines at most; the daemon's block_detail
-// is the whole of what a step-less block left, so it takes every row of the
-// budget and says how much it left out when even that is short (task 070
-// decision 2).
+// transcript gives the command that failed, how it exited and up to
+// evidenceLines of what it printed (#1086); the daemon's block_detail is the
+// whole of what a step-less block left, so it takes every row of the budget
+// and says how much it left out when even that is short (task 070 decision
+// 2).
 func (t *taskView) evidenceBody(c failureCard, width, n int) []string {
 	n = max(n, 1)
-	quote := func(lines []string) []string {
-		out := make([]string, len(lines))
-		for i, l := range lines {
-			out[i] = ansi.Truncate("    "+l, max(width, 1), "…")
-		}
-		return out
-	}
 	fallback := func() []string {
 		if c.detail != "" {
 			lines := wrapText(c.detail, width, hanging("    "))
@@ -519,18 +789,49 @@ func (t *taskView) evidenceBody(c failureCard, width, n int) []string {
 	if !c.wantsEvidence() {
 		return fallback()
 	}
-	ev := t.evidence
-	if ev.taskID != t.detail.taskID || ev.runID != c.run.ID || ev.fetching {
+	// The command and the exit sentence come first, each when there is a
+	// row for it beside at least one quoted line.
+	head := func(ev cardEvidence) []string {
+		var out []string
+		if ev.command != "" {
+			out = append(out, styleDim.Render(ansi.Truncate("    "+ev.command, max(width, 1), "…")))
+		}
+		if ev.exit != "" {
+			out = append(out, ansi.Truncate("    "+styleBad.Render(ev.exit), max(width, 1), "…"))
+		}
+		return out
+	}
+	ev := t.cardEvidence(c, evidenceLines)
+	switch {
+	case ev.loading:
 		return []string{styleDim.Render("    loading evidence…")}
-	}
-	if ev.err != nil {
+	case !ev.ok:
 		return fallback()
 	}
-	lines := selectEvidence(c.reason, ev.records, min(n, evidenceLines))
-	if len(lines) == 0 {
-		return fallback()
+	top := head(ev)
+	for len(top) > 0 && len(top)+min(len(ev.lines), 1) > n {
+		top = top[1:] // the command gives way before the exit sentence
 	}
-	return quote(lines)
+	ev = t.cardEvidence(c, min(n-len(top), evidenceLines))
+	return append(top, quoteEvidence(ev.lines, "    ", width)...)
+}
+
+// quoteEvidence draws evidence lines under indent, stderr behind a red bar
+// so it reads apart from stdout without colour's help being needed to read
+// the words.
+func quoteEvidence(lines []evidenceLine, indent string, width int) []string {
+	out := make([]string, 0, len(lines))
+	for _, l := range lines {
+		switch {
+		case l.gap:
+			out = append(out, styleDim.Render(indent+"⋯"))
+		case l.stderr:
+			out = append(out, ansi.Truncate(indent+styleBad.Render("▍")+l.text, max(width, 1), "…"))
+		default:
+			out = append(out, ansi.Truncate(indent+styleDim.Render("▏")+l.text, max(width, 1), "…"))
+		}
+	}
+	return out
 }
 
 // laneBlameLines are the card's copy of the fan-out attribution: which lane,

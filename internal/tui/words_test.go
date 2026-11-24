@@ -315,3 +315,31 @@ func TestRegistryCopyUsesTheGlossary(t *testing.T) {
 		t.Errorf("palette groups = %v, want the takeover group named screens", groups)
 	}
 }
+
+// #1071: help written for maintainers loses its spec and task references on
+// screen, and the TUI's own strings carry none.
+func TestPlainHelpDropsSpecReferences(t *testing.T) {
+	for in, want := range map[string]string{
+		"guard: render true to run this step (§7.7)":                                                            "guard: render true to run this step",
+		"handoff for a workflow only vincent handoff start runs; empty means an ordinary workflow (task 137.8)": "handoff for a workflow only vincent handoff start runs; empty means an ordinary workflow",
+		"declared task inputs": "declared task inputs",
+	} {
+		if got := plainHelp(in); got != want {
+			t.Errorf("plainHelp(%q) = %q, want %q", in, got, want)
+		}
+	}
+	for _, b := range bindings {
+		if specRef.MatchString(b.label) {
+			t.Errorf("help row %q carries a spec or task reference", b.label)
+		}
+	}
+}
+
+// #1071: a check run's state reads as words.
+func TestCheckStateWords(t *testing.T) {
+	for in, want := range map[string]string{"in_progress": "running", "timed_out": "timed out", "success": "success"} {
+		if got := checkStateWords(in); got != want {
+			t.Errorf("checkStateWords(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

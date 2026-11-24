@@ -47,19 +47,51 @@ func needsAttention(state string) bool {
 // needs a human, or a fan-out parent one of whose lanes does. The parent is
 // kept on its served rollup alone, so a daemon that serves no `children` on
 // list rows keeps it out rather than guessing.
+//
+// Since #1067 it is also what puts a task in the board's Needs you column,
+// what `!` counts and lands on, and what leads a parent's card with the
+// lanes' needs: one predicate, so a parent is never kept under `H` with
+// nothing on it saying why.
 func keepsAttention(t apiclient.Task) bool {
-	if needsAttention(t.State) {
-		return true
+	return needsAttention(t.State) || lanesNeedYou(t).any()
+}
+
+// laneNeeds is how many of a fan-out parent's lanes wait on a human, by what
+// they wait for.
+type laneNeeds struct{ blocked, question, gate int }
+
+func (n laneNeeds) any() bool { return n.blocked+n.question+n.gate > 0 }
+
+// lanesNeedYou reads a parked parent's served rollup. by_state and the id
+// lists come from the same walk; the larger is kept, as childrenBreakdown
+// does, so a daemon serving only one still reports what a human must act
+// on. Zero for every other task, and for a parent served without a rollup.
+func lanesNeedYou(t apiclient.Task) laneNeeds {
+	r := t.Children
+	if t.State != stateAwaitingChildren || r == nil {
+		return laneNeeds{}
 	}
-	if t.State != stateAwaitingChildren || t.Children == nil {
-		return false
+	return laneNeeds{
+		blocked:  max(r.ByState[stateBlocked], len(r.Blocked)),
+		question: r.ByState[stateAwaitingInput],
+		gate:     max(r.ByState[stateAwaitingGate], len(r.AwaitingGate)),
 	}
-	for _, st := range []string{stateBlocked, stateAwaitingInput, stateAwaitingGate} {
-		if t.Children.ByState[st] > 0 {
-			return true
-		}
+}
+
+// text is what the lanes need, worst first and short enough for a card:
+// `! 1 lane blocked · 2 lanes to approve`.
+func (n laneNeeds) text() string {
+	var parts []string
+	if n.blocked > 0 {
+		parts = append(parts, plural(n.blocked, "lane", "lanes")+" blocked")
 	}
-	return false
+	if n.question > 0 {
+		parts = append(parts, plural(n.question, "lane asks you", "lanes ask you"))
+	}
+	if n.gate > 0 {
+		parts = append(parts, plural(n.gate, "lane", "lanes")+" to approve")
+	}
+	return attentionBadge + " " + strings.Join(parts, " · ")
 }
 
 // attentionTasks keeps the tasks keepsAttention does, in order.
@@ -165,7 +197,12 @@ func filterTasks(tasks []apiclient.Task, query string) []apiclient.Task {
 	}
 	out := make([]apiclient.Task, 0, len(tasks))
 	for _, t := range tasks {
-		fields := []string{strconv.FormatInt(t.ID, 10), t.Title, t.State, stateWords(t.State)}
+		// What the card prints is what can be typed (#1075): its workflow,
+		// the step it is on, its branch and its pull request's number.
+		fields := []string{strconv.FormatInt(t.ID, 10), t.Title, t.State, stateWords(t.State), t.Workflow, t.StepName, t.BranchName}
+		if p := t.GitHubPull; p != nil {
+			fields = append(fields, "#"+strconv.Itoa(p.Number), "pr "+strconv.Itoa(p.Number))
+		}
 		if t.Issue != nil {
 			fields = append(fields, "#"+strconv.FormatInt(t.Issue.ID, 10), t.Issue.Title, issueRef(t.Issue))
 		}
@@ -200,7 +237,7 @@ func countRunning(tasks []apiclient.Task) int {
 func countAttention(tasks []apiclient.Task) int {
 	n := 0
 	for _, t := range tasks {
-		if needsAttention(t.State) {
+		if keepsAttention(t) {
 			n++
 		}
 	}
@@ -505,3 +542,38 @@ func withStepPips(s string, t apiclient.Task, width int) string {
 	}
 	return s
 }
+
+// boardSorts are the orders `z` cycles the task board through (#1075): the
+// band order the board was built on, then newest, oldest and by title.
+var boardSorts = []string{"", "newest", "oldest", "title"}
+
+// sortBoardTasks orders tasks for display: the band sort, then the board's
+// chosen order on top of it. The band sort stays the tie-breaker, so equal
+// keys keep the order the board has always read in.
+func sortBoardTasks(tasks []apiclient.Task, order string) {
+	sortTasks(tasks)
+	switch order {
+	case "newest":
+		sort.SliceStable(tasks, func(i, j int) bool { return tasks[i].CreatedAt.After(tasks[j].CreatedAt) })
+	case "oldest":
+		sort.SliceStable(tasks, func(i, j int) bool { return tasks[i].CreatedAt.Before(tasks[j].CreatedAt) })
+	case "title":
+		sort.SliceStable(tasks, func(i, j int) bool {
+			return strings.ToLower(tasks[i].Title) < strings.ToLower(tasks[j].Title)
+		})
+	}
+}
+
+// nextSort is the order after cur in orders, wrapping.
+func nextSort(orders []string, cur string) string {
+	for i, o := range orders {
+		if o == cur {
+			return orders[(i+1)%len(orders)]
+		}
+	}
+	return orders[0]
+}
+
+// boardSortKey cycles a board's order (#1075). `z` because the letters that
+// say "sort" are taken on the surfaces that share a board's keys.
+const boardSortKey = "z"

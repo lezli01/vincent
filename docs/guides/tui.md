@@ -28,8 +28,11 @@ vincent          # opens the TUI
 ## The first run
 
 The very first launch shows a one-time notice: **agents run full-auto by
-default and can execute arbitrary commands as you**. Acknowledge it once and it
-does not return. The acknowledgment is stored in `{data_dir}/tui.json`.
+default and can execute arbitrary commands as you**. Acknowledge it once with
+`enter` and it does not come back on its own — `esc` does not dismiss it. The
+acknowledgment is stored in `{data_dir}/tui.json`. To read it again, run
+**show the full-auto notice again** from the [command
+palette](#the-command-palette); a reopened notice closes on `enter` or `esc`.
 
 It is worth reading rather than dismissing — [Security model](../security-model.md)
 is the longer version.
@@ -153,8 +156,9 @@ reasons used below are defined in the [Glossary](#glossary).
 The board answers it at a glance. Each row's state cell and `STATUS` column
 say what the task is doing; a fan-out parent names its lanes by state, as in
 `waiting on lanes (×1 !1 ●1 ✓2)` — see [The board](#the-board) for every
-glyph. `enter` opens the task on its **Overview**, which for a running task
-names the current step and attempt. The breadcrumb in the header says where
+glyph. `enter` opens the task — on **Output** in a wide terminal, where the
+rail beside it carries the task's facts, and on its **Overview** in a narrow
+one, which for a running task names the current step and attempt. The breadcrumb in the header says where
 you are, and the dim line under it follows what the running attempt is doing
 right now, whichever tab you are on.
 
@@ -214,7 +218,8 @@ and pull request](../assets/tui-task-overview-done.png)
 
 The Tasks tab is a board of four columns, so what needs you is always first:
 
-- **Needs you** — blocked, waiting for an answer, or waiting for approval;
+- **Needs you** — blocked, waiting for an answer, or waiting for approval, and a
+  fan-out parent one of whose lanes is;
 - **Running** — working now, or waiting on its fan-out lanes;
 - **Queued** — waiting for a slot, held until a limit resets, or paused;
 - **Finished** — done or cancelled.
@@ -224,15 +229,20 @@ The Tasks tab is a board of four columns, so what needs you is always first:
 Each card shows the task's id, workflow and age, two lines of title, one dot per
 workflow step with the step it has reached, a linked pull request as `⇡#123`, and
 one status line that says what is happening, such as `! needs your approval` or
-`⑂ 2 of 3 lanes done`. The selected card has a thick border.
+`⑂ 2 of 3 lanes done`. A parent whose lane needs you leads with what the lanes
+need, in the attention colour, and names the key that hangs them under the card:
+`! 1 lane blocked (L) · 2 of 4 done`. The selected card has a thick border. A
+column with more cards than fit counts the rest on its top edge — `▲2 ▼5`.
 
 | Key | Does |
 |---|---|
-| `↑` `↓` | Move through a column |
+| `↑` `↓` or `k` `j` | Move through a column |
+| `pgup` / `pgdown` | Move a column's screenful |
+| `home`/`g`, `end`/`G` | The column's first or last card |
 | `←` `→` | Cross to the next column that has a card |
 | `pgup` `pgdown` `home` `end` | Move further within the column |
 | `enter` | Open the task |
-| `/` | Filter by id, title, state or issue |
+| `/` | Filter by id, title, state, issue, workflow, step, branch or pull request number |
 | `H` | Show only what needs you |
 
 The filter box's top edge counts the tasks, says how many are running against the
@@ -304,6 +314,12 @@ or on the list behind a workspace or issue form. `n` or `esc` keeps the draft
 and the current project; nothing is switched or saved. A form seeded from a
 pull request, an issue or a chat counts as a draft before you type, and so
 does a workflow fork prompt, which is seeded from the old project's list.
+
+Leaving the new-task form any other way asks too, once you have typed into
+it: `q` asks `discard the task draft and quit? y/n`, and going to another
+screen — a tab, the palette, `!` — asks `discard the task draft and leave?
+y/n`. `ctrl+c` never asks. A form whose create is on its way asks nothing:
+the task it lands on is where it was going.
 A chat's unsent message does not ask: it is the chat's [draft](#drafts-stash-and-prompt-history),
 which the switch saves.
 
@@ -334,9 +350,17 @@ opens on it under its new name.
 
 With no project registered, every project screen — the board, the archived
 boards, chats, issues, pull requests, workflows, triggers and the new-task
-form — says so and points at `@`, whose last row opens the overview where
-you add one. Workflows and triggers say it above what they still list: the
-global and built-in workflows, and the triggers of removed projects. The first project you add is selected.
+form — says so and points at `@`, which then opens the project overview with
+its add form up rather than an empty picker. Workflows and triggers say it
+above what they still list: the global and built-in workflows, and the
+triggers of removed projects. The first project you add is selected, and the
+overview says so and names the next key: `enter` goes to its board, where `n`
+starts its first task.
+
+Every other empty list says why it is empty and which key changes that: a
+filter that matches nothing names `esc`, the chats board's ended scope names
+`s`, the issues board names `n` and — on a project with an issue source —
+`S`, and the pull request list names `P`.
 
 While the daemon is unreachable `@` still opens, on the last list it had,
 marked `offline — list may be stale`. A switch made then takes effect when
@@ -356,7 +380,8 @@ are queued and have finished.
 | `f` | Fold the issue group under the cursor, or open the one the cursor rests on |
 | `C` | Fold every group |
 | `O` | Open every group |
-| `L` | Show or hide a fan-out's lanes under its card — on a lane, its own lanes, or back to its parent |
+| `z` | Cycle the order: by state (the board's own), newest, oldest, title |
+| `L` | Show or hide a fan-out's lanes under its card — on a lane, its own lanes, or back to its parent. Hinted only on a fan-out; `loading lanes…` shows while they arrive, and on any other card it says so |
 
 ### Fan-out lanes on the board
 
@@ -389,15 +414,16 @@ times with a confirmation between each. Select the tasks instead:
 |---|---|
 | `space` | Select the task under the cursor (again deselects) |
 | `V` | Select every task the filter is showing — or clear that selection |
+| `ctrl+y` | Copy the selected task's id, branch, worktree path or pull request URL |
 | `esc` | Clear the selection |
 
-While anything is selected, a `✓` appears beside those rows, the panel title
-counts them (`Tasks · no issue — 5 selected` on api's board, where the
-title already names its one group), and the **action keys act on the whole
-selection**:
+While anything is selected, a `✔` marks each selected card, the board's
+header line counts them (`5 selected`), and the **action keys act on the
+whole selection**:
 
-![Every row of api's board selected, the panel title reading "Tasks · no
-issue — 5 selected", and the action bar offering each action with the number of selected tasks it can move](../assets/tui-multi-select.png)
+![Every card of api's board selected, each marked with a ✔, the header
+reading "5 selected", and the action bar offering each action with the number
+of selected tasks it can move](../assets/tui-multi-select.png)
 
 The count beside each key is how many of the selected tasks that action can
 actually move — an action shows up when *some* selected task accepts it, and the
@@ -407,7 +433,7 @@ one still running offers `A archive (4)`, and the running one stays where it is.
 The rest of the behavior follows from what a selection is:
 
 - **It is a set of tasks, not of rows.** Filtering, regrouping and refreshing do
-  not change it — that is why the count is in the title, so a selected task the
+  not change it — that is why the count is in the header, so a selected task the
   filter is hiding still says it is coming along.
 - **One confirmation for the batch.** `A` asks once, about all of them. Behind
   the scenes vincent sends one ordinary action per task, so the daemon sees
@@ -432,12 +458,17 @@ The rest of the behavior follows from what a selection is:
 
 From 130 columns wide, a task opens as one workspace: its name, state, reason
 and linked issue across the top, its steps on the left, and the tabs beside
-them. When a task is blocked, the reason and the keys that can restart it are
-pinned under the tab. On a narrower terminal the steps are a tab.
+them. When a task is blocked, the reason, a short form of the failure card's
+evidence — how the attempt exited and up to three lines of what it printed —
+and the keys that can restart it are pinned under the tab. A task waiting at a
+gate pins the gate's instructions and `a approve`, `x reject` and `s skip`; one
+asking a question pins the question and `enter answer`. On a narrower terminal
+the steps are a tab.
 
 The **steps rail** gives each step one row — its state glyph (`✓` done, `●`
-running, `✗` failed, `!` waiting on you, `○` not reached), its name and how long
-it took — joined by a line. A dim row under a step says something only when
+running, `✗` failed, `!` waiting on you, `○` not reached, `↷` failed but
+allowed to, so the task went on), its name and how long it took — joined by a
+line. A dim row under a step says something only when
 there is something to say: why it failed, how many attempts it took, the agent
 and what it cost. The step you have selected lists its attempts when it has
 more than one; a parallel group lists its members, a loop its passes as a row
@@ -476,14 +507,18 @@ workspace has already loaded:
   instead. A fan-out parent waiting on its lanes lists the
   ones that are blocked or waiting on you under *Lanes that need you*, `l`
   opens the first, and its link is its steps — the parent's own transcript is
-  empty.
+  empty. Under *Waiting on* it names the first few lanes still at work. Every
+  lane row says the step and attempt the lane is on, and marks a step failing
+  attempt after attempt for the same reason: `attempt 6 · attempts 2–5 each
+  failed: check failed`.
 - **Blocked, waiting for an answer or at a gate, or aborted** — what it needs:
   the reason, in words and as its code, the question or the gate's
   instructions, and every action the daemon offers with its key and a line on
   what it does. `enter output of attempt N` jumps to the attempt it stopped
   on, and `enter` there again shows what it was given.
-- **Done or archived** — how it ended: an **outcome card** (below) and
-  `enter diff`.
+- **Done or archived** — how it ended: an **outcome card** (below), what you
+  can do next — `F` follow up, `P` open a pull request when one can be opened,
+  `A` archive, `T` chat — and `enter diff`.
 
 A running task pairs a **Now** card — the current step and attempt, the latest
 status, the last line it printed — with **The task**, the description and
@@ -498,16 +533,27 @@ line says what stopped: `✗ Step 3 verify · attempt 2 · check failed
 check_failed` — the step, the loop iteration and item or the lane when there
 is one, the attempt, and the reason in words with its code beside it. `✗` is a
 failure, `⚠` a fan-out one of its lanes stopped, `■` an aborted task, so the
-card reads without colour. Below it:
+card reads without colour. Under the reason's meaning, a step that has failed
+the same way before says so: `↻ same failure as attempts 2–5`. Below it:
 
-- **Evidence** — the last few lines of the failing attempt's transcript,
-  fetched once when the card first shows that attempt. For a failed check they
-  are the check's own output, not the agent's last message. A block that no
+- **Evidence** — what the failing attempt's transcript says, fetched once
+  when the card first shows that attempt. It opens with the command that
+  failed (`$ go test ./...`, its first line and a count of the rest) and
+  which part failed and how: *the check exited 1*, or *the command printed
+  nothing and exited 1* when there is nothing to quote. Then up to twelve
+  lines of what it printed, fewer on a shorter screen, chosen rather than
+  taken from the end: lines that name a failure (`--- FAIL`, `error:`,
+  `fatal:`, `panic:`) and what is indented under them come first, then
+  stderr (marked with a red bar), then the last lines; a `⋯` row marks lines
+  left out between two quoted ones. For a failed check they are the check's
+  own output, not the agent's last message. `enter` opens that attempt's
+  output at the line it failed on, under the same `$` line. A block that no
   step ran into — a dirty worktree, a missing container runtime — shows the
   daemon's explanation instead; when there is none, the card says the details
   are in the daemon log (`:` then *daemon*).
-- The step's own **status** message, quoted — what it last said, which is not
-  the reason it stopped.
+- The step's **last status before the failure**, quoted — what it last said,
+  which is not the reason it stopped and may name a stage it had already
+  passed.
 - For a fan-out, **which lane** stopped it, the lane's task and what the lane
   is stuck on; `l` opens that lane.
 - **What you can do** — the actions that answer the reason first (retry, with
@@ -530,6 +576,10 @@ headed *incomplete — what was delivered*. On a short terminal the outcome card
 shrinks first, and on an aborted task it goes before the failure card does.
 The card shows:
 
+- **Ended early**, when a `condition` step ended the task: which step and its
+  guard, the command whose exit the condition read (named as not a failure),
+  and the last status the work reported before it — `■ ended early at step 3
+  any-candidates — its condition was false`.
 - **Result** — the summary the task's last successful agent attempt reported
   (a follow-up round counts), rendered as Markdown and given every row the
   Overview has free.
@@ -623,10 +673,10 @@ instead](../assets/tui-create-pr.png)
 | `e` | Write that row in `$EDITOR` instead |
 | `ctrl+s` | Push the branch and open the pull request |
 | `ctrl+o` | Open GitHub's own new-pull-request page with this prefill instead |
-| `esc` | Close without sending anything — the draft is discarded |
+| `esc` | Close without sending anything — once you have typed into it, it asks `discard this draft? y/n` first |
 
 Inside a field `enter` is a newline (a pull-request body usually wants more than
-one line), `ctrl+s` keeps the text, and `esc` discards it. A title is required:
+one line), `ctrl+s` or `esc` keeps the text. A title is required:
 `ctrl+s` without one says so rather than sending something GitHub cannot use.
 
 The popup's footer — the compare URL, an error, the status and the key line —
@@ -851,6 +901,7 @@ output. It is the sentence that decides whether to open the transcript.
 | `d` | Open Diff from any tab; on Diff, switch between the whole task's diff and the selected attempt's |
 | `l` / `U` | Open a fan-out lane's workspace / this lane's parent task, from any tab — see [Walking a fan-out](#walking-a-fan-out) |
 | `N` | Jump to the task's next failure, from any tab — see [Jumping between failures](#jumping-between-failures) |
+| `alt+n` / `alt+shift+n` | Open the next or previous task in the board's order — the cards column by column, filters and sort included — wrapping, from any tab |
 | `enter` | On Overview, the frame's link — the output of the attempt it is about, or a finished task's diff — or, with the cursor on a Linked row, that row |
 | `↑`/`↓` | On Overview, move along the Linked card's issue, pull request and chat rows |
 | `l` | On Overview, open the fan-out lane the failure card blames — or, on a parent waiting on its lanes, the first lane listed under *Lanes that need you* |
@@ -873,9 +924,10 @@ output. It is the sentence that decides whether to open the transcript.
 | `←`/`→` or `h`/`l` | On Output, select which attempt's output to show |
 | `f` or `G` | Follow the live output again |
 | `g` or `home` | On Output, jump to the top (follow stops) |
+| `/` | On Output or Diff, search: type, `enter` lands on the first match and draws it reversed; `n` / `N` then walk the matches, wrapping, `/` searches again and `esc` ends the search — while it runs `n` and `N` are the search's, and they mean new task and next failure again after |
 | `v` | More or less detail: quiet → compact → normal → verbose (tool lines, then reasoning, the run's own metadata, then unrecognized lines) |
 | `ctrl+o` | Show the assistant's original Markdown instead of the rendered view |
-| `ctrl+y` | Copy an assistant message, its plain text, or one of its code blocks |
+| `ctrl+y` | Copy the task's id, branch, worktree path or pull request URL — from any tab — and, on Output, the attempt's whole output as plain text, an assistant message, its plain text, or one of its code blocks; on Diff, the selected hunk (the one `]`/`[` stand on) or the file's whole diff |
 | `ctrl+l` | List the links in the assistant's messages — open one in a browser or copy it |
 | `e` | Open this attempt's **whole** transcript in `$EDITOR` |
 | `↑`/`↓` | Select an attempt or Task Details section, scroll Output, or move between diff files — according to the active tab |
@@ -929,7 +981,7 @@ read and copy, and it opens only when you pick it in the
 [link picker](#seeing-the-source-and-taking-it-away). If your terminal supports
 OSC 8, set
 [`tui.hyperlinks: true`](../reference/configuration.md#tuihyperlinks) (or flip
-it in the daemon view's config editor) and the label, its `[1]` and the
+it on the [Settings](#settings) screen) and the label, its `[1]` and the
 printed destination become clickable — but only for an `http` or `https` link
 that passes vincent's sanitizer. The reference list stays either way.
 
@@ -1230,7 +1282,10 @@ line names what the diff is of, and for the whole task what it is against.
 | `O` | Expand every file |
 | `C` | Collapse every file — which is how the tab opens |
 | `pgup`/`pgdn`, `f`/`b`, `u` | Scroll by lines inside what is expanded |
+| `alt+↑`/`alt+↓` | Scroll one line, whatever file the cursor is on |
 | `shift+←`/`shift+→` | Pan sideways to the end of a line wider than the pane — diff lines are never wrapped |
+| `/` | Search the diff: every file opens, `n`/`N` walk the matches, `esc` ends the search |
+| `ctrl+r` | Read the diff again |
 | `d` | Switch between the whole task's diff and the selected attempt's |
 | `]` / `[` | Move to the next / previous hunk, opening the file it is in. On this tab they are not the tab keys: `tab`/`shift+tab` still switch tabs |
 
@@ -1247,7 +1302,8 @@ behind it moves nothing.
 
 The counts beside each path are the added and removed lines inside that file's
 hunks, and the line above the list totals them and says when the diff was
-read — `as of 14:02:31`; reopening the tab reads it again. A **binary** file says so
+read — `as of 14:02:31`; `ctrl+r`, reopening the tab, and every step the task
+finishes read it again. A **binary** file says so
 instead of showing `+0 -0`, and a rename reads `old → new`.
 
 Folds are remembered **per file path**, so leaving and re-entering the tab — a
@@ -1295,7 +1351,9 @@ parent, so the parent's job is to be the way in.
 Lanes are kept off the board on purpose, because a sixty-four-lane tree would
 bury the work you actually asked for. The parent's card counts them instead, as
 in `⑂ 2 of 3 lanes done`, and its Overview names the lanes that need you. Lanes
-stay out of the board's counts and out of the `!` attention badge.
+stay out of the board's counts. A parent with a lane that needs you is counted
+once in the `!` attention badge, sits in **Needs you**, and is where `!` lands;
+its Overview opens the lane with `l`.
 
 ![A fan-out parent's Overview: waiting on one of its three lanes, with the
 handlers lane named as the one awaiting approval and `l` to open
@@ -1358,27 +1416,35 @@ tab has them.
 Below the panes, the action bar shows **exactly the actions valid in the
 current state** — the daemon computes that list, the TUI renders it. With tasks
 selected on the board it acts on all of them; see
-[Acting on several tasks at once](#acting-on-several-tasks-at-once).
+[Acting on several tasks at once](#acting-on-several-tasks-at-once). An action
+key the task does not offer does nothing and says why on the same line:
+`retry: not available while running`, or that the cursor is on a group, or
+that a chat holds the task.
 
 | Key | Action | Valid from |
 |---|---|---|
 | `a` | Approve the gate | `awaiting_gate` |
-| `x` | Reject the gate | `awaiting_gate` |
+| `x` | Reject the gate (asks first — the task is blocked there) | `awaiting_gate` |
 | `r` | Retry the blocked step, or cascade the retry to every blocked lane under a parked fan-out parent | `blocked`, `awaiting_children` |
 | `R` | Repair with an agent — a one-off run in this task's worktree | `blocked` |
 | `E` | Edit the step's prompt or command in `$EDITOR`, then retry | `blocked` |
-| `s` | Skip the current step | `blocked`, `awaiting_gate` |
+| `s` | Skip the current step (asks first — the task goes on without it) | `blocked`, `awaiting_gate` |
 | `p` | Pause / resume | `queued`, `running` / `paused` |
 | `c` | Cancel the task (asks first — a running step is killed) | most states |
 | `A` | Archive (asks first — the worktree is removed) | `done`, `aborted` |
 | `F` | Follow up — run more work in this finished task's worktree | `done`, `aborted` |
 | `T` | Chat with an agent in this task's worktree, or reopen the chat already open on it | `blocked`, `awaiting_gate`, `done`, `aborted` |
+| `Q` | [Ask why it stopped](#asking-why-a-task-stopped--q): the same chat, opened with the failure card as its first message | `blocked`, `aborted` |
 | `alt+t` | As `T`, but first asks for the agent, model and effort, and an optional first message | `blocked`, `awaiting_gate`, `done`, `aborted` |
 
 `E` opens the failing step's prompt or command in your editor, and the override
 applies **to this task's snapshot only** — the workflow file is untouched. On a
 `blocked` task the footer lists `E edit+retry` and `R repair` right after
-`r retry`, ahead of skip, cancel and archive.
+`r retry`, ahead of skip, cancel and archive. `E` is listed only where the
+task's steps are loaded — the task workspace, or the board's detail panes when
+they show the selected task — and only on a step with a prompt or command to
+edit, not on a gate or a fan-out parent. Pressed anywhere else it says why it
+did nothing.
 
 `R` and `F` open a form instead of acting straight away; they are the two task
 actions that need something written, which is also why neither is offered for a
@@ -1406,7 +1472,7 @@ defaults](../assets/tui-repair.png)
 | `t` | In an open agent / model / effort list, type a value it does not offer |
 | `ctrl+s` | Start the repair |
 | `ctrl+t` | Switch between the form and this task's details, without leaving the popup |
-| `esc` | Close without repairing — the draft is discarded |
+| `esc` | Close without repairing — once you have typed into it, it asks `discard this draft? y/n` first |
 
 The prompt is the only required row, and it is prose: write what you want done,
 not a template. The daemon puts the context around it — the task, the blocked
@@ -1415,7 +1481,7 @@ step's rendered prompt or command, the failure reason and exit codes, the last
 the agent can read further itself.
 
 Inside the prompt field `enter` is a newline (a repair prompt usually wants
-more than one line), `ctrl+s` keeps the text, and `esc` discards it. Agent,
+more than one line), `ctrl+s` or `esc` keeps the text. Agent,
 model and effort are optional; set they apply to this run only and win over the
 task's overrides and the workflow's defaults.
 
@@ -1450,7 +1516,7 @@ start row reading when a slot is free](../assets/tui-follow-up.png)
 | `t` | In an open workflow / agent / model / effort list, type a value it does not offer |
 | `ctrl+s` | Start the follow-up |
 | `ctrl+t` | Switch between the form and this task's details, without leaving the popup |
-| `esc` | Close without running anything — the draft is discarded |
+| `esc` | Close without running anything — once you have typed into it, it asks `discard this draft? y/n` first |
 
 The top row picks what kind of run this is, and it decides what the row under it
 means:
@@ -1524,11 +1590,34 @@ later opens a new chat.
 A task that never got a worktree — blocked on `branch_exists`, say — has nothing
 to talk about in, and `T` says so on the action bar rather than making one.
 
+### Asking why a task stopped — `Q`
+
+Most chats opened on a stopped task ask one thing: what went wrong. On a
+`blocked` or `aborted` task `Q` asks it for you. It opens the same chat `T`
+does, with the default agent, and sends a first message that asks why the task
+stopped and what would fix it — diagnosis only, no changes yet — and hands the
+agent what the failure card shows: the step, attempt and reason, how it
+exited, the command that failed, the evidence lines and the last status. The
+failure card lists `Q` beside `T`, and the footer offers `Q ask why`. Like `T`,
+it starts an agent in the task's worktree, full-auto unless the project says
+otherwise, and the task is locked until the chat is closed.
+
+The chat is titled after what it asked about — `why step 3 verify stopped ·
+check_failed` — and that title is how the task finds it again. Once it is
+closed, the failure card shows the opening lines of its first answer under
+**Diagnosis**, with the chat's number. When the task stops again at the same
+step for the same reason, the card shows that answer under **Stopped here
+before**, so it can be read before asking again; and a new `Q` hands it to the
+new chat, which is told to check whether it still holds before looking
+elsewhere. Renaming the chat takes it out of this.
+
 ## Answering a question
 
 When a claude step asks something mid-run, the task enters `awaiting_input` and
 gets a badge on its row plus a footer hint. Press `enter` on the row to open the
-answer form.
+answer form. In the task's workspace `enter` opens it from every tab while the
+question is pending, so the tabs' own `enter` hints give way to `enter answer`
+until it is answered.
 
 ![The answer form over a task waiting on input: a single-choice question with
 one option picked, and a multi-select question below it with one box ticked,
@@ -1577,8 +1666,14 @@ from the details tab takes two.
 
 ## The takeover screens
 
-Reached from the command palette (`:`), except new task which keeps a direct
-key.
+Every screen is two keys away: `` ` `` opens the **screens menu**, which
+lists each one on a letter — `t` tasks, `i` issues, `c` chats, `/` chat
+search, `n` new task, `p` projects, `w` workflows, `d` daemon, `s` settings,
+`r` pull requests, `a` archived tasks, `A` archived chats, `T` triggers — and
+the letter goes there; `↑`/`↓` and `enter` work too, and `esc` closes it. The
+header's right edge names the key (`` ` screens ``) until a narrow terminal
+needs the room. The command palette (`:`) lists the same screens among
+everything else, and new task keeps its direct key.
 
 ### New task — `n`
 
@@ -1754,8 +1849,10 @@ says not to wait, it starts the agent and blocks on the stop instead.
 The override pickers are fed by live adapter data, tagged with where each option
 came from, and always accept free text: `t` inside an open list types a value
 the catalog does not offer, which is how you name a model that shipped this
-morning. They are windowed and filterable — `/` narrows the list, which is what
-makes cursor's ~180-model catalog usable. Each
+morning. They are windowed and filterable — typing narrows the list as you
+type (`/` does too), which is what makes cursor's ~180-model catalog usable;
+`j`, `k`, `t` and `space` keep their meaning, and `esc` clears the narrowing
+before it closes the list. Each
 resolved field shows **which level won** (step, task, workflow, adapter), so the
 form tells you what will actually run rather than what you typed.
 
@@ -1817,7 +1914,7 @@ And inside the add or edit form, whose keys the footer shows while it is open:
 | `↑` / `↓` | Move between the fields (`tab` too) |
 | `enter` | Edit the field, or open its list |
 | `ctrl+s` | Save the project |
-| `esc` | Close the form without saving |
+| `esc` | Close the form without saving — once you have changed something, it asks `discard these changes? y/n` first |
 
 While a field is being typed into, or the workflow list is open, the keys go
 to it and the footer says so: `enter` finishes the field (or picks the
@@ -1861,7 +1958,8 @@ the screen with no keypress.
 
 | Key | Does |
 |---|---|
-| `enter` | Open the workspace of the task that claims this pull request |
+| `enter` | Open the workspace of the task that claims this pull request; on one no task claims, it names `a` and `l` instead |
+| wheel, click | Move the selection, and select the row under the pointer — in the narrow table as in the wide cards |
 | `o` | Open the selected pull request in a browser |
 | `a` | Create a task from this pull request — it runs on the pull request's head branch, and the form is editable first |
 | `l` | Link it to a task in the same project |
@@ -1952,6 +2050,12 @@ the project has a GitHub integration or a Jira binding: issues are vincent's own
 project swaps the list, and the header reads "loading ‹project›…" until the
 new one arrives.
 
+For a project with an issue source, the search box's edge leads with its
+health: where issues come from and when they last arrived — `⇅ octo/web ·
+synced 5m ago` — or, in red, why the import is not working (`the credential
+was rejected`, `rate limited until 14:20`), and any write-back that failed,
+conflicted or is still pending.
+
 The lanes are columns, left to right:
 
 - **Open** — no task is working on the issue and none has finished: it has no
@@ -2013,10 +2117,11 @@ line break or tab in one reads as a space, and terminal escape sequences are
 dropped rather than sent to your terminal. vincent's stored title is not
 changed.
 
-A list taller than the screen shows `▲ n more` above and `▼ n more` below,
-counting the lines out of sight that are not blank — the totals line, lane
-headers and `none` placeholders as well as issues, the way the issue detail
-counts its page.
+A column taller than the screen says `▲ n more` or `▼ n more` at its foot,
+counting the cards scrolled out of sight above and below; a column with no
+cards says `no issues`, or `none match` under a filter. When the columns are
+too many for the width, `‹` and `›` beside the edge titles say more lie that
+way.
 
 Any change to an issue, or to a task or a chat
 of an issue on the screen, re-lists it with no keypress, and the selection
@@ -2034,14 +2139,15 @@ completed](../assets/tui-issues.png)
 | `enter` | Open the selected issue |
 | `o` | Open an imported issue's page in a browser — a local issue has none, and says so; the footer offers `o` only on an imported issue |
 | `s` | Show or hide the done lane |
+| `z` | Cycle the order within the lanes: the daemon's, newest, priority, title |
+| `ctrl+y` | Copy the selected issue's id, title, source reference or URL |
 | `R` | Re-read the issues |
-| `S` | Sync this project's issues from its issue source now — what `vincent issue sync` does, for GitHub and Jira alike; offered once the project's sync status has loaded and names a sync to wake, never on a project with no issue source or pinned to `github` off github.com |
-| `↑`/`↓` | Move the selection |
-| `pgup`/`pgdown` | Move the selection a screenful |
-| `home`/`g`, `end`/`G` | Select the first or the last row |
-| `←`/`→` | Fold or unfold the lane section you are in |
-| `C`/`O` | Fold or unfold every lane section |
-| `/` | Filter by id, title, label or kind |
+| `S` | Sync this project's issues from its issue source now — what `vincent issue sync` does, for GitHub and Jira alike; offered once the project's sync status has loaded and names a sync to wake, never on a project with no issue source or pinned to `github` off github.com. The note says how the pass ended once a later listing shows it — `synced from octo/web`, or why it did not finish |
+| `↑`/`↓` or `k`/`j` | Move through a column |
+| `pgup`/`pgdown` | Move a column's screenful |
+| `home`/`g`, `end`/`G` | The column's first or last card |
+| `←`/`→` | Cross to the next column that has a card |
+| `/` | Filter by id, title, label, kind, priority, author or the source's reference (`MOB-7`, `octo/web#142`) |
 | `n` | File a new issue in this project |
 | `a` | Create a task from the selected issue — the form is prefilled from it and editable first, and offers a separate worktree once the issue has a main branch |
 | `i` | Edit the selected issue in the issue form |
@@ -2159,7 +2265,7 @@ and the remote state](../assets/tui-issue-jira.png)
 | `o` | Open an imported issue's page in a browser |
 | `ctrl+o` | Show the description's and comments' original Markdown instead of the rendered view |
 | `ctrl+l` | List the links in the description and comments, and the source page — open one in a browser or copy it |
-| `ctrl+y` | Copy the title, the description, a comment or the source URL |
+| `ctrl+y` | Copy the id, the title, the source reference, the description, a comment or the URL |
 | `R` | Re-read the issue |
 | `↑`/`↓` | Scroll a line — while a selectable row is on screen, move the selection among the rows on screen first |
 | `pgup`/`pgdown`, `space` | Scroll a page |
@@ -2175,6 +2281,7 @@ and the remote state](../assets/tui-issue-jira.png)
 | `.` | Mark the issue ready when it is idle in progress, or not ready when it is pending hand-off |
 | `,` | Return the issue from its handoff — asks `y`/`n` first |
 | `T` | [Chat on the issue](#a-chat-on-the-issue--t), in its main worktree — or reopen the chat already holding it |
+| `alt+n` / `alt+shift+n` | Open the next or previous issue in the issues board's order, wrapping |
 | `alt+t` | As `T`, choosing the chat's agent, model and effort — and an optional first message — first |
 
 The page scrolls first: selecting a task never jumps it away from the
@@ -2256,7 +2363,8 @@ this task's issue" row opens the issue; `esc` there comes back to the task.
 `n` and `i` open the **issue form** over the screen you are on: the project
 (only when filing a new one, and read-only — it is the selected project, and
 switching project re-aims the form), title, description, labels, kind and
-priority, then save. `enter` edits a field or opens its list; `e` on the description
+priority, then save. A new issue opens typing into its title; `enter` or `esc`
+leaves the field. `enter` edits a field or opens its list; `e` on the description
 hands it to `$EDITOR`. The labels list offers the project's labels and ticks
 the ones set; `t` in it types a new one, and `t` in the kind list types a kind
 it does not suggest. Priority is `none`, `urgent`, `high`, `medium` or `low`.
@@ -2397,10 +2505,11 @@ Inside the form:
 | Key | Does |
 |---|---|
 | `↑` / `↓` | Move between rows |
-| `enter` | Edit the row, cycle its values, or descend into a nested body |
+| `enter` | Edit the row, open its values, or descend into a nested body |
 | `t` | In an open list, type a value it does not offer |
 | `a` | Add a step, lane or declared field after the one under the cursor |
-| `d` | Remove the step, lane or declared field under the cursor — asks first |
+| `d` | Remove the step, lane or declared field under the cursor — asks first, and only `y` removes |
+| `u` | Undo the last write: put back the value it replaced |
 | `K` / `J` | Move it up or down. Capitals: `k` and `j` still move the cursor |
 | `ctrl+s` | Save, in the multi-line pane and the key/value sub-form below — the two places `enter` does something else |
 | `R` | Re-read the file — the reload a refused save offers |
@@ -2410,7 +2519,8 @@ There is no save key for a row, because there is nothing to save: committing a
 row with `enter` **is** the write, and so is answering `a`, `d` or `K`/`J`. Each
 one becomes a single edit operation carrying the version the last read handed
 back, and a value the daemon refuses stays on screen beside its error rather
-than being reverted under you.
+than being reverted under you. After a write the form says what the row was and
+that `u` puts it back; the undo is itself a write, and is not undoable.
 
 `a` on a list of steps asks which type first, offering only the types that are
 legal where the cursor is, and writes a skeleton with that type's required
@@ -2424,7 +2534,8 @@ Some rows open something bigger than a text field:
 | `prompt:`, `run:`, `instructions:` | A full-pane multi-line editor. `enter` inserts a newline, `ctrl+s` saves it back as a `\|` block scalar, `esc` abandons it. Opening one and closing it again writes nothing |
 | `agent:`, `model:`, `effort:` | The same filterable picker the new-task form uses, listing the agents the daemon detected and the selected agent's own catalog |
 | `env:`, a lane's `fields:` | A key/value sub-form: `enter` edits or adds a key, `d` drops one, `ctrl+s` writes the mapping |
-| An enum, a boolean | Nothing — `enter` cycles it in place |
+| An enum | Its members as a list, `(unset)` too when the field is optional — the pick is the one write |
+| A boolean | Nothing — `enter` flips it in place |
 
 A whole-number row and a duration row are checked before the write, so
 `timeout: 2 minutes` is refused on the row that typed it rather than after a
@@ -2765,7 +2876,8 @@ something you are expected to walk into.
 
 The draft owns the keyboard while it is open: every row, and every open list, so
 no keystroke leaks out to the global keys. `esc` closes an open list and leaves
-the draft alone; a second press discards the draft and returns you to the board.
+the draft alone; a second press asks `discard this draft? y/n` once you have
+typed into it, and `y` returns you to the board.
 
 | Key | Does, in the create form |
 |---|---|
@@ -2775,7 +2887,7 @@ the draft alone; a second press discards the draft and returns you to the board.
 | `t` | In an open list, type a value it does not offer |
 | `←` / `→` | Step the agent field in place |
 | `ctrl+s` | Create the chat and open it |
-| `esc` | Close an open list, else discard the draft |
+| `esc` | Close an open list, else close the form — asking first when it holds a draft |
 
 ### Chat search
 
@@ -2842,6 +2954,17 @@ the reason it cannot be restricted](../assets/tui-chat-compare.png)
 One conversation: the finished turns above, the running turn's live output below
 them, and a composer at the bottom.
 
+**On macOS, the chat's `alt+` keys need the terminal to send Option as Meta.**
+The composer owns every printable key, so the chat's own commands — the diff,
+rewind, the shell, the model, the chat switch, stash and history — are `alt+`
+chords, and a stock Terminal.app or iTerm2 turns Option into a character
+instead: Option+d types `∂`. Set Terminal's **Use Option as Meta key**
+(Settings › Profiles › Keyboard) or iTerm2's Option key to **Esc+** (Profiles ›
+Keys). The first time the composer receives such a character for a chord the
+chat binds, it says so once on its note line. Until then `ctrl+p` opens the
+palette, which reaches every command, and [`tui.keys`](#rebinding-keys)
+rebinds any of them.
+
 Your own messages are easy to find in it. A prompt is drawn as a right-aligned
 card titled `You` — as wide as it needs to be, up to about two thirds of the
 pane, wrapping inside itself, with how long ago you sent it on its top edge. The
@@ -2864,6 +2987,12 @@ and it leaves out keys that would do nothing right now. The box starts three row
 tall and grows with the draft, up to a third of the screen and at most ten rows;
 a draft taller still scrolls inside it, and the box's title says how many lines
 are out of view (`+N lines`). The conversation shrinks to pay for the rows.
+
+An ended chat — closed, archived or handed off — takes no more turns, so it has
+no composer: in its place a line says so and names what still works with it,
+`alt+e` export, `ctrl+y` copy, `ctrl+f` search and `alt+v` Markdown. A key
+typed there goes nowhere and says why, rather than filling a draft that could
+never be sent.
 
 ![The chat workspace at `quiet`: the second turn's prompt as a right-aligned
 card, the answer rendered below it with its fenced block, and the titled
@@ -2892,9 +3021,10 @@ periodic repaint.
 | `alt+r` | Resume a paused queue — on an idle chat the next queued message starts now, paused or not: an idle chat holding an unpaused queue (left by a daemon crash mid-recovery) says so under the queue, and this starts it |
 | `alt+c` | Clear the queue: delete every queued message |
 | `ctrl+s` | Steer the running turn. No agent can yet, so the composer says why, the footer marks it `(unavailable)` beside a running turn, and the message can only be queued (rebindable as `steer`) |
-| `ctrl+j` | Insert a newline in the draft. `shift+enter` and `alt+enter` do too where the terminal sends them; `ctrl+j` works in every terminal, and `alt+enter` on macOS needs the terminal's "Option as Meta" setting |
+| `ctrl+j` | Insert a newline in the draft. `shift+enter` and `alt+enter` do too where the terminal sends them; `ctrl+j` works in every terminal, and `alt+enter` on macOS needs the terminal's "Option as Meta" setting, as every `alt+` key here does |
 | `tab` | The skills this chat's agent can run — type to filter, `enter` or `tab` inserts one. `f2` does the same, where the terminal swallows `tab`. The same list opens by itself when you type the agent's invocation sigil |
-| `ctrl+x` | Stop the running turn — its process tree is killed |
+| `ctrl+x` | Stop the running turn — its process tree is killed. With nothing running it says so |
+| `alt+l` | Retry the failed turn: send its prompt again. Offered only after a turn failed, whose red line says what the reason means and what to do first — wait out a usage limit, log the agent in |
 | `ctrl+r` | How much of the conversation to show: quiet → compact → normal → verbose |
 | `ctrl+t` | Hand the worktree and branch to a new task — the chat ends; not on a chat opened on a task. A chat opened on an issue hands off into the issue's next main task |
 | `ctrl+q` | Close a chat opened on a task — asks first; the task unlocks, its worktree and branch stay — or on an issue, whose main worktree is freed for its next main task |
@@ -2906,11 +3036,12 @@ periodic repaint.
 | `alt+g` | Jump to the start of the conversation |
 | `alt+shift+g` | Jump to the live end and follow it again — clears `↓ N new`. That is `alt+G` as you type it; the terminal reports it as `alt+shift+g` |
 | `ctrl+f` | Search the conversation: the conversation takes the keyboard with a search line open — see [Searching a chat](#searching-a-chat) |
+| `alt+i` | Move the keyboard into the conversation, with no search — see [Searching a chat](#searching-a-chat) |
 | `ctrl+g` | Write the message in `$EDITOR`. What you save comes back into the composer, unsent; an emptied or untouched file leaves the draft as it was. While `↑` has a queued message in the composer, this edits that message (rebindable as `compose_editor`) |
 | `alt+v` | Open the whole conversation as Markdown in `$EDITOR`, read-only — the file is deleted when the editor exits (rebindable as `chat_markdown`; also in the palette) |
 | `alt+d` | Show the chat's diff where the conversation is, to [review it hunk by hunk](#reviewing-a-chats-diff); `esc` comes back with the draft untouched (rebindable as `chat_diff`; also in the palette) |
 | `alt+x` | Open a one-line shell prompt: `enter` runs the command in the chat's directory through the daemon, and the run is drawn as a card in the conversation — see [Shell commands, images and vim in a chat](#shell-commands-images-and-vim-in-a-chat) (rebindable as `shell_command`) |
-| `alt+z` | Rewind: pick a turn to put the chat's code, conversation or both back to the state before it ran — `tab` picks which, a greyed-out turn says why it cannot be chosen — or a state an earlier code rewind saved, to go forward to it again. The palette's "fork from turn…" opens the same list to start a new chat from a turn — `tab` picks the agent the fork runs on — "edit turn 0…" edits a seeded chat's context before its next turn, and "show rewound turns" draws the turns a rewind left behind, dimmed (rebindable as `rewind`) |
+| `alt+z` | Rewind: pick a turn to put the chat's code, conversation or both back to the state before it ran — `tab` picks which, a greyed-out turn says why it cannot be chosen — or a state an earlier code rewind saved, to go forward to it again. Inside the list, `f` switches it to forking a new chat from a turn — `tab` then picks the agent the fork runs on — and `c` to comparing two agents from a turn; each key again comes back to rewind, with the cursor kept on its turn. The palette's "fork from turn…" and "compare two agents from turn…" open the same list in those modes; "edit turn 0…" edits a seeded chat's context before its next turn, and "show rewound turns" draws the turns a rewind left behind, dimmed (rebindable as `rewind`) |
 | `ctrl+v` | Paste: an image on the clipboard is uploaded to the chat and an `[image N]` chip goes into the draft; otherwise the clipboard's text is pasted as before |
 | `alt+a` | Reopen the agent's question after `esc` put it away — what you picked is kept |
 | `1` … `9` | While the agent's question card is up, pick option N of the question the cursor is in. A single single-choice question is answered at once; otherwise `enter` submits |
@@ -2969,7 +3100,7 @@ draft as it was.
 Scrolled away from the live end, the header says which turn is at the top of
 the window — `turn 2/5` — until `alt+shift+g` follows the end again. While you are
 scrolled away, the conversation pane's bottom edge counts what arrived below
-you — `↓ 12 new`; click it or press `alt+shift+g` to follow again. Changing the
+you — `↓ 12 new · alt+shift+g follows`; click it or press `alt+shift+g` to follow again. Changing the
 level or the window's width does not add to it.
 
 ### Reviewing a chat's diff
@@ -2987,7 +3118,7 @@ files are not. It is grouped by file and starts folded, like the task's.
 | Key | Does |
 |---|---|
 | `]` / `[` | Move to the next / previous hunk, opening the file it is in |
-| `x` | **Reject** the selected hunk: it is reverted in the chat's directory, and a note for the agent is put at the top of your draft |
+| `x` | **Reject** the selected hunk: it asks first, then it is reverted in the chat's directory, and a note for the agent is put at the top of your draft |
 | `a` | **Accept** the selected hunk — a review mark and nothing else; on an accepted hunk it clears the mark |
 | `s` | Switch scope: the changes **since the base**, or **since the last turn** |
 | `r` | Read the diff again |
@@ -3102,6 +3233,14 @@ the conversation pane's bottom edge. Landing on a match inside a folded tool
 call expands that one call; the level stays where it was. Your draft is
 untouched by all of this.
 
+`alt+i` hands the keyboard to the conversation without a search — the way
+to expand a tool call, jump between your prompts or attach a shell card —
+and the footer names it while the composer has the keyboard. The search
+line and the [shell prompt](#shell-commands-images-and-vim-in-a-chat) edit
+like any other field: `←`/`→`, `home`/`end` (`ctrl+a`/`ctrl+e`), a word at a
+time with `alt+←`/`alt+→`, and `ctrl+w`, `ctrl+u` and `ctrl+k` delete. On the
+shell prompt `↑` and `↓` walk the commands this chat already ran.
+
 With the conversation holding the keyboard:
 
 | Key | Does |
@@ -3115,7 +3254,7 @@ With the conversation holding the keyboard:
 | `g` / `G` | Jump to the start, or to the live end |
 | `pgup` / `pgdown`, `alt+↑` / `alt+↓` | Scroll |
 | `alt+shift+g` | Jump to the live end and follow it again |
-| `i` / `esc` | Give the keyboard back to the composer |
+| `i` / `esc` / `alt+i` | Give the keyboard back to the composer |
 
 `esc` peels one layer at a time — the search line, then the conversation
 focus — and never leaves the chat from here. Folded tool calls show `▸` and an
@@ -3464,21 +3603,21 @@ project's triggers, a poll change, or a project change arrives.
 **While `triggers.enabled` is off**, a banner above the list says so. Every
 trigger is then inert whatever its own `enabled:` says, so every row reads
 disarmed for a reason no row can fix. The view does not flip that switch itself.
-`B` opens `triggers.enabled` in the [daemon view's](#daemon) config editor,
-which asks before it applies a value. The form repeats the warning at its top.
+`B` opens `triggers.enabled` on the [Settings](#settings) screen, which asks
+before it applies a value. The form repeats the warning at its top.
 
 | Key | Does |
 |---|---|
 | `↑` / `↓` | Move the selection |
 | `enter` or `i` | Open the selected trigger in the form |
 | `space` | Enable or disable the selected trigger — enabling asks first |
-| `a` | Create a trigger from a starter |
+| `a` | Create a trigger from a starter: an id, then its source — `←`/`→` pick command, issues, schedule, GitHub pull requests or http, each with what its starter does; the command and interval rows are a command source's alone |
 | `e` | Open the trigger's file in `$EDITOR` |
 | `D` | Delete the trigger's file — its ledger is kept (asks first) |
 | `T` | Dry-run a sample event through the trigger's filter; fires nothing |
 | `X` | Poll the source once and judge what it returns; fires nothing. Refused on `http` and `schedule`, which have no source to run |
 | `tab` | Move between the trigger list and its delivery ledger |
-| `B` | Open `triggers.enabled`, the global switch, in the daemon view's editor |
+| `B` | Open `triggers.enabled`, the global switch, on the Settings screen |
 | `R` | Re-read the triggers and the ledger |
 | `/` | Filter by id, source or action |
 
@@ -3656,6 +3795,7 @@ value it would become](../assets/tui-settings-confirm.png)
 | `tab` / `shift+tab` | Next or previous category |
 | `/` | Search every setting by name, key or description |
 | `backspace` | Reset the selected setting to its default |
+| `u` | Undo the last change: put back the value it replaced. Every change applies at once, so after one the pane's corner says `saved · was 4 · u puts it back`; a held arrow is one change, and the undo is not itself undoable |
 | `e` | Open `config.yaml` in `$EDITOR` |
 | `R` | Re-read the configuration |
 | `esc` | Clear the search, else leave Settings |
@@ -3683,8 +3823,16 @@ on you, or fan-out lanes. On a terminal under 30 rows the adapters stay one line
 each, so the log keeps its room.
 
 Version, uptime, a digest of the config in effect, the adapters detected, and a
-live tail of the daemon log. The view reports, it does not act — `vincent daemon stop` owns
-stopping the daemon, and a TUI that auto-started one has no business killing it.
+live tail of the daemon log. The one thing it does to the daemon is `r`, a
+restart: it asks first, stops the daemon gracefully the way `vincent daemon
+stop` does — running steps are interrupted, and re-run when the new daemon
+recovers them — and then starts a new one as the TUI does at launch.
+Stopping it for good stays with `vincent daemon stop`.
+
+The log hides the successful `http request` lines, which are mostly this
+TUI's own polling; the pane's first line counts them, and `h` shows them. A
+request that failed stays in sight. `/` narrows the log to lines containing
+what you type.
 
 ![The daemon dashboard with the log holding the keys: the daemon and its work,
 the config and the database on top, then a card for each adapter — claude behind
@@ -3701,6 +3849,9 @@ is changed.
 | `↑` / `↓` | Scroll the log |
 | `R` | Re-read the daemon info, the config and the log |
 | `f` / `G` | Follow the end of the log again |
+| `h` | Show or hide the successful request lines |
+| `/` | Search the log — `enter` keeps the search, `esc` clears it |
+| `r` | Restart the daemon — asks first |
 | `i` | Make vincent claude's status line, or remove it — the exact JSON is shown first |
 | `S` | Install the agent skills vincent publishes — the exact command is shown first |
 | `U` | Set up Nerd Font icons — what gets downloaded is shown first |
@@ -3833,6 +3984,15 @@ key a lenient load took reads `unbound`. Actions the task does not offer are
 left out rather than greyed: the palette runs things, and it never lists
 something that cannot run.
 
+Typing finds rows the way you remember them, not only as they are spelled.
+Where some row contains what you typed, those rows are the answer; otherwise
+the words may come in any order, each may be the start of a word or its
+letters in order, and a word of four letters or more may be one typo off —
+`tasks archived` finds archived tasks and `dameon` the daemon — with the best
+matches first. Once you type, the project's **tasks**, **chats** and
+**issues** are listed too, by number and title (`#13`, `issue #4 MOB-7`), and
+running one opens it.
+
 In a task's workspace the palette has a **tabs** group: one row per tab on
 the strip, in the order the strip draws them, such as `go to the Diff tab`.
 Typing `diff` finds it, and running it switches to the tab. Pull request is
@@ -3899,7 +4059,11 @@ can run.
 
 The status bar names the screen you are on, from 100 columns up, and offers that
 screen's main keys: at most six, in priority order, fewer on a narrow terminal.
-It then tells you what is left: a dim **`+N`** after the action keys counts the
+The keys that move work on — open, new, act, leave — rank ahead of the ones that
+only read or move the cursor: on the task board that is `enter open`, `n new`,
+`/ filter`, `space select` and one `↑↓←→ move`; on an issue, `a new task`,
+`T chat`, `W comment` and `X close/reopen` come before the raw, links and copy
+keys. With tasks selected, `esc clear (N)` leads the action keys. It then tells you what is left: a dim **`+N`** after the action keys counts the
 keys this surface has that the line is not showing — the ones past the main six,
 the ones that did not fit, the ones with no short form, and, on a narrow terminal,
 the task actions that did not fit. When a task offers more
@@ -3953,8 +4117,18 @@ tui:
 ```
 
 The same map can be set with `vincent config set tui.keys "refresh=ctrl+e
-quit=f10"`, or from the [daemon view's](#daemon) config editor. An empty map,
+quit=f10"`, or from the [Settings](#settings) screen. An empty map,
 the default, is the keymap this guide describes.
+
+In Settings, `enter` on **Key bindings** opens a list of every operation,
+grouped as the table below groups them, with the key in force and — for one you
+changed — its default. `enter` on a row waits for the next key you press and
+binds it: a key that would clash is refused there and then, naming what it
+clashes with, and nothing is saved; a free key is saved at once and works
+straight away. `backspace` puts the row back on its default, `t` opens every
+binding as one line of `operation=key` pairs (for pasting a whole keymap), and
+`esc` goes back. `ctrl+c`, `ctrl+p` and `f1` stay with the TUI while it waits
+for a key, so they cannot be bound from there.
 
 A key is written the way the terminal reports it: one character (`R`, `/`,
 `!`), or one of the names `enter`, `tab`, `esc`, `space`, `backspace`,
@@ -3983,8 +4157,8 @@ Setting an operation to its own default changes nothing.
 
 ### The operations
 
-The first forty-four are the operations screens share, the next eleven are the
-[task actions](#the-action-bar), and the last ten are the global keys.
+The first forty-seven are the operations screens share, the next twelve are the
+[task actions](#the-action-bar), and the last eleven are the global keys.
 
 | Operation | Default | Does |
 |---|---|---|
@@ -4019,10 +4193,13 @@ The first forty-four are the operations screens share, the next eleven are the
 | `compose_editor` | `ctrl+g` | Write the chat message in `$EDITOR` |
 | `chat_markdown` | `alt+v` | Open the whole conversation as Markdown in `$EDITOR`, read-only |
 | `chat_diff` | `alt+d` | Show the chat's diff in place of the conversation, to review it hunk by hunk. See [Reviewing a chat's diff](#reviewing-a-chats-diff) |
+| `conversation` | `alt+i` | Move the keyboard from a chat's composer into its conversation, and back. See [Searching a chat](#searching-a-chat) |
 | `shell_command` | `alt+x` | Run a shell command in the chat's directory, drawn as a card in the conversation. See [Shell commands, images and vim in a chat](#shell-commands-images-and-vim-in-a-chat) |
 | `rewind` | `alt+z` | Open the chat's turn picker, to rewind its code, its conversation or both to before a turn, or to fork a new chat from one |
 | `next_chat` | `alt+n` | Open the project's next chat, in the chats board's order, wrapping — from the chats board or from a chat's composer |
 | `prev_chat` | `alt+shift+n` | Open the project's previous chat, wrapping |
+| `next_item` | `alt+n` | From inside a task, open the next task in the board's order; from inside an issue, the next issue |
+| `prev_item` | `alt+shift+n` | The previous task or issue, as `next_item` |
 | `chat_1` | `alt+1` | Open the project's chat number 1, in the chats board's order; nothing past the last |
 | `chat_2` | `alt+2` | Open the project's chat number 2, in the chats board's order; nothing past the last |
 | `chat_3` | `alt+3` | Open the project's chat number 3, in the chats board's order; nothing past the last |
@@ -4042,8 +4219,10 @@ The first forty-four are the operations screens share, the next eleven are the
 | `cancel` | `c` | Cancel the task |
 | `follow_up` | `F` | Follow up on a finished task |
 | `chat` | `T` | Chat in the task's worktree, or on the issue's main worktree from the issue screens — or reopen the chat open on it |
+| `diagnose` | `Q` | Ask why a stopped task stopped: `chat` with the failure card already sent as the question |
 | `chat_with` | `alt+t` | The same chat as `chat`, choosing its agent, model and effort — and an optional first message — first |
 | `palette` | `:` | Open the command palette |
+| `go_to` | `` ` `` | Open the screens menu: every screen, each on a letter — `t` tasks, `i` issues, `c` chats, `/` chat search, `n` new task, `p` projects, `w` workflows, `d` daemon, `s` settings, `r` pull requests, `a` archived tasks, `A` archived chats, `T` triggers |
 | `palette_alt` | `ctrl+p` | Open the command palette, also while a text field has the keyboard |
 | `help` | `?` | Toggle help |
 | `help_alt` | `f1` | Toggle help, also while a text field has the keyboard |
@@ -4065,7 +4244,7 @@ to anything else:
 - **Keys that belong to one screen** and mean nothing shared — `g` groups the
   archived board, `m` merges a pull request, and `X`, `i`,
   `u`, `P`, `U`, `S` and the like.
-- **Keys that work as a set** — folding (`←`/`→`, `C`/`O`, `space`), paging
+- **Keys that work as a set** — folding (`f`, `C`/`O`, `space`), paging
   (`<`/`>`), moving (`↑`/`↓`, `K`/`J`) and the task tabs (`[`/`]`).
 - **`esc`**, because it closes one layer at a time on every screen; **`ctrl+c`**,
   because it must always be able to quit; **`ctrl+v`**, the paste fallback; and
@@ -4123,13 +4302,13 @@ ignored. `?` and the palette list what lost its key as `unbound`, the footer
 drops it, and the TUI shows one line under the header saying what happened.
 `vincent doctor` lists the same warnings, and the daemon log carries them as
 `keymap warning`. Give the unbound operation a free key, or move your binding,
-to clear them. Saving through `vincent config set` or the config editor stays
+to clear them. Saving through `vincent config set` or the Settings screen stays
 strict, so while such a clash is in the file every save is refused with its
 name.
 
 ### When a change takes effect
 
-Saved in the daemon view's config editor, a keymap applies at once. Set any
+Saved on the Settings screen, a keymap applies at once. Set any
 other way — `vincent config set`, or an edit to the file — it reaches a running
 TUI the next time the TUI reads the configuration: when you open the daemon view
 or refresh it, or when the TUI reconnects.
@@ -4146,6 +4325,13 @@ off** — press `M`, or hold shift while dragging, which most terminals treat as
 "bypass the application". `M` says which way it went under the header —
 `mouse off — native selection works; M turns it back on` — until your next
 key.
+
+What looks clickable is: a row of the command palette or the project picker
+runs it; a task card's first click selects it and a second opens it, and a
+group's header folds or opens; on Settings a category, a setting and its
+`−`/`+` stepper; on the wide new-task form a workflow card and the
+`[ create task ]` button. The other popups stay keyboard-only, and a click
+behind a form never reaches the screen under it.
 
 Paste normally arrives as a bracketed paste from your terminal's own binding
 (`Cmd+V`, `Ctrl+Shift+V`, middle click) and lands in the focused field with no

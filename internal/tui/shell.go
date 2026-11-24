@@ -254,8 +254,8 @@ func (s *shell) routeBoardOnly(msg tea.Msg) (panel, tea.Cmd) {
 		return s, cmd
 	case tea.MouseClickMsg:
 		if s.board.cards {
-			if msg.Button == tea.MouseLeft {
-				s.board.cardClick(msg.X, msg.Y-s.bannerLines)
+			if msg.Button == tea.MouseLeft && s.board.cardClick(msg.X, msg.Y-s.bannerLines) {
+				return s, s.openSelected()
 			}
 			return s, nil
 		}
@@ -281,8 +281,7 @@ func (s *shell) routeBoardOnly(msg tea.Msg) (panel, tea.Cmd) {
 		if msg.attention && s.board.expandFor(msg.id) {
 			save = s.board.saveFolds()
 		}
-		s.board.selectedID = msg.id
-		s.board.restoreSelection(s.board.rows())
+		s.board.follow(msg.id)
 		return s, save
 	case viewActivatedMsg, viewDeactivatedMsg:
 		return s, nil
@@ -309,8 +308,7 @@ func (s *shell) selectAttention(id int64) tea.Cmd {
 		id = next.id()
 	}
 	s.board.expandFor(id)
-	s.board.selectedID = id
-	s.board.restoreSelection(s.board.rows())
+	s.board.follow(id) // an explicit open goes where the task is (#1058)
 	return nil
 }
 
@@ -454,8 +452,7 @@ func (s *shell) openSelected() tea.Cmd {
 // explicit path (task creation, live tests). The board may not list the
 // task yet; selectedID makes the next refresh put the cursor on it.
 func (s *shell) openNow(id int64) tea.Cmd {
-	s.board.selectedID = id
-	s.board.restoreSelection(s.board.rows())
+	s.board.follow(id)
 	s.lastSel = id
 	s.focus = panelTimeline
 	return s.detail.open(id, s.stateOf(id))

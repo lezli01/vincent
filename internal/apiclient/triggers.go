@@ -130,8 +130,11 @@ const (
 
 // CreateTriggerRequest is POST /v1/triggers: the starter's inputs.
 type CreateTriggerRequest struct {
-	ID           string   `json:"id"`
-	ProjectID    int64    `json:"project_id"`
+	ID        string `json:"id"`
+	ProjectID int64  `json:"project_id"`
+	// SourceType picks the starter's source: command (the default), issues,
+	// schedule, github_prs or http (#1123).
+	SourceType   string   `json:"source_type,omitempty"`
 	PollInterval string   `json:"poll_interval,omitempty"`
 	Command      []string `json:"command,omitempty"`
 	Workflow     string   `json:"workflow,omitempty"`

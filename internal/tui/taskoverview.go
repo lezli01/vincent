@@ -109,6 +109,9 @@ func (t *taskView) lanesNeedingYouLines(width int) []string {
 			}
 		}
 		line := "  " + style.Render(glyph+" "+laneName(lane)) + "  " + styleDim.Render(fmt.Sprintf("#%d · %s", lane.ID, what))
+		if at := t.laneAtText(lane); at != "" {
+			line += styleDim.Render(" · ") + at
+		}
 		out = append(out, ansi.Truncate(line, max(width, 1), "…"))
 	}
 	if key := opKey(keymap.Lane); key != "" {
@@ -305,7 +308,13 @@ func (t *taskView) overviewLines(width, height int) []string {
 	case overviewFrameFor(task.State) == frameOutcome:
 		out = append(out, wrappedOrNone(overviewSentence(task, len(t.lanes)), width)...)
 		out = append(out, "")
-		out = append(out, t.outcomeCardLines(width, height-len(out)-overviewLinkRows)...)
+		// What can be done next, on one line kept ahead of the outcome
+		// card's result, which shrinks by those two rows rather than giving
+		// them up (#1068): a finished task named none of follow-up, a pull
+		// request or archive.
+		next := t.outcomeNextLine(width)
+		out = append(out, t.outcomeCardLines(width, height-len(out)-overviewLinkRows-len(next))...)
+		out = append(out, next...)
 	default:
 		out = append(out, wrappedOrNone(overviewSentence(task, len(t.lanes)), width)...)
 		if bar := t.progressBar(width); bar != "" {
@@ -323,10 +332,15 @@ func (t *taskView) overviewLines(width, height int) []string {
 		}
 		if task.State == stateAwaitingChildren {
 			out = append(out, t.lanesNeedingYouLines(width)...)
+			out = append(out, t.waitingOnLines(width)...)
 		}
 	}
 	out = append(out, t.handoffItemLines(width)...)
-	if links := t.overviewLinks(); len(links) > 0 {
+	if t.detail.form != nil {
+		// A pending question takes enter on every tab (#1062), so the line
+		// says what enter does now rather than the link it cannot reach.
+		out = append(out, "", "  "+styleKey.Render("enter")+" "+styleAsk.Render("answer the question"))
+	} else if links := t.overviewLinks(); len(links) > 0 {
 		// One link, on enter (task 168.7): the digits that used to key a
 		// row of them are gone with the numbered strip.
 		out = append(out, "", "  "+styleKey.Render("enter")+" "+links[0].label)
@@ -564,6 +578,42 @@ func (t *taskView) overviewActionLines(width int) []string {
 		out = append(out, styleDim.Render("  no action available"))
 	}
 	return out
+}
+
+// outcomeNextLine is a finished task's next steps as one line of keys —
+// follow up, a pull request when one can be opened, chat, archive — under a
+// blank row; nil when none is offered.
+func (t *taskView) outcomeNextLine(width int) []string {
+	offered := t.detail.task.AvailableActions
+	var parts []string
+	add := func(key, label string) {
+		if key != "" {
+			parts = append(parts, styleKey.Render(key)+" "+label)
+		}
+	}
+	if slices.Contains(offered, apiclient.ActionFollowUp) {
+		add(opKey(keymap.FollowUp), "follow up")
+	}
+	if t.pullOffered() {
+		add("P", "open a pull request")
+	}
+	if slices.Contains(offered, apiclient.ActionChat) {
+		add(opKey(keymap.Chat), "chat")
+	}
+	if slices.Contains(offered, apiclient.ActionArchive) {
+		add(opKey(keymap.Archive), "archive")
+	}
+	if len(parts) == 0 {
+		return nil
+	}
+	line := "  " + styleDim.Render("next  ") + strings.Join(parts, styleDim.Render(" · "))
+	return []string{"", ansi.Truncate(line, max(width, 1), "…")}
+}
+
+// pullOffered is whether `P` would open the pull-request form: nothing is
+// linked and the daemon could build a compare URL.
+func (t *taskView) pullOffered() bool {
+	return t.pullTabAvailable() && !t.pull.Linked && t.pull.CompareURL != ""
 }
 
 // openIssueKey opens the task's linked issue from its workspace (task 168

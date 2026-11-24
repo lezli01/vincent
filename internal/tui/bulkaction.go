@@ -154,7 +154,7 @@ func actionErrString(err error) string {
 	var apiErr *apiclient.Error
 	if errors.As(err, &apiErr) {
 		if state := apiErr.Details["state"]; state != "" {
-			return "the task is " + state
+			return "the task is " + stateWords(state)
 		}
 		return apiErr.Message
 	}

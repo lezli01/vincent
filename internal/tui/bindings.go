@@ -237,10 +237,14 @@ const (
 	// the reason the other popups have theirs: while it is open it owns the
 	// keyboard, and its two rows are nothing like the form underneath.
 	ctxCreatePR bindingContext = "open a pull request"
-	// ctxConfigEdit is the daemon view's config editor (task 060). Its own
+	// ctxConfigEdit is the config editor (task 060), on the Settings screen. Its own
 	// context because while it is open it owns the keyboard, and its keys are
 	// nothing like the log pane's underneath it.
 	ctxConfigEdit bindingContext = "config editor"
+	// ctxPaneFind is a search running on a task's Output or Diff (#1074).
+	ctxPaneFind bindingContext = "find in pane"
+	// ctxKeyBindings is Settings' key-bindings screen (#1079).
+	ctxKeyBindings bindingContext = "key bindings"
 	// ctxSettings is the Settings screen (task 152).
 	ctxSettings bindingContext = "settings"
 	// ctxStatusLine is the daemon view's status-line flow (task 082), its
@@ -328,6 +332,12 @@ type binding struct {
 	// the operation's *default*, and registry() swaps in the effective key
 	// and rewrites the hint to match; a row with no op is fixed.
 	op keymap.Op
+	// echo marks a panel row that only puts a global key on this surface's
+	// footer (#1073): `n new` on the task board. It does not claim the key —
+	// panelOwnsKey skips it, so the global binding still answers — and it is
+	// kept out of the palette and the help sheet's panel list, where the
+	// global row already stands.
+	echo bool
 	// unbound marks a row the effective keymap left without a key (task
 	// 128): an operation whose default a user binding took on a lenient
 	// load, or a fixed key shadowed on its surface. key and hint are empty;
@@ -415,6 +425,7 @@ func chatJumpLabel(nth string) string {
 var bindings = []binding{
 	// Global chrome.
 	{op: keymap.Palette, key: ":", label: "open the command palette", scope: scopeGlobal, noPalette: true},
+	{op: keymap.GoTo, key: "`", label: "open the screens menu — every screen on a letter: t tasks, i issues, c chats, p projects, w workflows, d daemon, s settings, T triggers…", scope: scopeGlobal, noPalette: true},
 	// The same palette, reachable where `:` is not: a chat's composer owns
 	// every printable key, so the palette had been unreachable there since
 	// task 067 (task 076 decision 7). noPalette for the reason `:` is —
@@ -487,11 +498,11 @@ var bindings = []binding{
 	{op: keymap.Pause, key: "p", label: "pause the running task", scope: scopeTaskAction, action: apiclient.ActionPause, priority: 3},
 	{op: keymap.Pause, key: "p", label: "resume the paused task", scope: scopeTaskAction, action: apiclient.ActionResume, priority: 3},
 	{op: keymap.Approve, key: "a", label: "approve the gate", scope: scopeTaskAction, action: apiclient.ActionApprove, priority: 1},
-	{op: keymap.Reject, key: "x", label: "reject the gate", scope: scopeTaskAction, action: apiclient.ActionReject, priority: 2},
+	{op: keymap.Reject, key: "x", label: "reject the gate (asks first)", scope: scopeTaskAction, action: apiclient.ActionReject, priority: 2},
 	{op: keymap.Retry, key: "r", label: "retry the blocked step", scope: scopeTaskAction, action: apiclient.ActionRetry, priority: 4},
 	{op: keymap.EditRetry, key: "E", label: "edit the step's prompt or command in $EDITOR, then retry", scope: scopeTaskAction, action: apiclient.ActionRetry, priority: 5},
 	{op: keymap.Repair, key: "R", label: "repair with an agent — a one-off run in this task's worktree; the task stays blocked afterwards", scope: scopeTaskAction, action: apiclient.ActionRepair, priority: 5},
-	{op: keymap.Skip, key: "s", label: "skip the current step", scope: scopeTaskAction, action: apiclient.ActionSkip, priority: 6},
+	{op: keymap.Skip, key: "s", label: "skip the current step (asks first)", scope: scopeTaskAction, action: apiclient.ActionSkip, priority: 6},
 	{op: keymap.Cancel, key: "c", label: "cancel the task (asks first — a running step is killed)", scope: scopeTaskAction, action: apiclient.ActionCancel, priority: 7},
 	{op: keymap.Archive, key: "A", label: "archive the task (asks first — the worktree is removed)", scope: scopeTaskAction, action: apiclient.ActionArchive, priority: 8, term: termArchive},
 	{op: keymap.FollowUp, key: "F", label: "follow up — run an agent prompt, a shell command or a workflow in this finished task's worktree; it returns to the state it came from", scope: scopeTaskAction, action: apiclient.ActionFollowUp, priority: 9},
@@ -505,6 +516,10 @@ var bindings = []binding{
 	// that chat instead (taskActions.offersChat), so the row is gated there
 	// rather than on the action alone.
 	{op: keymap.Chat, key: "T", label: "chat with an agent in this task's worktree — the task stays locked until the chat is closed; with a chat already open, reopen it", scope: scopeTaskAction, action: apiclient.ActionChat, priority: 10},
+	// #1087: `T` on a stopped task with the question already asked. Gated on
+	// actionDiagnose, which taskActions.offers answers: a blocked or aborted
+	// task that offers `chat`, or holds one open, which the key reopens.
+	{op: keymap.Diagnose, key: "Q", label: "ask why it stopped — starts an agent in this task's worktree with the failure as its first message; the task stays locked until the chat is closed", scope: scopeTaskAction, action: actionDiagnose, priority: 10},
 	// Task 161 decision 7: `T` with a choice first. Offered exactly where
 	// `chat` is, so it carries the same action.
 	{op: keymap.ChatWith, key: "alt+t", label: "chat with… — choose the agent, model and effort, and type a first message, before the chat opens; with a chat already open, reopen it", scope: scopeTaskAction, action: apiclient.ActionChat, priority: 11},
@@ -515,16 +530,25 @@ var bindings = []binding{
 	// because replaying tab from the palette would switch from a screen the
 	// palette already covered, and the screen rows are the palette's way.
 	{key: "tab", label: mainTabLabel, scope: scopePanel, context: ctxTasks, hint: "tab next tab", priority: 0, mainTab: true, noPalette: true},
-	{key: "down", label: "move up and down the column (↑/↓)", scope: scopePanel, context: ctxTasks, hint: "↑↓ card", priority: 3},
+	// One hint for the four arrows (#1073): moving is what every board
+	// reader already knows, so it takes one of the six slots, not two, and
+	// `n new` gets the other. The board's columns are called columns.
+	{key: "down", label: "move up and down the column (↑/↓)", scope: scopePanel, context: ctxTasks, hint: "↑↓←→ move", priority: 5},
 	{op: keymap.OpenRow, key: "enter", label: "open the selected task in its full-screen workspace", scope: scopePanel, context: ctxTasks, hint: "enter open", priority: 1, term: termOpenRow},
-	{op: keymap.Filter, key: "/", label: "filter by id, title, state or issue", scope: scopePanel, context: ctxTasks, hint: "/ filter", priority: 2, term: termFilter},
-	{key: "left", label: "move to the column on the left", scope: scopePanel, context: ctxTasks, hint: "←/→ lane", priority: 4},
-	{key: "right", label: "move to the column on the right", scope: scopePanel, context: ctxTasks, priority: 4, aliased: true},
+	{op: keymap.New, key: "n", label: "new task — for the project you are looking at", scope: scopePanel, context: ctxTasks, hint: "n new", priority: 2, echo: true, noPalette: true},
+	{op: keymap.Filter, key: "/", label: "filter by id, title, state, issue, workflow, step, branch or pull request number", scope: scopePanel, context: ctxTasks, hint: "/ filter", priority: 3, term: termFilter},
+	{key: "left", label: "move to the column on the left", scope: scopePanel, context: ctxTasks, priority: 5, aliased: true},
+	{key: "right", label: "move to the column on the right", scope: scopePanel, context: ctxTasks, priority: 5, aliased: true},
 	{key: "f", label: "fold or open the issue group under the cursor", scope: scopePanel, context: ctxTasks, hint: "f fold", priority: 8},
+	// #1075: the order, cycled — state, newest, oldest, title.
+	{key: boardSortKey, label: "cycle the order: by state, newest, oldest, title", scope: scopePanel, context: ctxTasks, hint: "z sort", priority: 9},
+	// Paging (#1083), the issues board's keys.
+	{key: "pgdown", label: "page the column (pgup/pgdown, home/g, end/G)", scope: scopePanel, context: ctxTasks, priority: 16},
 	// Lanes under a fan-out parent's card (boardcardlanes.go, issue #316).
 	{key: "L", label: "show or hide a fan-out's lanes under its card — on a lane, its own lanes, or back to its parent", scope: scopePanel, context: ctxTasks, hint: "L lanes", priority: 8},
-	{key: "space", label: "select this task for a bulk action — the action keys then act on every selected task (space again deselects, esc clears)", scope: scopePanel, context: ctxTasks, hint: "space select", priority: 5},
+	{key: "space", label: "select this task for a bulk action — the action keys then act on every selected task (space again deselects, esc clears)", scope: scopePanel, context: ctxTasks, hint: "space select", priority: 4},
 	{op: keymap.AttentionFilter, key: "H", label: "show only the tasks that need a human — awaiting input, awaiting approval, blocked, or a fan-out whose lane is (H again shows every task)", scope: scopePanel, context: ctxTasks, hint: "H needs you", priority: 6, term: termAttention},
+	{key: copyPickKey, label: "copy the selected task's id, branch, worktree path or pull request URL", scope: scopePanel, context: ctxTasks, priority: 9},
 	{key: "V", label: "select every task the filter is showing, or clear that selection", scope: scopePanel, context: ctxTasks, priority: 6},
 	// Folding the issue groups (task 150.6). C/O are the diff pane's two
 	// letters in the same meaning.
@@ -542,7 +566,10 @@ var bindings = []binding{
 	{op: keymap.Browser, key: "o", label: "open this task's pull request in a browser", scope: scopePanel, context: ctxTaskOverview, priority: 9, github: true, term: termBrowser},
 	{key: "P", label: "push this task's branch to origin and open its pull request — the title, body and draft flag are editable first", scope: scopePanel, context: ctxTaskOverview, hint: "P open a PR", priority: 9, github: true},
 	{op: keymap.Lane, key: "l", label: "open the fan-out lane the failure card blames, or the first lane that needs you on a parent waiting on its lanes", scope: scopePanel, context: ctxTaskOverview, hint: "l open the lane", priority: 6, term: termLane},
+	{key: copyPickKey, label: "copy the task's id, branch, worktree path or pull request URL", scope: scopePanel, context: ctxTaskOverview, priority: 12},
 	{op: keymap.NextFailure, key: "N", label: "jump to the next failure: the newest failed attempt of each step in execution order, on the Output tab at the line it failed on — a blocked lane opens, esc comes back", scope: scopePanel, context: ctxTaskOverview, hint: "N next failure", priority: 6, term: termNextFail},
+	{op: keymap.NextItem, key: "alt+n", label: "open the next task in the board's order", scope: scopePanel, context: ctxTaskOverview, priority: 12},
+	{op: keymap.PrevItem, key: "alt+shift+n", label: "open the previous task in the board's order", scope: scopePanel, context: ctxTaskOverview, priority: 12},
 	{op: keymap.Result, key: "w", label: "open the output of the attempt the outcome card's result came from, at its end", scope: scopePanel, context: ctxTaskOverview, hint: "w result output", priority: 6, term: termResult},
 	{key: "d", label: "open the Diff tab", scope: scopePanel, context: ctxTaskOverview, priority: 8},
 	{key: openIssueKey, label: "open the task's linked issue — esc comes back to this tab", scope: scopePanel, context: ctxTaskOverview, hint: "i issue", priority: 8},
@@ -565,6 +592,8 @@ var bindings = []binding{
 	{key: "C", label: "close every one — the timeline opens with the latest iteration showing", scope: scopePanel, context: ctxTimeline, priority: 8, fold: true, aliased: true},
 	{op: keymap.Lane, key: "l", label: "open the fan-out lane the cursor is on, or the first lane of the selected fan_out step", scope: scopePanel, context: ctxTimeline, priority: 9, term: termLane},
 	{op: keymap.NextFailure, key: "N", label: "jump to the next failure: the newest failed attempt of each step in execution order, on the Output tab at the line it failed on — a blocked lane opens, esc comes back", scope: scopePanel, context: ctxTimeline, priority: 9, term: termNextFail},
+	{op: keymap.NextItem, key: "alt+n", label: "open the next task in the board's order", scope: scopePanel, context: ctxTimeline, priority: 12},
+	{op: keymap.PrevItem, key: "alt+shift+n", label: "open the previous task in the board's order", scope: scopePanel, context: ctxTimeline, priority: 12},
 	{key: openIssueKey, label: "open the task's linked issue — esc comes back to this tab", scope: scopePanel, context: ctxTimeline, hint: "i issue", priority: 8},
 	{key: "U", label: "open this lane's parent task", scope: scopePanel, context: ctxTimeline, priority: 10},
 	{key: "d", label: "open the Diff tab", scope: scopePanel, context: ctxTimeline, priority: 12},
@@ -586,6 +615,8 @@ var bindings = []binding{
 	// lane `l` resolves to (taskView.laneJump).
 	{op: keymap.Lane, key: "l", label: "open the selected fan-out lane's workspace", scope: scopePanel, context: ctxTaskDetails, priority: 6, term: termLane},
 	{op: keymap.NextFailure, key: "N", label: "jump to the next failure: the newest failed attempt of each step in execution order, on the Output tab at the line it failed on — a blocked lane opens, esc comes back", scope: scopePanel, context: ctxTaskDetails, priority: 6, term: termNextFail},
+	{op: keymap.NextItem, key: "alt+n", label: "open the next task in the board's order", scope: scopePanel, context: ctxTaskDetails, priority: 12},
+	{op: keymap.PrevItem, key: "alt+shift+n", label: "open the previous task in the board's order", scope: scopePanel, context: ctxTaskDetails, priority: 12},
 	{key: openIssueKey, label: "open the task's linked issue — esc comes back to this tab", scope: scopePanel, context: ctxTaskDetails, hint: "i issue", priority: 8},
 	{key: "U", label: "open this lane's parent task", scope: scopePanel, context: ctxTaskDetails, priority: 7},
 	{key: "d", label: "open the Diff tab", scope: scopePanel, context: ctxTaskDetails, priority: 9},
@@ -596,7 +627,7 @@ var bindings = []binding{
 	{key: "f", label: "follow the live output again (f/G)", scope: scopePanel, context: ctxOutput, hint: "f follow", priority: 2},
 	{key: "v", label: "show more or less: quiet → compact → normal → verbose (tool lines, then reasoning, then unrecognized lines)", scope: scopePanel, context: ctxOutput, hint: "v detail", priority: 3},
 	{key: rawToggleKey, label: "show the assistant's original Markdown instead of the rendered view", scope: scopePanel, context: ctxOutput, hint: "ctrl+o raw", priority: 6},
-	{key: copyPickKey, label: "copy an assistant message, its plain text, or one of its code blocks", scope: scopePanel, context: ctxOutput, hint: "ctrl+y copy", priority: 7},
+	{key: copyPickKey, label: "copy the task's id, branch, worktree path or pull request URL, this attempt's whole output, an assistant message, its plain text, or one of its code blocks", scope: scopePanel, context: ctxOutput, hint: "ctrl+y copy", priority: 7},
 	// No vocabulary term, for copyPickKey's reason: the key raises a picker,
 	// and the picker's enter is what opens (task 112 decision 1).
 	{key: linkPickKey, label: "list the links in the assistant's messages — open one in a browser or copy it", scope: scopePanel, context: ctxOutput, hint: "ctrl+l links", priority: 8},
@@ -608,10 +639,14 @@ var bindings = []binding{
 	{key: ">", label: "next fan-out lane in the Output pane", scope: scopePanel, context: ctxOutput, priority: 10},
 	{op: keymap.Lane, key: "l", label: "open the selected fan-out lane's workspace", scope: scopePanel, context: ctxOutput, priority: 11, term: termLane},
 	{op: keymap.NextFailure, key: "N", label: "jump to the next failure: the newest failed attempt of each step in execution order, on the Output tab at the line it failed on — a blocked lane opens, esc comes back", scope: scopePanel, context: ctxOutput, priority: 11, term: termNextFail},
+	{op: keymap.NextItem, key: "alt+n", label: "open the next task in the board's order", scope: scopePanel, context: ctxOutput, priority: 12},
+	{op: keymap.PrevItem, key: "alt+shift+n", label: "open the previous task in the board's order", scope: scopePanel, context: ctxOutput, priority: 12},
 	{key: openIssueKey, label: "open the task's linked issue — esc comes back to this tab", scope: scopePanel, context: ctxOutput, hint: "i issue", priority: 8},
 	{key: "U", label: "open this lane's parent task", scope: scopePanel, context: ctxOutput, priority: 12},
 	{key: "d", label: "open the Diff tab", scope: scopePanel, context: ctxOutput, priority: 14},
 	{key: "g", label: "jump to the top of the output (g/home; G/end follows)", scope: scopePanel, context: ctxOutput, priority: 15},
+	// #1074: search the feed.
+	{op: keymap.Filter, key: "/", label: "search the output — n and N then walk the matches, esc ends the search", scope: scopePanel, context: ctxOutput, hint: "/ search", priority: 16, term: termFilter},
 
 	// Diff tab. Its own context rather than more ctxOutput rows: the diff is a
 	// list of files and the output is a stream of lines, so ↑/↓ mean different
@@ -628,11 +663,23 @@ var bindings = []binding{
 	{key: "C", label: "collapse every file — which is how the tab opens", scope: scopePanel, context: ctxDiff, priority: 5, aliased: true},
 	{op: keymap.Lane, key: "l", label: "open the selected fan-out lane's workspace", scope: scopePanel, context: ctxDiff, priority: 6, term: termLane},
 	{op: keymap.NextFailure, key: "N", label: "jump to the next failure: the newest failed attempt of each step in execution order, on the Output tab at the line it failed on — a blocked lane opens, esc comes back", scope: scopePanel, context: ctxDiff, priority: 6, term: termNextFail},
+	{op: keymap.NextItem, key: "alt+n", label: "open the next task in the board's order", scope: scopePanel, context: ctxDiff, priority: 12},
+	{op: keymap.PrevItem, key: "alt+shift+n", label: "open the previous task in the board's order", scope: scopePanel, context: ctxDiff, priority: 12},
 	{key: openIssueKey, label: "open the task's linked issue — esc comes back to this tab", scope: scopePanel, context: ctxDiff, hint: "i issue", priority: 8},
 	{key: "U", label: "open this lane's parent task", scope: scopePanel, context: ctxDiff, priority: 7},
 	{key: "d", label: "switch between the whole task's diff and what the attempt selected on the rail changed", scope: scopePanel, context: ctxDiff, hint: "d by attempt", priority: 9},
 	{key: "pgdown", label: "page the diff (pgup/pgdown, ctrl+d/ctrl+u)", scope: scopePanel, context: ctxDiff, priority: 10},
 	{key: "shift+right", label: "pan long lines (shift+←/→)", scope: scopePanel, context: ctxDiff, priority: 11},
+	{key: copyPickKey, label: "copy the selected hunk, the file's diff, or the task's id, branch, worktree path or pull request URL", scope: scopePanel, context: ctxDiff, priority: 15},
+	// #1074: search the diff, scroll it by line, read it again.
+	{op: keymap.Filter, key: "/", label: "search the diff, every file opened — n and N then walk the matches, esc ends the search", scope: scopePanel, context: ctxDiff, hint: "/ search", priority: 12, term: termFilter},
+	{key: "alt+down", label: "scroll the diff one line (alt+↑/alt+↓); ↑/↓ move between files", scope: scopePanel, context: ctxDiff, priority: 13},
+	{key: diffReloadKey, label: "read the diff again — a step ending reads it again too", scope: scopePanel, context: ctxDiff, hint: "ctrl+r reload", priority: 14},
+	// The search layer's own keys (#1074), over Output or Diff.
+	{key: "n", label: "the next match, wrapping", scope: scopePanel, context: ctxPaneFind, hint: "n next", priority: 1, noPalette: true},
+	{key: "N", label: "the previous match, wrapping", scope: scopePanel, context: ctxPaneFind, hint: "N previous", priority: 2, noPalette: true},
+	{op: keymap.Filter, key: "/", label: "search again", scope: scopePanel, context: ctxPaneFind, hint: "/ again", priority: 3, noPalette: true, term: termFilter},
+	{key: "esc", label: "end the search", scope: scopePanel, context: ctxPaneFind, hint: "esc end", priority: 4, noPalette: true},
 
 	// New task.
 	{key: "enter", label: "open the focused field's editor or picker", scope: scopePanel, context: ctxNewTask, hint: "enter edit field", priority: 2},
@@ -678,7 +725,7 @@ var bindings = []binding{
 	// transition table, so an archived row offers no action at all.
 	{op: keymap.Scope, key: "s", label: "cycle the window: last 7 days → last 30 days → all time", scope: scopePanel, context: ctxArchived, hint: "s window", priority: 3, term: termScope},
 	{key: ">", label: "next page of the archive (< goes back)", scope: scopePanel, context: ctxArchived, hint: "</> page", priority: 4},
-	{op: keymap.Filter, key: "/", label: "filter by id, title, state or issue", scope: scopePanel, context: ctxArchived, priority: 5, term: termFilter},
+	{op: keymap.Filter, key: "/", label: "filter by id, title, state, issue, workflow, step, branch or pull request number", scope: scopePanel, context: ctxArchived, priority: 5, term: termFilter},
 	{key: "space", label: "select this task for the bulk delete (V selects every row the filter is showing)", scope: scopePanel, context: ctxArchived, priority: 6},
 	{op: keymap.Refresh, key: "R", label: "reload the board", scope: scopePanel, context: ctxArchived, priority: 7, term: termRefresh},
 
@@ -720,6 +767,9 @@ var bindings = []binding{
 	// Chat search (task 158).
 	{key: "enter", label: "open the chat — on a turn's match, scrolled to that turn", scope: scopePanel, context: ctxChatSearch, hint: "enter open", priority: 1},
 	{key: "down", label: "move between results (↑/↓, pgup/pgdown)", scope: scopePanel, context: ctxChatSearch, hint: "↑/↓ move", priority: 2},
+	// The way back has a row of its own (#1073): nothing else on the line
+	// says how to leave.
+	{key: "esc", label: "close the search and go back to the tab you came from", scope: scopePanel, context: ctxChatSearch, hint: "esc back", priority: 3, noPalette: true},
 
 	// The compare split view (task 171 decisions 8 and 9). Fixed keys: no
 	// text field has the keyboard, and `[`/`]` read as left and right.
@@ -728,6 +778,7 @@ var bindings = []binding{
 	{key: "[", label: "keep the left side: the right one is archived and its branch deleted (asks first)", scope: scopePanel, context: ctxCompare, hint: "[ keep left", priority: 3},
 	{key: "]", label: "keep the right side: the left one is archived and its branch deleted (asks first)", scope: scopePanel, context: ctxCompare, hint: "] keep right", priority: 4},
 	{op: keymap.Refresh, key: "R", label: "read both sides again", scope: scopePanel, context: ctxCompare, hint: "R reload", priority: 5, term: termRefresh},
+	{key: "esc", label: "go back to where the comparison was opened from", scope: scopePanel, context: ctxCompare, hint: "esc back", priority: 6, noPalette: true},
 	{op: keymap.ExportChat, key: "alt+e", label: chatExportLabel, scope: scopePanel, context: ctxChats, priority: 7},
 	// Task 161 decision 6: the prompt is prefilled with the title, and the
 	// branch keeps the slug it was cut with.
@@ -752,7 +803,7 @@ var bindings = []binding{
 	{op: keymap.Chat9, key: "alt+9", label: chatJumpLabel("9th"), scope: scopePanel, context: ctxChats, priority: 20, noPalette: true},
 
 	// Chat workspace.
-	{key: "enter", label: "send the message — while a turn runs it is queued, and runs after that turn ends done (task 156)", scope: scopePanel, context: ctxChat, hint: "enter send", priority: 1},
+	{key: "enter", label: "send the message — while a turn runs it is queued, and runs after that turn ends done", scope: scopePanel, context: ctxChat, hint: "enter send", priority: 1},
 	{op: keymap.Steer, key: "ctrl+s", label: "steer the running turn — unavailable on every agent for now; the composer says why", scope: scopePanel, context: ctxChat, hint: "ctrl+s steer", priority: 15},
 	// Task 164 decision 4: ↑ edits the queue first, and recalls this
 	// chat's earlier prompts only when nothing is queued.
@@ -772,6 +823,8 @@ var bindings = []binding{
 	// set in newChatView; keymap.fixed records the other two as aliases.
 	{key: "ctrl+j", label: "insert a newline in the message (shift+enter and alt+enter too, where the terminal sends them)", scope: scopePanel, context: ctxChat, hint: "ctrl+j newline", priority: 11},
 	{key: "ctrl+x", label: "stop the running turn (its process tree is killed)", scope: scopePanel, context: ctxChat, hint: "ctrl+x stop", priority: 2},
+	// #1070: a failed turn's prompt, sent again — offered only after one.
+	{key: chatRetryKey, label: "retry the failed turn: send its prompt again", scope: scopePanel, context: ctxChat, hint: "alt+l retry", priority: 2},
 	// ctrl+r rather than `v` (task 071 decision 4): the composer owns every
 	// printable key, so a letter would be typed into the message.
 	{key: "ctrl+r", label: "how much of the conversation to show (quiet → compact → normal → verbose)", scope: scopePanel, context: ctxChat, hint: "ctrl+r detail", priority: 4},
@@ -796,7 +849,9 @@ var bindings = []binding{
 	// is a combination — the composer owns every printable key — and because
 	// the textarea binds ctrl+w, ctrl+d and ctrl+k to editing.
 	{key: chatCloseKey, label: "close this chat — a chat opened on a task, whose worktree and branch stay and which unlocks, or on an issue, whose main worktree is freed for the next main task (asks first)", scope: scopePanel, context: ctxChat, hint: "ctrl+q close", priority: 6},
-	{key: "esc", label: "back to where the chat was opened", scope: scopePanel, context: ctxChat, hint: "esc back", priority: 7},
+	// Ahead of hand-off and close (#1073): leaving is the one move every
+	// visit ends with.
+	{key: "esc", label: "back to where the chat was opened", scope: scopePanel, context: ctxChat, hint: "esc back", priority: 3},
 	{key: rawToggleKey, label: "show the assistant's original Markdown instead of the rendered view", scope: scopePanel, context: ctxChat, hint: "ctrl+o raw", priority: 8},
 	{key: copyPickKey, label: "copy an assistant message, its plain text, or one of its code blocks", scope: scopePanel, context: ctxChat, hint: "ctrl+y copy", priority: 9},
 	{key: linkPickKey, label: "list the links in the assistant's messages — open one in a browser or copy it", scope: scopePanel, context: ctxChat, hint: "ctrl+l links", priority: 10},
@@ -842,9 +897,11 @@ var bindings = []binding{
 	{op: keymap.ShellCommand, key: "alt+x", label: "run a shell command in the chat's directory — its output shows as a card you can attach to the next prompt", scope: scopePanel, context: ctxChat, hint: "alt+x shell", priority: 21},
 	{key: "ctrl+v", label: "paste: a clipboard image goes up to the chat and an [image N] chip into the message; anything else pastes as text", scope: scopePanel, context: ctxChat, priority: 22, noPalette: true},
 	{op: keymap.Rewind, key: "alt+z", label: "rewind… — the chat's code, conversation or both to before a turn, picked from a list (tab picks which)", scope: scopePanel, context: ctxChat, hint: "alt+z rewind", priority: 21},
+	// #1078: a direct key into the conversation, named in the footer.
+	{op: keymap.Conversation, key: "alt+i", label: "move the keyboard into the conversation — expand tool calls, jump between prompts, attach a shell card (alt+i or esc comes back)", scope: scopePanel, context: ctxChat, hint: "alt+i conversation", priority: 4},
 	{op: keymap.ChatDiff, key: "alt+d", label: "show the chat's diff in place of the conversation, to review it hunk by hunk (esc comes back, the draft untouched)", scope: scopePanel, context: ctxChat, hint: "alt+d diff", priority: 21},
 	{key: "]", label: "move to the next hunk ([ the previous), opening the file it is in", scope: scopePanel, context: ctxChatDiff, hint: "]/[ hunk", priority: 1},
-	{key: "x", label: "reject the selected hunk: it is reverted in the chat's directory and a note for the agent opens your draft", scope: scopePanel, context: ctxChatDiff, hint: "x reject", priority: 2},
+	{key: "x", label: "reject the selected hunk (asks first): it is reverted in the chat's directory and a note for the agent opens your draft", scope: scopePanel, context: ctxChatDiff, hint: "x reject", priority: 2},
 	{key: "a", label: "accept the selected hunk — a review mark only; on an accepted hunk it clears the mark", scope: scopePanel, context: ctxChatDiff, hint: "a accept", priority: 3},
 	{key: "s", label: "switch between the changes since the base and since the last turn", scope: scopePanel, context: ctxChatDiff, hint: "s scope", priority: 4},
 	{key: "r", label: "read the diff again", scope: scopePanel, context: ctxChatDiff, hint: "r reload", priority: 5},
@@ -856,6 +913,7 @@ var bindings = []binding{
 	{key: "shift+right", label: "pan long lines (shift+←/→)", scope: scopePanel, context: ctxChatDiff, priority: 11},
 	{key: "esc", label: "go back to the conversation and the composer, the draft untouched", scope: scopePanel, context: ctxChatDiff, hint: "esc back", priority: 12},
 	{key: "down", label: "move the line cursor (j/k and ↑/↓)", scope: scopePanel, context: ctxChatConversation, hint: "j/k move", priority: 1},
+	{op: keymap.Conversation, key: "alt+i", label: "give the keyboard back to the composer (esc and i too)", scope: scopePanel, context: ctxChatConversation, priority: 12},
 	{key: "enter", label: "expand or fold the tool call or shell output under the cursor — it draws as at verbose, the level stays", scope: scopePanel, context: ctxChatConversation, hint: "enter expand", priority: 2},
 	{op: keymap.Filter, key: "/", label: "search the conversation again", scope: scopePanel, context: ctxChatConversation, hint: "/ search", priority: 3, term: termFilter},
 	{key: "n", label: "the next match (N the previous); both wrap", scope: scopePanel, context: ctxChatConversation, hint: "n/N match", priority: 4},
@@ -986,7 +1044,7 @@ var bindings = []binding{
 
 	// The structured editor sub-layer.
 	{key: "up/down", label: "move between rows", scope: scopePanel, context: ctxWorkflowEditor, hint: "↑↓ rows", priority: 1},
-	{key: "enter", label: "edit the row, cycle its values, or descend into a nested body", scope: scopePanel, context: ctxWorkflowEditor, hint: "enter edit", priority: 2},
+	{key: "enter", label: "edit the row, open its values, or descend into a nested body", scope: scopePanel, context: ctxWorkflowEditor, hint: "enter edit", priority: 2},
 	{op: keymap.Refresh, key: "R", label: "re-read the file (what a stale-write 409 offers)", scope: scopePanel, context: ctxWorkflowEditor, hint: "R reload", priority: 3, term: termRefresh},
 	{key: "esc", label: "leave the nested body, then the editor", scope: scopePanel, context: ctxWorkflowEditor, hint: "esc back", priority: 4},
 	// The structural keys (issue #320). They sit behind the takeover, so they
@@ -996,6 +1054,8 @@ var bindings = []binding{
 	{op: keymap.Add, key: "a", label: "add a step, lane or declared field after the one under the cursor", scope: scopePanel, context: ctxWorkflowEditor, hint: "a add", priority: 5, term: termAdd},
 	{op: keymap.DraftRemove, key: "d", label: "remove the item under the cursor (asks first)", scope: scopePanel, context: ctxWorkflowEditor, hint: "d remove", priority: 6, term: termDraftDrop},
 	{key: "K/J", label: "move the item up (K) or down (J); k and j still move the cursor", scope: scopePanel, context: ctxWorkflowEditor, hint: "K/J move", priority: 7},
+	// #1056: the last write, taken back — the value it replaced, written.
+	{key: "u", label: "undo the last write: put back the value it replaced", scope: scopePanel, context: ctxWorkflowEditor, hint: "u undo", priority: 7},
 	{key: "ctrl+s", label: "in the multi-line pane: save (enter inserts a newline there)", scope: scopePanel, context: ctxWorkflowEditor, hint: "ctrl+s save", priority: 8},
 	{op: keymap.FreeText, key: "t", label: "in an open list: type a value it does not offer", scope: scopePanel, context: ctxWorkflowEditor, priority: 9, term: termFreeText},
 
@@ -1038,6 +1098,8 @@ var bindings = []binding{
 	{key: openIssueKey, label: "open the task's linked issue — esc comes back to this tab", scope: scopePanel, context: ctxTaskWorkflow, hint: "i issue", priority: 8},
 	{op: keymap.Lane, key: "l", label: "open the selected fan-out lane's workspace", scope: scopePanel, context: ctxTaskWorkflow, priority: 4, term: termLane},
 	{op: keymap.NextFailure, key: "N", label: "jump to the next failure: the newest failed attempt of each step in execution order, on the Output tab at the line it failed on — a blocked lane opens, esc comes back", scope: scopePanel, context: ctxTaskWorkflow, priority: 4, term: termNextFail},
+	{op: keymap.NextItem, key: "alt+n", label: "open the next task in the board's order", scope: scopePanel, context: ctxTaskWorkflow, priority: 12},
+	{op: keymap.PrevItem, key: "alt+shift+n", label: "open the previous task in the board's order", scope: scopePanel, context: ctxTaskWorkflow, priority: 12},
 	{key: "tab", label: "move between the task's tabs in the order the strip draws them (shift+tab goes back)", scope: scopePanel, context: ctxTaskWorkflow, hint: "tab tabs", priority: 5},
 	{key: "U", label: "open this lane's parent task", scope: scopePanel, context: ctxTaskWorkflow, priority: 6},
 	{key: "d", label: "open the Diff tab", scope: scopePanel, context: ctxTaskWorkflow, priority: 8},
@@ -1050,6 +1112,8 @@ var bindings = []binding{
 	{key: openIssueKey, label: "open the task's linked issue — esc comes back to this tab", scope: scopePanel, context: ctxTaskStepDetails, hint: "i issue", priority: 8},
 	{op: keymap.Lane, key: "l", label: "open the selected fan-out lane's workspace", scope: scopePanel, context: ctxTaskStepDetails, priority: 4, term: termLane},
 	{op: keymap.NextFailure, key: "N", label: "jump to the next failure: the newest failed attempt of each step in execution order, on the Output tab at the line it failed on — a blocked lane opens, esc comes back", scope: scopePanel, context: ctxTaskStepDetails, priority: 4, term: termNextFail},
+	{op: keymap.NextItem, key: "alt+n", label: "open the next task in the board's order", scope: scopePanel, context: ctxTaskStepDetails, priority: 12},
+	{op: keymap.PrevItem, key: "alt+shift+n", label: "open the previous task in the board's order", scope: scopePanel, context: ctxTaskStepDetails, priority: 12},
 	{key: "U", label: "open this lane's parent task", scope: scopePanel, context: ctxTaskStepDetails, priority: 5},
 	{key: "d", label: "open the Diff tab", scope: scopePanel, context: ctxTaskStepDetails, priority: 7},
 
@@ -1074,6 +1138,8 @@ var bindings = []binding{
 	// request of its own.
 	{op: keymap.Lane, key: "l", label: "open the selected fan-out lane's workspace", scope: scopePanel, context: ctxTaskPull, priority: 7, term: termLane},
 	{op: keymap.NextFailure, key: "N", label: "jump to the next failure: the newest failed attempt of each step in execution order, on the Output tab at the line it failed on — a blocked lane opens, esc comes back", scope: scopePanel, context: ctxTaskPull, priority: 7, term: termNextFail},
+	{op: keymap.NextItem, key: "alt+n", label: "open the next task in the board's order", scope: scopePanel, context: ctxTaskPull, priority: 12},
+	{op: keymap.PrevItem, key: "alt+shift+n", label: "open the previous task in the board's order", scope: scopePanel, context: ctxTaskPull, priority: 12},
 	{key: "tab", label: "move between the task's tabs in the order the strip draws them (shift+tab goes back)", scope: scopePanel, context: ctxTaskPull, hint: "tab tabs", priority: 12},
 	{key: "U", label: "open this lane's parent task", scope: scopePanel, context: ctxTaskPull, priority: 13},
 	{key: "d", label: "open the Diff tab", scope: scopePanel, context: ctxTaskPull, priority: 15},
@@ -1115,6 +1181,11 @@ var bindings = []binding{
 	// Daemon.
 	{op: keymap.Refresh, key: "R", label: "re-read the daemon info, the config and the log", scope: scopePanel, context: ctxDaemon, hint: "R refresh", priority: 1, term: termRefresh},
 	{key: "f", label: "follow the end of the log again (f/G)", scope: scopePanel, context: ctxDaemon, hint: "f follow", priority: 2},
+	// #1081: the log without this TUI's own polling, a search, and a
+	// restart that asks first.
+	{key: daemonRequestsKey, label: "show or hide the successful request lines — most of them this TUI's own polling", scope: scopePanel, context: ctxDaemon, hint: "h requests", priority: 5},
+	{op: keymap.Filter, key: "/", label: "search the log", scope: scopePanel, context: ctxDaemon, hint: "/ search", priority: 5, term: termFilter},
+	{key: daemonRestartKey, label: "restart the daemon (asks first; running steps are interrupted and re-run)", scope: scopePanel, context: ctxDaemon, hint: "r restart", priority: 9},
 	{key: "down", label: "scroll the log (↑/↓)", scope: scopePanel, context: ctxDaemon, hint: "↑/↓ scroll", priority: 3},
 	// The config block became editable in task 060. tab is what says whether
 	// ↑/↓ mean the config list or the log pane — the view has two scrollable
@@ -1160,12 +1231,21 @@ var bindings = []binding{
 	{key: "tab", label: "next category (shift+tab goes back)", scope: scopePanel, context: ctxSettings, hint: "tab category", priority: 4},
 	{op: keymap.Filter, key: "/", label: "search every setting", scope: scopePanel, context: ctxSettings, hint: "/ search", priority: 5, term: termFilter},
 	{key: "backspace", label: "reset the selected setting to its default", scope: scopePanel, context: ctxSettings, hint: "⌫ reset", priority: 6},
+	// #1057: every change applies at once, so the last one can be taken back.
+	{key: "u", label: "undo the last change: put back the value it replaced", scope: scopePanel, context: ctxSettings, hint: "u undo", priority: 6},
 	{op: keymap.Editor, key: "e", label: "open config.yaml in $EDITOR", scope: scopePanel, context: ctxSettings, priority: 7, term: termEditor},
 	{op: keymap.Refresh, key: "R", label: "re-read the configuration", scope: scopePanel, context: ctxSettings, priority: 8, term: termRefresh},
 	{key: "esc", label: "clear the search, else leave Settings", scope: scopePanel, context: ctxSettings, priority: 9},
 
 	// The config editor: it owns the keyboard while it is open and prints its
 	// own key line, so these are here to keep ? complete.
+	// The key-bindings screen (#1079) prints its own key line; these keep ?
+	// and the footer honest.
+	{key: "down", label: "move through the operations (↑/↓, pgup/pgdown, home/end)", scope: scopePanel, context: ctxKeyBindings, hint: "↑↓ move", priority: 1, noPalette: true},
+	{key: "enter", label: "set the operation's key by pressing it — a clash is named before anything is saved", scope: scopePanel, context: ctxKeyBindings, hint: "enter set", priority: 2, noPalette: true},
+	{key: "backspace", label: "put the operation back on its default key", scope: scopePanel, context: ctxKeyBindings, hint: "backspace default", priority: 3, noPalette: true},
+	{op: keymap.FreeText, key: "t", label: "type every binding as one line of operation=key pairs, to paste a whole keymap", scope: scopePanel, context: ctxKeyBindings, priority: 5, noPalette: true, term: termFreeText},
+	{key: "esc", label: "back to Settings", scope: scopePanel, context: ctxKeyBindings, hint: "esc back", priority: 4, noPalette: true},
 	{key: "left", label: "choose a value, for a key with a fixed vocabulary (←/→)", scope: scopePanel, context: ctxConfigEdit, noPalette: true},
 	{key: "enter", label: "apply the change; the daemon validates and writes config.yaml", scope: scopePanel, context: ctxConfigEdit, hint: "enter apply", priority: 1, noPalette: true},
 	{key: "y", label: "confirm a key that decides what the daemon executes or exposes", scope: scopePanel, context: ctxConfigEdit, noPalette: true},
@@ -1182,7 +1262,8 @@ var bindings = []binding{
 	{key: "tab", label: mainTabLabel, scope: scopePanel, context: ctxIssues, hint: "tab next tab", priority: 0, mainTab: true, noPalette: true},
 	{op: keymap.OpenRow, key: "enter", label: "open the selected issue", scope: scopePanel, context: ctxIssues, hint: "enter open", priority: 1, term: termOpenRow},
 	{key: "down", label: "move up and down the column (↑/↓)", scope: scopePanel, context: ctxIssues, hint: "↑↓ card", priority: 2},
-	{op: keymap.Filter, key: "/", label: "filter by id, title, label or kind", scope: scopePanel, context: ctxIssues, hint: "/ filter", priority: 3, term: termFilter},
+	{key: copyPickKey, label: "copy the selected issue's id, title, source reference or URL", scope: scopePanel, context: ctxIssues, priority: 12},
+	{op: keymap.Filter, key: "/", label: "filter by id, title, label, kind, priority, author or source reference", scope: scopePanel, context: ctxIssues, hint: "/ filter", priority: 3, term: termFilter},
 	// The writes (task 130.12). `n` is §15's "make a new one here", the
 	// chats board's precedent; `i` is the trigger list's "edit in a form";
 	// `X` offers what the daemon's available_actions allow and nothing else.
@@ -1201,6 +1282,8 @@ var bindings = []binding{
 	// request to the project's issue source, `vincent issue sync` from the
 	// list, offered only where there is a sync pass to wake (task 142.14).
 	{key: issueSyncKey, label: "sync this project's issues from its issue source now — sweeping out the ones deleted there", scope: scopePanel, context: ctxIssues, hint: "S sync", priority: 11, syncable: true},
+	// #1075: the order within the lanes, cycled.
+	{key: boardSortKey, label: "cycle the order within the lanes: the daemon's, newest, priority, title", scope: scopePanel, context: ctxIssues, hint: "z sort", priority: 12},
 	// Crossing the columns (task 150.2), a main key of the board.
 	{key: "left", label: "move to the next column with a card (←/→)", scope: scopePanel, context: ctxIssues, hint: "←/→ lane", priority: 3},
 	{key: "right", label: "move to the next column with a card (←/→)", scope: scopePanel, context: ctxIssues, priority: 13, aliased: true},
@@ -1221,14 +1304,14 @@ var bindings = []binding{
 	{op: keymap.ChatWith, key: "alt+t", label: issueChatWithLabel, scope: scopePanel, context: ctxIssues, priority: 8},
 	// The issue detail (§15 view 13).
 	{op: keymap.OpenRow, key: "enter", label: "open the selected row — a task's workspace or a chat, and esc comes back here; on the Issue tab's tasks-and-chats line, switch to the Work tab", scope: scopePanel, context: ctxIssue, hint: "enter open", priority: 1, term: termOpenRow},
-	{op: keymap.Browser, key: "o", label: "open an imported issue's page in a browser", scope: scopePanel, context: ctxIssue, hint: "o browser", priority: 2, term: termBrowser},
-	{key: rawToggleKey, label: "show the description's and comments' original Markdown instead of the rendered view", scope: scopePanel, context: ctxIssue, hint: "ctrl+o raw", priority: 3},
-	{key: linkPickKey, label: "list the links in the description and comments, and the source page — open one in a browser or copy it", scope: scopePanel, context: ctxIssue, hint: "ctrl+l links", priority: 4},
-	{key: copyPickKey, label: "copy the title, the description, a comment or the source URL", scope: scopePanel, context: ctxIssue, hint: "ctrl+y copy", priority: 4},
-	{op: keymap.Refresh, key: "R", label: "re-read the issue — never a sync with a remote tracker", scope: scopePanel, context: ctxIssue, hint: "R refresh", priority: 5, term: termRefresh},
+	{op: keymap.Browser, key: "o", label: "open an imported issue's page in a browser", scope: scopePanel, context: ctxIssue, hint: "o browser", priority: 10, term: termBrowser},
+	{key: rawToggleKey, label: "show the description's and comments' original Markdown instead of the rendered view", scope: scopePanel, context: ctxIssue, hint: "ctrl+o raw", priority: 11},
+	{key: linkPickKey, label: "list the links in the description and comments, and the source page — open one in a browser or copy it", scope: scopePanel, context: ctxIssue, hint: "ctrl+l links", priority: 11},
+	{key: copyPickKey, label: "copy the id, the title, the source reference, the description, a comment or the URL", scope: scopePanel, context: ctxIssue, hint: "ctrl+y copy", priority: 11},
+	{op: keymap.Refresh, key: "R", label: "re-read the issue — never a sync with a remote tracker", scope: scopePanel, context: ctxIssue, hint: "R refresh", priority: 9, term: termRefresh},
 	// The page is scroll-first (#792): the arrows scroll it, moving the
 	// selection only among the Main worktree and task rows on screen.
-	{key: "down", label: "scroll a line; on screen, move the selection between the Main worktree section and the linked tasks first (↑/↓)", scope: scopePanel, context: ctxIssue, hint: "↑↓ scroll", priority: 6},
+	{key: "down", label: "scroll a line; on screen, move the selection between the Main worktree section and the linked tasks first (↑/↓)", scope: scopePanel, context: ctxIssue, hint: "↑↓ scroll", priority: 9},
 	{key: "pgdown", label: "scroll a page (pgup/pgdown, space)", scope: scopePanel, context: ctxIssue, priority: 7},
 	{key: "ctrl+d", label: "scroll half a page (ctrl+u/ctrl+d)", scope: scopePanel, context: ctxIssue, priority: 7},
 	{key: "end", label: "jump to the end of the page (home/end, g/G)", scope: scopePanel, context: ctxIssue, priority: 7},
@@ -1237,18 +1320,21 @@ var bindings = []binding{
 	{key: "tab", label: "move between the Issue and Work tabs (shift+tab goes back)", scope: scopePanel, context: ctxIssue, hint: "tab work", priority: 6},
 	{key: "]", label: "move to the next tab ([ goes back)", scope: scopePanel, context: ctxIssue, priority: 7},
 	{op: keymap.New, key: "n", label: "file a new issue in this issue's project", scope: scopePanel, context: ctxIssue, hint: "n new", priority: 8},
-	{op: keymap.Add, key: "a", label: "create a task from this issue — the form is prefilled from it and editable first, and offers a separate worktree once the issue has a main branch", scope: scopePanel, context: ctxIssue, hint: "a new task", priority: 8, term: termAdd},
-	{key: issueEditKey, label: "edit the issue in a form", scope: scopePanel, context: ctxIssue, hint: "i edit", priority: 9},
-	{key: issueStateKey, label: "close or reopen the issue — only what the daemon offers", scope: scopePanel, context: ctxIssue, hint: "X close/reopen", priority: 10},
-	{key: issueMoveKey, label: issueMoveLabel, scope: scopePanel, context: ctxIssue, hint: "m move", priority: 10},
+	{op: keymap.Add, key: "a", label: "create a task from this issue — the form is prefilled from it and editable first, and offers a separate worktree once the issue has a main branch", scope: scopePanel, context: ctxIssue, hint: "a new task", priority: 2, term: termAdd},
+	{key: issueEditKey, label: "edit the issue in a form", scope: scopePanel, context: ctxIssue, hint: "i edit", priority: 7},
+	{key: issueStateKey, label: "close or reopen the issue — only what the daemon offers", scope: scopePanel, context: ctxIssue, hint: "X close/reopen", priority: 5},
+	{key: issueMoveKey, label: issueMoveLabel, scope: scopePanel, context: ctxIssue, hint: "m move", priority: 7},
 	// The thread (task 130 decision 24, 130.16): a local comment, written in
 	// $EDITOR. Withheld on an issue whose remote is live, which takes
 	// no comment here — nothing is ever posted to its remote.
-	{op: keymap.Comment, key: "W", label: "write a comment in $EDITOR — saved empty, nothing is posted; never on an issue mirrored from a remote tracker", scope: scopePanel, context: ctxIssue, hint: "W comment", priority: 10, term: termComment},
+	{op: keymap.Comment, key: "W", label: "write a comment in $EDITOR — saved empty, nothing is posted; never on an issue mirrored from a remote tracker", scope: scopePanel, context: ctxIssue, hint: "W comment", priority: 4, term: termComment},
 	{op: keymap.Delete, key: "D", label: "delete the issue permanently (asks first; never deletes at the issue's source)", scope: scopePanel, context: ctxIssue, priority: 11, term: termDelete},
-	{op: keymap.Ready, key: ".", label: "mark an idle in-progress issue ready, or a pending hand-off issue not ready", scope: scopePanel, context: ctxIssue, hint: ". ready", priority: 8, term: termReady},
-	{op: keymap.Return, key: ",", label: "return a claimed or waiting issue from its handoff (asks first)", scope: scopePanel, context: ctxIssue, hint: ", return", priority: 8, term: termReturn},
-	{op: keymap.Chat, key: "T", label: issueChatLabel, scope: scopePanel, context: ctxIssue, hint: "T chat", priority: 8},
+	{op: keymap.Ready, key: ".", label: "mark an idle in-progress issue ready, or a pending hand-off issue not ready", scope: scopePanel, context: ctxIssue, hint: ". ready", priority: 7, term: termReady},
+	{op: keymap.Return, key: ",", label: "return a claimed or waiting issue from its handoff (asks first)", scope: scopePanel, context: ctxIssue, hint: ", return", priority: 7, term: termReturn},
+	{op: keymap.Chat, key: "T", label: issueChatLabel, scope: scopePanel, context: ctxIssue, hint: "T chat", priority: 3},
+	// #1077: the neighbouring issue, in the issues board's order.
+	{op: keymap.NextItem, key: "alt+n", label: "open the next issue in the board's order", scope: scopePanel, context: ctxIssue, priority: 12},
+	{op: keymap.PrevItem, key: "alt+shift+n", label: "open the previous issue in the board's order", scope: scopePanel, context: ctxIssue, priority: 12},
 	{op: keymap.ChatWith, key: "alt+t", label: issueChatWithLabel, scope: scopePanel, context: ctxIssue, priority: 8},
 
 	// The issue form and prompt own the keyboard and print their own key
@@ -1279,7 +1365,7 @@ var bindings = []binding{
 	{key: "T", label: "dry-run a sample event through the trigger's filter; fires nothing", scope: scopePanel, context: ctxTriggers, hint: "T test", priority: 7},
 	{key: "X", label: "poll the source once and judge what it returns; fires nothing", scope: scopePanel, context: ctxTriggers, hint: "X poll", priority: 8},
 	{key: "tab", label: "move between the trigger list and its delivery ledger", scope: scopePanel, context: ctxTriggers, hint: "tab ledger", priority: 9},
-	{key: "B", label: "open triggers.enabled, the global switch, in the daemon view's editor", scope: scopePanel, context: ctxTriggers, priority: 10},
+	{key: "B", label: "open triggers.enabled, the global switch, on the Settings screen", scope: scopePanel, context: ctxTriggers, priority: 10},
 	{op: keymap.Refresh, key: "R", label: "re-read the triggers and the ledger", scope: scopePanel, context: ctxTriggers, hint: "R refresh", priority: 11, term: termRefresh},
 	{op: keymap.Filter, key: "/", label: "filter by id, source or action", scope: scopePanel, context: ctxTriggers, priority: 12, term: termFilter},
 

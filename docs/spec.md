@@ -12469,12 +12469,23 @@ GET    /v1/triggers                     *Added 2026-09-13 (task 096).* { enabled
                                         finds one, and absent only when none can be read. `armed` is
                                         valid + enabled + triggers.enabled, and `disarmed_reason`
                                         names the first of those that is missing
-POST   /v1/triggers                     { id, project_id, poll_interval?, command[]?, workflow?,
-                                          title? } → 201 { id, file, version, errors[] }.
+POST   /v1/triggers                     { id, project_id, source_type?, poll_interval?, command[]?,
+                                          workflow?, title? } → 201 { id, file, version, errors[] }.
                                         Writes {config_dir}/triggers/{id}.yaml, 0600, from a
                                         daemon-rendered starter: `type: command`, `create_task`,
                                         `enabled: false` and **no `on_fire` line**, so no YAML
-                                        travels on the wire. 409 when the file exists
+                                        travels on the wire. 409 when the file exists.
+                                        *Amended 2026-11-23 (issue #1082):* `source_type` picks
+                                        the starter's source — `command` (absent), `issues`,
+                                        `schedule`, `github_prs` or `http`; the deprecated
+                                        `github_issues` is not offered. Each starter loads as
+                                        written and is still disabled with no `on_fire` line:
+                                        `issues` matches `by: [human, agent]` and `github_prs`
+                                        `action: merged`, so neither needs `allowed_actors`;
+                                        `schedule` is `every: 1h`; `http` is signed
+                                        `github_hmac_sha256` with `$VINCENT_TRIGGER_SECRET`.
+                                        `poll_interval` and `command` on another source, and an
+                                        unknown `source_type`, are 400 before anything is written
 GET    /v1/triggers/schema              the trigger schema as data, the way /v1/workflows/schema
                                         serves §8.2: top-level fields, the source and action
                                         variants, and the values marked dangerous
@@ -16705,6 +16716,27 @@ stream for the live tail.
    single-key global would otherwise land in the text field. There is still no
    seventh view — the daemon view already owned this block.
 
+   *Amended 2026-11-24 (issue #1081).* **The view restarts the daemon, and
+   only restarts it.** "It reports, it does not act" is narrowed a second
+   time. `r` asks, and `y` stops the daemon gracefully the way `vincent daemon
+   stop` does, with the same PID-identity guard, then reruns the connect flow,
+   which auto-starts a new one. A *stop* is still not offered: the argument
+   above is about a TUI that leaves no daemon behind, and a restart leaves one.
+   The question names its consequence (running steps are interrupted and
+   re-run when the daemon is back, §12.4) and puts its key first: `y`
+   restarts, and any other key keeps the daemon. It is drawn over an empty,
+   unread or unreadable log too, and so is a failed stop, which leaves the
+   connection alone. The replacement is the TUI's detached auto-start, not the
+   service manager's: the stop exits 0, which none of `vincent service
+   install`'s definitions restarts (they restart on failure only, §12.1), so
+   a daemon that was running under a service keeps running outside it, with
+   the TUI's environment, until the service is next started. That is a
+   recorded limitation rather than a hidden one; restart a service-managed
+   daemon through its service manager. The log pane hides the successful
+   `http request` lines, mostly the TUI's own polling, counts them and shows
+   them on `h`; a failed request stays. `/` narrows the log to the lines that
+   contain what is typed.
+
    The log tail is read straight from `{data_dir}/logs/daemon.log`, the one
    place the TUI is not a pure API client: an endpoint cannot serve the log when
    the daemon is the thing that died, which is when the log is worth reading —
@@ -17468,7 +17500,8 @@ stream for the live tail.
 
    **Create and edit** use task 065's form, rendered from
    `GET /v1/triggers/schema` rather than from a client copy of the rules.
-   - `a` creates: the daemon renders a disabled starter.
+   - `a` creates: the daemon renders a disabled starter, of the source the
+     prompt picks (amended 2026-11-23, issue #1082).
    - `i` or `enter` opens the form on a file.
    - `e` hands the file to `$EDITOR`.
    - `space` toggles `enabled`.
@@ -17658,6 +17691,16 @@ stream for the live tail.
    key, the arrows and reset included. The daemon view keeps a digest and no
    longer edits. `POST /v1/config/branch-preview` renders a candidate template
    with the daemon's own renderer, and `GET /v1/info` adds `config_path`.
+
+   *Amended 2026-11-24 (issue #1079).* **Settings has a Key bindings screen.**
+   `enter` on Key bindings lists every rebindable operation, grouped as the
+   guide's key tables are, with the key in force and, for a changed one, its
+   default. `enter` on a row binds the next key pressed. A clash is checked
+   with the same `keymap.Build` the daemon runs over `tui.keys` (§12.3) and
+   named before anything is saved; a free key is written through
+   `PATCH /v1/config` and works at once. `backspace` puts one operation back
+   on its default, and `t` keeps the line of `operation=key` pairs for
+   pasting a whole keymap. It is a screen inside Settings, not a fifteenth view.
 
    *Amended 2026-11-18 (task 150.6; applies to views 1 and 2).* **The live task
    board is four columns of cards**: Needs you (`taskstate.NeedsHuman`), Running
@@ -19542,6 +19585,23 @@ swallowed. **In the workspace the palette has a tabs group**, one "go to the
 replays the digit. Overview's jump links are not copied into it: from another
 tab, `3` would switch tabs without moving the attempt cursor.
 
+*Amended 2026-11-24 (issue #1080).* **The palette finds items, and a screens
+menu reaches every screen in two keys.** Once a query is typed the palette
+also lists the selected project's tasks, chats and issues by number and
+title, and running one opens it. Where some row contains the query, those rows
+are still the answer; otherwise the query's words match in any order, as a
+word's start, as letters in order, or one typo off for a word of four letters
+or more, best first. A palette row reopens the full-auto notice of §16,
+marked as reopened; reading it again writes nothing. `` ` `` opens the
+**screens menu**: the palette in a mode with no search line, listing every
+screen on a letter (`t` tasks, `i` issues, `c` chats, `/` chat search, `n` new
+task, `p` projects, `w` workflows, `d` daemon, `s` settings, `r` pull requests,
+`a` and `A` the archived boards, `T` triggers). A letter goes there, and
+`↑`/`↓` and `enter` work as they do in the palette. Its new-task row opens the
+form the way `n` does. The header's right edge names the key. "Navigation
+living here" above still holds: the menu is a faster route to the palette's
+own screen rows, not a second set of view keys to memorise.
+
 **The footer is one line and never wraps.** Left to right: the focused panel's
 keys (at most five, in registry priority order), then the task's
 `available_actions`, then — pinned right and never truncated — `: commands`,
@@ -19556,7 +19616,7 @@ It is still measured first and never truncated, and its extra width comes out
 of the hints' budget.
 *Amended 2026-10-21 (task 135.10, issue #794):* **a status or a confirmation
 leads, cut from the right.** The left cut above is for hints. When the action
-bar holds a confirmation (`cancel #42? a running step is killed (y/n)`) or a
+bar holds a confirmation (`cancel #42? (y/n) · a running step is killed`) or a
 status (an action's error), that text is the line's first segment and is cut
 from the right with `…` to the room the pinned segment leaves; the hints follow
 it while there is room and are counted into `+N` when there is not. Its start
@@ -19609,6 +19669,9 @@ Global: `:` palette (`ctrl+p` where a text field has the keyboard) · `?` help (
 a status line reminds of the running task count on exit) · `M` toggle mouse · `@` switch project (*added 2026-10-05,
 task 132.4*: opens the project picker, §15 Layout; the operation is `project`,
 rebindable like every global).
+
+*Added 2026-11-24 (issue #1080):* `` ` `` opens the screens menu (§15
+Discovery). The operation is `go_to`, rebindable like every global.
 
 *Added 2026-11-17 (task 149):* `Z` pauses all work, or continues it (§11). It
 asks y/n on the status line first — it changes what every project is doing —
@@ -19989,6 +20052,22 @@ instant, default agent. When the task or issue already has an open chat,
 `chat_with` behaves as `T` does and goes to it, ignoring the form, because a
 linked chat's agent is fixed. `shift+T` could not be a second key: `T` already
 is shift+t.
+
+*Amended 2026-11-23 (#1087).* A third rebindable operation sits beside them:
+**`diagnose`** (default `Q`), on the task-action surface only, offered on a
+`blocked` or `aborted` task exactly when `chat` is — or when a chat already
+holds the task, which it then reopens as `T` does. It opens the same linked
+chat with the default agent and sends, as the first message, the question why
+the task stopped (diagnosis only, no changes) with what the failure card shows:
+step, attempt, reason, exit code, the failing command, the selected evidence
+lines and the last status. The chat is titled `why step N <name> stopped ·
+<reason>`, and the title is the only link back: nothing is stored on the task.
+A closed chat so titled, for the card's step and reason, is shown on the
+failure card as the opening of its first answer — under *Diagnosis* when it was
+opened after the failing attempt finished, under *Stopped here before* when it
+was about an earlier stop — and a later `diagnose` passes that answer to the
+new chat to check first. `Q` because every mnemonic letter was taken on a
+surface the task actions share: `W` is the issue screen's comment.
 
 An **open new-chat draft captures input on every row**, not only on the two
 text ones. This is a deliberate, scoped exception to the rule above that the

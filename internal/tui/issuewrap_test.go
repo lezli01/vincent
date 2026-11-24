@@ -193,7 +193,7 @@ func TestIssuesListProseWraps(t *testing.T) {
 	empty := issuesFixture()
 	empty.issues = nil
 	lines := renderedLines(empty, w, h)
-	if !shows(lines, "reconciler tick.") {
+	if !shows(lines, "files one") {
 		t.Errorf("the empty-state hint lost its end:\n%s", strings.Join(lines, "\n"))
 	}
 	assertNoEllipsis(t, lines)

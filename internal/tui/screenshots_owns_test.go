@@ -52,9 +52,18 @@ func TestScreenshotOwnsMatchesTUIFilters(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		// The filter expression owns() builds, with $hay spliced in.
-		expr := "[.[] | select(" + hay + ` | map(. // "") | join(" ") | ascii_downcase | contains($n | ascii_downcase))] | length`
-		cmd := exec.Command(jq, "--arg", "n", needle, expr)
+		// The filter expression owns() builds, with $hay spliced in. tok is
+		// owns()'s whole-token rule for a `#N` needle, which only the issues
+		// filter has (#1075).
+		tok := "0"
+		if hay == hays["issue"] {
+			tok = "1"
+		}
+		expr := "[.[] | select((" + hay + ` | map(. // "") | join(" ") | ascii_downcase) as $h
+    | ($n | ascii_downcase) as $q
+    | if $tok == 1 and ($q | startswith("#")) then (" " + $h + " ") | contains(" " + $q + " ")
+      else $h | contains($q) end)] | length`
+		cmd := exec.Command(jq, "--arg", "n", needle, "--argjson", "tok", tok, expr)
 		cmd.Stdin = strings.NewReader(string(in))
 		out, err := cmd.Output()
 		if err != nil {
@@ -69,12 +78,15 @@ func TestScreenshotOwnsMatchesTUIFilters(t *testing.T) {
 
 	t.Run("task", func(t *testing.T) {
 		tasks := []apiclient.Task{
-			{ID: 12, Title: "Harden the session store", State: stateAwaitingGate},
+			{
+				ID: 12, Title: "Harden the session store", State: stateAwaitingGate, Workflow: "verify-build", BranchName: "vincent/12-harden",
+				GitHubPull: &apiclient.GitHubPullLink{Repo: "octo/api", Number: 77},
+			},
 			{ID: 3, Title: "Add design tokens", State: stateAwaitingInput},
 			{ID: 41, Title: "Split the v2 storage", State: stateAwaitingChildren},
 			{ID: 5, Title: "Read replica", State: "running"},
 		}
-		for _, q := range []string{"harden", "12", "1", "approval", "awaiting", "input", "lanes", "running", "gate", "nothing"} {
+		for _, q := range []string{"harden", "12", "1", "approval", "awaiting", "input", "lanes", "running", "gate", "verify", "vincent/12", "#77", "pr 77", "nothing"} {
 			if got, want := count(t, hays["task"], tasks, q), len(filterTasks(tasks, q)); got != want {
 				t.Errorf("needle %q: owns() counts %d tasks, the board's filter shows %d", q, got, want)
 			}
@@ -96,9 +108,12 @@ func TestScreenshotOwnsMatchesTUIFilters(t *testing.T) {
 		issues := []apiclient.Issue{
 			{ID: 7, Title: "Login loops", Kind: "bug", Labels: []string{"auth", "p1"}},
 			{ID: 70, Title: "Dark mode", Kind: "feature"},
-			{ID: 8, Title: "Auth docs", Kind: "task", Labels: []string{"docs"}},
+			{
+				ID: 8, Title: "Auth docs", Kind: "task", Labels: []string{"docs"}, Author: "Priya", Priority: 2,
+				Source: &apiclient.IssueSource{Ref: "MOB-7", ShortRef: "MOB-7", Key: "MOB-7"},
+			},
 		}
-		for _, q := range []string{"#7", "7", "auth", "bug", "feature", "docs", "p1", "nothing"} {
+		for _, q := range []string{"#7", "7", "auth", "bug", "feature", "docs", "p1", "mob-7", "priya", "high", "nothing"} {
 			want := 0
 			for _, iss := range issues {
 				if issueMatches(iss, strings.ToLower(q)) {

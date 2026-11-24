@@ -72,10 +72,15 @@ var actionOps = []struct {
 	{apiclient.ActionArchive, keymap.Archive},
 }
 
-// confirmed actions are the ones that destroy something a human cannot get
-// back by pressing the key again: a live process tree, and a worktree.
+// confirmed actions are the ones a human cannot take back by pressing a key
+// again: a live process tree, a worktree, and — since #1055 — a step skipped
+// past or a gate rejected, each a decision the task carries on from.
 func needsConfirm(action string) bool {
-	return action == apiclient.ActionCancel || action == apiclient.ActionArchive
+	switch action {
+	case apiclient.ActionCancel, apiclient.ActionArchive, apiclient.ActionSkip, apiclient.ActionReject:
+		return true
+	}
+	return false
 }
 
 // taskActions is the slice of a task an action bar needs: what it is, and
@@ -97,6 +102,11 @@ type taskActions struct {
 	// projectID is the task's project, which its chat shares: `T` opening
 	// that chat follows it there (task 132.6).
 	projectID int64
+	// editRetry is whether `E` works here (#1059): a step with a prompt or
+	// command to edit, as the detail sub-model holding the task sees it — the
+	// workspace's, or the board's detail panes when they show the selected
+	// task. A target with no such detail leaves it false.
+	editRetry bool
 }
 
 // offersChat reports whether `T` does anything for this target: the daemon
@@ -116,6 +126,9 @@ func (t taskActions) offersChat() bool {
 func (t taskActions) offers(action string) bool {
 	if action == apiclient.ActionChat {
 		return t.offersChat()
+	}
+	if action == actionDiagnose {
+		return t.offersDiagnose()
 	}
 	return t.has(action)
 }
@@ -186,6 +199,12 @@ type actionBar struct {
 	// so the re-ask can say "2 of 5".
 	pendingIDs []int64
 	bulkTotal  int
+	// pendingID is the task a single-task question is about, captured when
+	// it is asked. The cursor is not a stable answer: the board keeps the
+	// cursor in its column when a card moves away (#1058), so the row under
+	// it when `y` arrives can be another task than the one the question
+	// named — "cancel #21?" must never kill #22 (review finding 1).
+	pendingID int64
 
 	status    string
 	statusBad bool
@@ -202,14 +221,14 @@ func (a *actionBar) handleKey(key string, client *apiclient.Client, t taskAction
 	if a.pending != "" {
 		switch key {
 		case "y":
-			action, force, ids := a.pending, a.force, a.pendingIDs
-			a.pending, a.force, a.pendingIDs, a.cause = "", false, nil, ""
+			action, force, ids, id := a.pending, a.force, a.pendingIDs, a.pendingID
+			a.resetPending()
 			if len(ids) > 0 {
 				return a.dispatchBulk(client, ids, action, force), true
 			}
-			return a.dispatch(client, t.id, action, force), true
+			return a.dispatch(client, id, action, force), true
 		case "n", "esc":
-			a.pending, a.force, a.pendingIDs, a.cause = "", false, nil, ""
+			a.resetPending()
 			a.setStatus("cancelled", false)
 			return nil, true
 		}
@@ -219,6 +238,14 @@ func (a *actionBar) handleKey(key string, client *apiclient.Client, t taskAction
 	}
 	action, ok := resolveAction(key, t)
 	if !ok {
+		// An action key the target does not offer says so rather than
+		// doing nothing (#1059). No other meaning shares these keys on the
+		// surfaces that call here, so nothing falls through that would have
+		// done something.
+		if name, isAction := keyAction(key, t); isAction {
+			a.setStatus(unavailableText(name, t), false)
+			return nil, true
+		}
 		return nil, false
 	}
 	// A selection retargets the key at every marked task offering the action;
@@ -227,6 +254,7 @@ func (a *actionBar) handleKey(key string, client *apiclient.Client, t taskAction
 	if needsConfirm(action) {
 		a.pending, a.force = action, false
 		a.pendingIDs, a.bulkTotal = ids, len(ids)
+		a.pendingID = t.id
 		return nil, true
 	}
 	if len(ids) > 0 {
@@ -244,6 +272,42 @@ func resolveAction(key string, t taskActions) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// keyAction is the §6 action an action key names, whether or not the target
+// offers it: `p` is resume on a paused task and pause otherwise.
+func keyAction(key string, t taskActions) (string, bool) {
+	if key == "" {
+		return "", false
+	}
+	for _, o := range actionOps {
+		if opKey(o.op) != key {
+			continue
+		}
+		if o.op == keymap.Pause && t.state == statePaused {
+			return apiclient.ActionResume, true
+		}
+		return o.action, true
+	}
+	return "", false
+}
+
+// unavailableText is why an action key did nothing: no task under the
+// cursor, a selection none of which offers it, a chat holding the task, or
+// the state the task is in — "retry: not available while running".
+func unavailableText(action string, t taskActions) string {
+	name := strings.ReplaceAll(action, "_", " ")
+	switch {
+	case t.bulk():
+		return name + ": none of the selected tasks offers it"
+	case t.id == 0:
+		return name + ": select a task — it acts on one task, not a group"
+	case t.openChatID != 0:
+		return fmt.Sprintf("%s: not available while chat #%d holds the task — close the chat first", name, t.openChatID)
+	case t.state == "":
+		return name + ": not available"
+	}
+	return name + ": not available while " + stateWords(t.state)
 }
 
 // dispatch calls the daemon. Nothing is predicted locally: the response
@@ -336,7 +400,7 @@ func (a *actionBar) applyResult(msg actionResultMsg) {
 		return
 	}
 	if msg.err == nil {
-		status := msg.action + " · now " + msg.task.State
+		status := msg.action + " · now " + stateWords(msg.task.State)
 		// A cascade leaves the parent exactly where it was, so "now
 		// awaiting_children" is all the task row can say about it; the lanes
 		// it re-admitted are the part a human acted for (task 090).
@@ -355,7 +419,7 @@ func (a *actionBar) applyResult(msg actionResultMsg) {
 	if isDirtyWorktree(msg.action, msg.err) {
 		a.pending, a.force = apiclient.ActionArchive, true
 		a.pendingIDs, a.bulkTotal = nil, 0
-		a.status = ""
+		a.pendingID, a.status = msg.taskID, ""
 		return
 	}
 	if isStuckArchive(msg.action, msg.err) {
@@ -363,6 +427,7 @@ func (a *actionBar) applyResult(msg actionResultMsg) {
 		// instead of leaving the task on the board for good.
 		a.pending, a.force = actionForceDelete, false
 		a.pendingIDs, a.bulkTotal = nil, 0
+		a.pendingID = msg.taskID
 		a.cause, a.status = actionErrString(msg.err), ""
 		return
 	}
@@ -370,7 +435,7 @@ func (a *actionBar) applyResult(msg actionResultMsg) {
 	if errors.As(msg.err, &apiErr) {
 		if apiErr.Status == http.StatusConflict {
 			if state := apiErr.Details["state"]; state != "" {
-				a.setStatus(fmt.Sprintf("%s: the task is %s", msg.action, state), true)
+				a.setStatus(fmt.Sprintf("%s: the task is %s", msg.action, stateWords(state)), true)
 				return
 			}
 		}
@@ -396,28 +461,40 @@ func (a *actionBar) clear() {
 	if len(a.pendingIDs) > 0 {
 		return
 	}
-	a.pending, a.force, a.cause = "", false, ""
+	a.resetPending()
 	a.status, a.statusBad = "", false
+}
+
+// resetPending drops the question, whatever it was about.
+func (a *actionBar) resetPending() {
+	a.pending, a.force, a.pendingIDs, a.cause, a.pendingID = "", false, nil, "", 0
 }
 
 // confirmPrompt is the question a pending confirmation asks. It names the
 // consequence, not the action: "archive?" is not what a human needs to know.
-func (a *actionBar) confirmPrompt(t taskActions) string {
+// The answer keys come straight after the question and the consequence after
+// them: the footer is one line cut from the right, and at 80 columns a
+// trailing "(y/n)" was the first thing cut (review finding 4).
+func (a *actionBar) confirmPrompt() string {
 	if n := len(a.pendingIDs); n > 0 {
 		return a.bulkPrompt(n)
 	}
 	switch {
 	case a.pending == actionForceDelete:
 		return fmt.Sprintf("force delete #%d? (y/n) · archive failed: %s · the task goes anyway, its branch stays",
-			t.id, ansi.Truncate(a.cause, forceCauseWidth, "…"))
+			a.pendingID, ansi.Truncate(a.cause, forceCauseWidth, "…"))
 	case a.pending == apiclient.ActionArchive && a.force:
-		return fmt.Sprintf("#%d has uncommitted changes — archive anyway and lose them? (y/n)", t.id)
+		return fmt.Sprintf("#%d has uncommitted changes — archive anyway and lose them? (y/n)", a.pendingID)
 	case a.pending == apiclient.ActionArchive:
-		return fmt.Sprintf("archive #%d? its worktree is removed (y/n)", t.id)
+		return fmt.Sprintf("archive #%d? (y/n) · its worktree is removed", a.pendingID)
 	case a.pending == apiclient.ActionCancel:
-		return fmt.Sprintf("cancel #%d? a running step is killed (y/n)", t.id)
+		return fmt.Sprintf("cancel #%d? (y/n) · a running step is killed", a.pendingID)
+	case a.pending == apiclient.ActionSkip:
+		return fmt.Sprintf("skip #%d's current step? (y/n) · it is marked skipped and the task goes on without it", a.pendingID)
+	case a.pending == apiclient.ActionReject:
+		return fmt.Sprintf("reject #%d's gate? (y/n) · the task is blocked there until you retry, skip or cancel", a.pendingID)
 	default:
-		return fmt.Sprintf("%s #%d? (y/n)", a.pending, t.id)
+		return fmt.Sprintf("%s #%d? (y/n)", a.pending, a.pendingID)
 	}
 }
 
@@ -440,9 +517,13 @@ func (a *actionBar) bulkPrompt(n int) string {
 		}
 		return fmt.Sprintf("%s have uncommitted changes — archive anyway and lose them? (y/n)", subject)
 	case a.pending == apiclient.ActionArchive:
-		return fmt.Sprintf("archive %s? their worktrees are removed (y/n)", selectedNoun(n))
+		return fmt.Sprintf("archive %s? (y/n) · their worktrees are removed", selectedNoun(n))
 	case a.pending == apiclient.ActionCancel:
-		return fmt.Sprintf("cancel %s? their running steps are killed (y/n)", selectedNoun(n))
+		return fmt.Sprintf("cancel %s? (y/n) · their running steps are killed", selectedNoun(n))
+	case a.pending == apiclient.ActionSkip:
+		return fmt.Sprintf("skip the current step of %s? (y/n) · each goes on without it", selectedNoun(n))
+	case a.pending == apiclient.ActionReject:
+		return fmt.Sprintf("reject the gates of %s? (y/n) · each is blocked there", selectedNoun(n))
 	default:
 		return fmt.Sprintf("%s %s? (y/n)", a.pending, selectedNoun(n))
 	}
@@ -464,7 +545,7 @@ func actionLabel(t taskActions, action string) string {
 // accept — plus whatever the last action reported.
 func (a *actionBar) render(t taskActions) string {
 	if a.pending != "" {
-		return styleWarn.Render(" " + a.confirmPrompt(t))
+		return styleWarn.Render(" " + a.confirmPrompt())
 	}
 	parts := make([]string, 0, len(actionOps)+2)
 	for _, o := range actionOps {

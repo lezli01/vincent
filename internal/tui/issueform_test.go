@@ -19,6 +19,12 @@ func issueFormFixture(t *testing.T) (*issuesView, *issueForm) {
 	if v.w.form == nil {
 		t.Fatal("n did not open the issue form")
 	}
+	// A new form opens typing into its title (#1063); esc leaves the field,
+	// which is where the row keys these tests press are answered.
+	if !v.w.form.editing {
+		t.Fatal("a new issue form did not open on its title field")
+	}
+	v.update(registryKey(t, "esc"))
 	return v, v.w.form
 }
 
@@ -321,5 +327,17 @@ func TestIssueRemoteLostReadsWithEitherProvider(t *testing.T) {
 	}
 	if got := issueRemoteLost(issueProvider(&apiclient.Issue{})); strings.Contains(got, "the its") {
 		t.Errorf("fallback reads %q", got)
+	}
+}
+
+// #1063: a new issue opens with its title taking text.
+func TestNewIssueTitleTakesTextAtOnce(t *testing.T) {
+	v := issuesFixture()
+	v.update(registryKey(t, "n"))
+	for _, r := range "Crash on start" {
+		v.update(keyPress(string(r)))
+	}
+	if got := v.w.form.title.Value(); got != "Crash on start" {
+		t.Fatalf("title = %q, want what was typed", got)
 	}
 }

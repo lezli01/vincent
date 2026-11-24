@@ -183,6 +183,10 @@ func (v *issuesView) issueCard(iss apiclient.Issue, w int) []string {
 	if kind := issueKindMark(iss.Kind); kind != "" {
 		head += "  " + kind
 	}
+	if iss.Priority != 0 {
+		// The priority the filter matches, on the card (#1075).
+		head += "  " + issuePriorityStyle(iss.Priority).Render(issuePriorityLabel(iss.Priority))
+	}
 	body := []string{padBetweenCells(head, styleDim.Render(issueAge(v.now(), iss.UpdatedAt)), inner)}
 
 	title := wrapText(iss.Title, inner, wrapOpts{maxLines: 2})
@@ -319,11 +323,30 @@ func (v *issuesView) filterBox(width int) []string {
 		v.filter.SetWidth(max(width-6, 10))
 		body = fieldRows("", v.filter)
 	}
-	return drawBox("", v.boardSummary(), body, width, len(body)+2, edgesRounded, styleDim)
+	// boxTop drops a label that does not fit whole, so the label is built
+	// to the room it has (review finding 7).
+	label, syncLine := v.boardSummaryFit(width - 6)
+	if syncLine != "" {
+		body = append(body, syncLine)
+	}
+	return drawBox("", label, body, width, len(body)+2, edgesRounded, styleDim)
 }
 
-// boardSummary says what the board is showing, for the filter box's edge.
+// boardSummary says what the board is showing, for the filter box's edge,
+// with room to say all of it.
 func (v *issuesView) boardSummary() string {
+	label, _ := v.boardSummaryFit(0)
+	return label
+}
+
+// boardSummaryFit is boardSummary in at most room cells (0 is no limit).
+// The issue source's health leads (#1069): a failing import looked like a
+// healthy one. When the whole does not fit, "updated" goes first; then a
+// healthy source's line goes, and an unhealthy one moves out of the label
+// into syncLine, a line of its own inside the box — so the sync health is
+// never lost exactly when the source is failing, and the issue count stays
+// (review finding 7).
+func (v *issuesView) boardSummaryFit(room int) (label, syncLine string) {
 	var parts []string
 	switch {
 	case v.project.id == 0:
@@ -335,14 +358,46 @@ func (v *issuesView) boardSummary() string {
 	case v.loaded:
 		parts = append(parts, plural(len(v.issues), "issue", "issues"))
 	}
+	updated := ""
 	if !v.lastLoad.IsZero() {
-		parts = append(parts, "updated "+v.lastLoad.Format("15:04:05"))
+		updated = "updated " + v.lastLoad.Format("15:04:05")
 	}
-	out := styleDim.Render(strings.Join(parts, " · "))
-	if n := len(v.picked); n > 0 {
-		out = styleFocus.Render(strconv.Itoa(n)+" selected") + styleDim.Render(" · ") + out
+	syncText, syncBad := "", false
+	if s := v.sync; s != nil && v.syncFor == v.project.id && v.project.id != 0 {
+		syncText, syncBad = syncSummary(*s, v.now())
 	}
-	return out
+	syncStyle := toneBlue
+	if syncBad {
+		syncStyle = styleBad
+	}
+	compose := func(withSync, withUpdated bool) string {
+		ps := parts
+		if withUpdated && updated != "" {
+			ps = append(append([]string(nil), parts...), updated)
+		}
+		out := styleDim.Render(strings.Join(ps, " · "))
+		if withSync && syncText != "" {
+			out = syncStyle.Render(ic("⇅ ")+syncText) + styleDim.Render(" · ") + out
+		}
+		if n := len(v.picked); n > 0 {
+			out = styleFocus.Render(strconv.Itoa(n)+" selected") + styleDim.Render(" · ") + out
+		}
+		return out
+	}
+	fits := func(s string) bool { return room <= 0 || ansi.StringWidth(s) <= room }
+	if out := compose(true, true); fits(out) {
+		return out, ""
+	}
+	if out := compose(true, false); fits(out) {
+		return out, ""
+	}
+	if syncText != "" && syncBad {
+		syncLine = syncStyle.Render(ic("⇅ ") + syncText)
+	}
+	if out := compose(false, true); fits(out) {
+		return out, syncLine
+	}
+	return compose(false, false), syncLine
 }
 
 // frameless reports that the board draws its own boxes, so the root must not
@@ -408,4 +463,15 @@ func (v *issuesView) moveLane(delta int) {
 			return
 		}
 	}
+}
+
+// issuePriorityStyle colours a priority by how pressing it is.
+func issuePriorityStyle(p int) lipgloss.Style {
+	switch p {
+	case 1:
+		return styleBad
+	case 2:
+		return styleWarn
+	}
+	return styleDim
 }

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -98,6 +99,8 @@ func (b *board) toggleCardLanes() tea.Cmd {
 	}
 	if !b.hasLanes(t) {
 		if t.ParentTaskID == nil || !b.lanes.expanded.has(*t.ParentTaskID) {
+			// Said, not silent (#1072).
+			b.actions.setStatus(fmt.Sprintf("#%d is not a fan-out — L hangs a fan-out's lanes under its card", t.ID), false)
 			return nil
 		}
 		parent := *t.ParentTaskID
@@ -135,9 +138,14 @@ func (b *board) laneCard(lane apiclient.Task, selected bool, w int) []string {
 		parts = append(parts, step)
 	}
 	if lane.BlockReason != nil && *lane.BlockReason != "" {
-		parts = append(parts, *lane.BlockReason)
+		parts = append(parts, reasonTitle(*lane.BlockReason))
 	}
 	left := laneRowStyle(lane).Render(glyph+" ") + name
+	if b.marks.has(lane.ID) {
+		// The tick a marked task card carries (#1066): space on a lane
+		// marks it, and the count rose with nothing on the box to show it.
+		left = styleFocus.Render(ic("✔ ")) + left
+	}
 	right := styleKey.Render("#" + strconv.FormatInt(lane.ID, 10))
 	if room := inner - ansi.StringWidth(right) - 1; ansi.StringWidth(left) > room {
 		left = ansi.Truncate(left, max(room, 1), "…")
@@ -156,4 +164,18 @@ func laneIndent(depth int) string {
 // something that can still say which lane it is.
 func laneCardWidth(cardW, depth int) int {
 	return max(cardW-len(laneIndent(depth)), 12)
+}
+
+// laneKeyApplies is whether L does something for the task under the
+// cursor: it has lanes, or it is a lane under an open parent.
+func (b *board) laneKeyApplies() bool {
+	id, ok := b.selected()
+	if !ok {
+		return false
+	}
+	t, ok := b.taskByID(id)
+	if !ok {
+		return false
+	}
+	return b.hasLanes(t) || (t.ParentTaskID != nil && b.lanes.expanded.has(*t.ParentTaskID))
 }

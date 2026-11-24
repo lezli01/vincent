@@ -62,7 +62,7 @@ const (
 type chatSearchState struct {
 	// typing is the search line open for input; buf is what it holds.
 	typing bool
-	buf    string
+	buf    lineEdit
 	// query is the committed search, "" for none.
 	query string
 	// server is the daemon's per-turn count for the current query.
@@ -113,7 +113,8 @@ func (v *chatView) focusComposer() {
 func (v *chatView) openSearchLine() {
 	v.focusConversation()
 	v.search.typing = true
-	v.search.buf = v.search.query
+	v.search.buf.max = chatConvSearchQuery
+	v.search.buf.Set(v.search.query)
 }
 
 // updateSearchLineKey is the search line's keyboard. It owns every key: a
@@ -126,19 +127,11 @@ func (v *chatView) updateSearchLineKey(msg tea.KeyPressMsg) tea.Cmd {
 		return nil
 	case "enter":
 		v.search.typing = false
-		return v.runSearch(strings.TrimSpace(v.search.buf))
-	case "backspace":
-		if r := []rune(v.search.buf); len(r) > 0 {
-			v.search.buf = string(r[:len(r)-1])
-		}
-		return nil
+		return v.runSearch(strings.TrimSpace(v.search.buf.String()))
 	case "ctrl+c":
 		return nil
 	}
-	if msg.Text != "" && msg.Mod&(tea.ModCtrl|tea.ModAlt) == 0 &&
-		len(v.search.buf)+len(msg.Text) <= chatConvSearchQuery {
-		v.search.buf += msg.Text
-	}
+	v.search.buf.Key(msg)
 	return nil
 }
 
@@ -514,7 +507,7 @@ func (v *chatView) rebuildBody() {
 // a draft the reader cannot see being typed into.
 func (v *chatView) updateConversationKey(msg tea.KeyPressMsg) tea.Cmd {
 	switch msg.String() {
-	case "esc", "i":
+	case "esc", "i", opKey(keymap.Conversation):
 		v.focusComposer()
 	case "j", "down":
 		v.moveCursor(v.cursor + 1)
@@ -592,14 +585,17 @@ func (v *chatView) edgeLabel() string {
 		}
 	}
 	if v.newLines > 0 && !v.following {
-		parts = append(parts, chatNewMarkStyle.Render(fmt.Sprintf("↓ %d new", v.newLines)))
+		// The key that follows again sits beside the count (#1072): the
+		// footer cuts it at 100 columns, and a bare ⏸ says nothing of it.
+		parts = append(parts, chatNewMarkStyle.Render(fmt.Sprintf("↓ %d new", v.newLines))+
+			styleDim.Render(" · alt+shift+g follows"))
 	}
 	return strings.Join(parts, "  ")
 }
 
 // searchLine is the open search line, drawn above the composer.
 func (v *chatView) searchLine(width int) string {
-	return ansi.Truncate(styleKey.Render("/")+v.search.buf+"█"+
+	return ansi.Truncate(styleKey.Render("/")+v.search.buf.View()+
 		styleDim.Render("  enter search · esc close"), width, "…")
 }
 

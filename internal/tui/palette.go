@@ -27,6 +27,12 @@ type palette struct {
 	// page is the last render's layout, which pgup and pgdown move
 	// through (task 135.10 decision 5).
 	page popupPage
+	// listTop is the popup line the list's window starts on, under the
+	// frame and the input, so a click finds its row (#1065).
+	listTop int
+	// jump is the screens menu (#1080): no search line, and a row's letter
+	// runs it at once.
+	jump bool
 }
 
 // paletteEntry is one runnable line. key is empty for the palette-only
@@ -50,6 +56,12 @@ type paletteEntry struct {
 	// action is a key-less row's own command (task 130.13): a row with no
 	// shortcut to replay, run directly. "open this task's issue" is one.
 	action tea.Cmd
+	// letter is the row's key in the screens menu (#1080), shown in place of
+	// key there.
+	letter string
+	// item is a task, chat or issue row (#1080): listed only once something
+	// is typed, and run by its action.
+	item bool
 }
 
 func newPalette(entries []paletteEntry) *palette {
@@ -150,14 +162,42 @@ func paletteEntries(ctx bindingContext, target taskActions, editable, connected,
 func (p *palette) matches() []paletteEntry {
 	q := strings.ToLower(strings.TrimSpace(p.input.Value()))
 	if q == "" {
-		return p.entries
-	}
-	out := make([]paletteEntry, 0, len(p.entries))
-	for _, e := range p.entries {
-		hay := strings.ToLower(e.label + " " + e.group + " " + e.key)
-		if strings.Contains(hay, q) {
-			out = append(out, e)
+		out := make([]paletteEntry, 0, len(p.entries))
+		for _, e := range p.entries {
+			if !e.item {
+				out = append(out, e)
+			}
 		}
+		return out
+	}
+	// The whole query as typed wins: where some row contains it, those rows
+	// are the answer, as they always were. Otherwise fuzzy, best first
+	// (#1080) — word order, a typo, letters in order — with ties in the
+	// list's own order, so the sections stay together where scores agree.
+	var exact []paletteEntry
+	for _, e := range p.entries {
+		if strings.Contains(strings.ToLower(e.label+" "+e.group+" "+e.key), q) {
+			exact = append(exact, e)
+		}
+	}
+	if len(exact) > 0 {
+		return exact
+	}
+	words := strings.Fields(q)
+	type scored struct {
+		e paletteEntry
+		s int
+	}
+	var hits []scored
+	for _, e := range p.entries {
+		if s := fuzzyScore(e.label+" "+e.group+" "+e.key, words); s > 0 {
+			hits = append(hits, scored{e, s})
+		}
+	}
+	slices.SortStableFunc(hits, func(a, b scored) int { return b.s - a.s })
+	out := make([]paletteEntry, len(hits))
+	for i, h := range hits {
+		out[i] = h.e
 	}
 	return out
 }
@@ -165,6 +205,15 @@ func (p *palette) matches() []paletteEntry {
 // update handles one key. done reports the palette should close; run is the
 // entry to execute when one was chosen.
 func (p *palette) update(msg tea.KeyPressMsg) (run *paletteEntry, done bool, cmd tea.Cmd) {
+	if p.jump && msg.Text != "" {
+		// The screens menu: a letter is the screen, and nothing is typed.
+		for _, e := range p.entries {
+			if e.letter == msg.Text {
+				return &e, true, nil
+			}
+		}
+		return nil, false, nil
+	}
 	switch msg.String() {
 	case "esc":
 		return nil, true, nil
@@ -263,6 +312,7 @@ func (p *palette) render(w, h int) string {
 	}
 	shown, page := popupWindow(rows, entryRow, cursorRow, list)
 	p.page = page
+	p.listTop = 1 + len(lines) // the frame's top edge, then the input
 	lines = append(lines, shown...)
 	if reserve {
 		full := wrapText(m[cursor].label, inner-1, wrapOpts{prefix: " ", indent: 1, maxLines: paletteReserve})
@@ -284,6 +334,9 @@ func (p *palette) render(w, h int) string {
 // shrinks to "…" first.
 func paletteRow(e paletteEntry, style lipgloss.Style, width int) string {
 	key := e.key
+	if e.letter != "" {
+		key = e.letter
+	}
 	switch {
 	case e.unbound:
 		key = "unbound"
@@ -302,4 +355,40 @@ type gotoTaskTabMsg struct{ tab taskViewTab }
 
 func gotoTaskTab(tab taskViewTab) tea.Cmd {
 	return func() tea.Msg { return gotoTaskTabMsg{tab: tab} }
+}
+
+// clickLine is a click on the popup's line y (0 is the frame's top edge):
+// the entry on it, which a click selects and runs as enter does.
+func (p *palette) clickLine(y int) (int, bool) {
+	return p.page.entryOnLine(y - p.listTop)
+}
+
+// screenLetters are the screens menu's keys (#1080), by the screen they open.
+// Lower case for the everyday screens, upper case for their archives and the
+// rarer ones, so each reads as the word it starts.
+var screenLetters = map[viewID]string{
+	viewHome: "t", viewIssues: "i", viewChats: "c", viewChatSearch: "/",
+	viewNewTask: "n", viewProjects: "p", viewWorkflows: "w", viewDaemon: "d",
+	viewSettings: "s", viewPullRequests: "r", viewArchived: "a",
+	viewArchivedChats: "A", viewTriggers: "T",
+}
+
+// newGoToMenu is the screens menu: the palette's screen rows, each on its
+// letter.
+func newGoToMenu(github bool) *palette {
+	var entries []paletteEntry
+	for _, b := range withoutGitHub(registry(), github) {
+		if !b.nav {
+			continue
+		}
+		entries = append(entries, paletteEntry{
+			group: "screens", label: b.label, nav: true, navTarget: b.navTarget,
+			global: true, letter: screenLetters[b.navTarget],
+		})
+	}
+	p := newPalette(entries)
+	p.jump = true
+	p.input.SetPlaceholder("press a screen's letter — or ↑/↓ and enter")
+	p.input.SetPrompt("go to ")
+	return p
 }

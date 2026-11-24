@@ -418,7 +418,7 @@ func (t *taskView) checkLines(width, rows int) []string {
 		if i == t.pullTab.cursor {
 			marker = "▸ "
 		}
-		line := fmt.Sprintf("  %s%-14s %s", marker, run.State, run.Name)
+		line := fmt.Sprintf("  %s%-14s %s", marker, checkStateWords(run.State), run.Name)
 		if run.Actions() {
 			line += styleDim.Render("  actions run " + strconv.FormatInt(run.RunID, 10))
 		}
@@ -602,4 +602,20 @@ func laneRowStyle(lane apiclient.Task) lipgloss.Style {
 	default:
 		return styleDim
 	}
+}
+
+// checkStateWords is a check run's state as words (#1071): GitHub's tokens
+// — in_progress, timed_out, action_required — are not prose.
+func checkStateWords(state string) string {
+	switch state {
+	case "in_progress":
+		return "running"
+	case "timed_out":
+		return "timed out"
+	case "action_required":
+		return "needs action"
+	case "":
+		return "pending"
+	}
+	return strings.ReplaceAll(state, "_", " ")
 }

@@ -21,6 +21,14 @@ func (p *projectsView) render(width, height int) string {
 	if height > 0 {
 		p.height = height
 	}
+	if note := p.firstRun; note != "" && p.form == nil {
+		// The note takes the top row; the screen below draws one shorter.
+		h := p.height
+		p.firstRun, p.height = "", max(h-1, 1)
+		body := p.render(p.width, 0)
+		p.firstRun, p.height = note, h
+		return styleOK.Render(ansi.Truncate("  ✓ "+note, max(p.width, 1), "…")) + "\n" + body
+	}
 	if p.wide() {
 		return p.renderWide(p.width, p.height)
 	}
@@ -654,6 +662,9 @@ func (f *projectForm) renderLines(width int, includeHeading bool) ([]string, int
 	}
 	if f.saving {
 		lines = append(lines, "", styleDim.Render("  saving…"))
+	}
+	if f.confirming {
+		lines = append(lines, "", styleWarn.Render("  discard these changes? y/n"))
 	}
 	lines = append(lines, "", styleDim.Render(
 		"  enter edit the row · ctrl+s save · esc close"))

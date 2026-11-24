@@ -99,25 +99,25 @@ func TestChatDiffKeySwapsThePane(t *testing.T) {
 // TestChatDiffKeyRebinds: a rebound chat_diff opens the pane on its new key,
 // and the default no longer does — it is typed nowhere, and opens nothing.
 func TestChatDiffKeyRebinds(t *testing.T) {
-	withKeymap(t, map[string]string{"chat_diff": "alt+i"})
+	withKeymap(t, map[string]string{"chat_diff": "alt+u"})
 	v := chatViewFixture()
 	v.client = offlineClient()
 	v.updateKey(synthKey("alt+d"))
 	if v.diff.open {
 		t.Fatal("the default key still opens the pane after a rebind")
 	}
-	v.updateKey(synthKey("alt+i"))
+	v.updateKey(synthKey("alt+u"))
 	if !v.diff.open {
 		t.Fatal("the rebound key did not open the pane")
 	}
 	v.diff.stat = &apiclient.ChatDiffStat{Files: 2, Added: 3, Removed: 1}
 	v.chat.Branch = "vincent/chat-1"
 	pane := ansi.Strip(strings.Join(chatDetailsPane(*v.chat, true, nil, v.changes(), v.now(), 34, 30), "\n"))
-	if !strings.Contains(pane, "alt+i opens the diff") || strings.Contains(pane, "alt+d") {
+	if !strings.Contains(pane, "alt+u opens the diff") || strings.Contains(pane, "alt+d") {
 		t.Fatalf("the changes row does not name the rebound key:\n%s", pane)
 	}
 	// And it closes it again, as the key that opened it.
-	v.updateKey(synthKey("alt+i"))
+	v.updateKey(synthKey("alt+u"))
 	if v.diff.open {
 		t.Fatal("the rebound key did not close the pane")
 	}
@@ -144,8 +144,20 @@ func TestChatDiffHunkKeys(t *testing.T) {
 	if ref, _ := v.diff.pane.selectedHunk(); ref.id != "h2" || ref.path != "a.go" {
 		t.Fatalf("[ landed on %+v, want a.go's h2", ref)
 	}
-	if _, cmd := v.updateKey(registryKey(t, "x")); cmd == nil || !v.diff.busy {
-		t.Fatal("x on a selected hunk asked the daemon for nothing")
+	// x asks first (#1055): the question names the file, and n keeps the
+	// hunk.
+	if _, cmd := v.updateKey(registryKey(t, "x")); cmd != nil || v.diff.busy || v.diff.rejectAsk == nil {
+		t.Fatal("x rejected the hunk without asking")
+	}
+	if screen := chatDiffScreen(v); !strings.Contains(screen, "revert this hunk on disk? (y/n) · a.go") {
+		t.Fatalf("the question is not on screen:\n%s", screen)
+	}
+	if _, cmd := v.updateKey(registryKey(t, "n")); cmd != nil || v.diff.rejectAsk != nil {
+		t.Fatal("n did not keep the hunk")
+	}
+	v.updateKey(registryKey(t, "x"))
+	if _, cmd := v.updateKey(registryKey(t, "y")); cmd == nil || !v.diff.busy {
+		t.Fatal("y on the question asked the daemon for nothing")
 	}
 	// One at a time: a second press while the first is in flight is spent.
 	if _, cmd := v.updateKey(registryKey(t, "x")); cmd != nil {
@@ -439,5 +451,24 @@ func TestChatDiffSendsTheRawPath(t *testing.T) {
 	}
 	if _, ok := v.diffTarget(); ok || !strings.Contains(v.note, "binary file") {
 		t.Fatalf("x on the binary file: target %v, note %q", ok, v.note)
+	}
+}
+
+// Review finding 4: the hunk question keeps its answer keys at 80 columns
+// whatever the path, and the footer offers the answers while it waits.
+func TestRejectHunkQuestionLeadsWithItsKeys(t *testing.T) {
+	ref := diffHunkRef{path: "internal/some/deeply/nested/package/with_a_long_file_name_test.go", id: "h1"}
+	line := ansi.Truncate(" "+rejectHunkQuestion(ref), 80, "…")
+	if !strings.Contains(line, "(y/n)") {
+		t.Fatalf("the answer keys are cut at 80 columns: %q", line)
+	}
+	v := chatViewFixture()
+	v.diff.open, v.diff.rejectAsk = true, &ref
+	if got := strings.Join(v.promptKeys(), " "); !strings.Contains(got, "y revert the hunk") {
+		t.Fatalf("the footer does not offer the answers: %q", got)
+	}
+	v.closeDiff()
+	if v.diff.rejectAsk != nil {
+		t.Fatal("closing the pane left the question armed")
 	}
 }

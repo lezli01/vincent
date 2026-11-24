@@ -11,6 +11,7 @@ import (
 	"charm.land/bubbles/v2/textarea"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/chatstate"
@@ -106,6 +107,9 @@ type (
 
 // chatView is the workspace.
 type chatView struct {
+	// streamUp is the chat's event stream having connected since the open;
+	// its first connect re-reads the chat (see applyChatNote).
+	streamUp bool
 	// projectScope is the root's selected project (task 132.2), stored for
 	// the item that scopes this view to it.
 	projectScope
@@ -408,6 +412,10 @@ func (v *chatView) paste(text string) tea.Cmd {
 
 // pasteText is a paste into the composer as text.
 func (v *chatView) pasteText(text string) tea.Cmd {
+	if v.ended() {
+		v.note, v.noteBad = endedChatNote(v.chat), false
+		return nil
+	}
 	var cmd tea.Cmd
 	before := v.composer.Value()
 	v.composer, cmd = v.composer.Update(tea.PasteMsg{Content: text})
@@ -499,6 +507,7 @@ func (v *chatView) openAt(id int64, seq int) tea.Cmd {
 		v.streamStop = nil
 	}
 	v.chatID = id
+	v.streamUp = false
 	v.chat, v.turns, v.allTurns = nil, nil, nil
 	v.showRewound, v.rewind = false, nil
 	v.form, v.formAway = nil, nil
@@ -1106,10 +1115,15 @@ func (v *chatView) applyChatNote(msg chatNoteMsg) tea.Cmd {
 	next := readNextChatNote(msg.chatID, msg.next)
 	switch note := msg.note.(type) {
 	case apiclient.ConnectedNote:
-		if note.Reset {
+		first := !v.streamUp
+		v.streamUp = true
+		if note.Reset || first {
 			// A restored event history (issue #1001): no chat event will
 			// say what changed, so re-read the chat, and its shell runs
-			// with it.
+			// with it. The first connect after an open re-reads too: the
+			// open's load and this subscription start together, and a turn
+			// that ended between that load's answer and this connect sent
+			// its event to nobody — the stream only carries what comes after.
 			return tea.Batch(next, v.loadCmd(), v.shellRunsCmd())
 		}
 	case apiclient.EventNote:
@@ -1405,6 +1419,10 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	if key := opKey(keymap.ChatDiff); key != "" && msg.String() == key {
 		return v, v.openDiff()
 	}
+	if key := opKey(keymap.Conversation); key != "" && msg.String() == key {
+		v.focusConversation()
+		return v, nil
+	}
 	if key := opKey(keymap.Rewind); key != "" && msg.String() == key {
 		v.openRewindPicker(false)
 		return v, nil
@@ -1474,7 +1492,14 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	case "enter":
 		return v, v.sendCmd()
 	case "ctrl+x":
+		if v.runningTurn() == nil {
+			// Said, not silent (#1070).
+			v.note, v.noteBad = "no turn is running — nothing to stop", false
+			return v, nil
+		}
 		return v, v.cancelCmd()
+	case chatRetryKey:
+		return v, v.retryFailedTurn()
 	case chatHandoffKey:
 		return v, v.handoffCmd()
 	case chatExpandKey:
@@ -1539,6 +1564,18 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 			return v, nil
 		}
 		return v, openChatExportCmd(v.chat.ID, v.chat.Title)
+	}
+	if v.ended() {
+		// No text where nothing can be sent (#1054): an ended chat stores
+		// no draft, so what was typed would be lost on leaving.
+		if msg.Text != "" {
+			v.note, v.noteBad = endedChatNote(v.chat), false
+		}
+		return v, nil
+	}
+	if note, ok := optionKeyNote(msg.Text); ok {
+		// Typed all the same: it may be meant (#1061).
+		v.note, v.noteBad = note, false
 	}
 	var cmd tea.Cmd
 	before := v.composer.Value()
@@ -2254,6 +2291,11 @@ func (v *chatView) promptKeys() promptAnswers {
 	if v.raising && v.chat != nil && v.form == nil {
 		return promptHint("y", "full-auto", "n", "stay restricted")
 	}
+	// While a hunk reject waits, x and a answer "no": the footer offers the
+	// answers instead of the pane's keys (review finding 4).
+	if v.diff.open && v.diff.rejectAsk != nil {
+		return promptHint("y", "revert the hunk", "n", "keep it")
+	}
 	return nil
 }
 
@@ -2346,6 +2388,7 @@ func (v *chatView) liveBindings(rows []binding) []binding {
 		case b.key == chatCloseKey && !closable,
 			b.key == chatHandoffKey && !free,
 			b.key == "ctrl+x" && v.runningTurn() == nil,
+			b.key == chatRetryKey && (ended || owned || v.failedTurn() == nil),
 			b.key == "tab" && ended,
 			b.key == "alt+a" && v.formAway == nil,
 			b.key == "enter" && ended,
@@ -2434,6 +2477,8 @@ func (v *chatView) sendMessage(message string) tea.Cmd {
 		return nil
 	}
 	if v.sending {
+		// Said, not silent (#1070): the draft stays for when it has gone.
+		v.note, v.noteBad = "the last message is still being sent — this one waits in the composer", false
 		return nil
 	}
 	v.sending = true
@@ -2494,3 +2539,78 @@ func (v *chatView) resolveDoc(seq int64) (string, bool) {
 // notesClipboard marks the chat as saying a copy's outcome itself, on its
 // note line, so the root's status line stands down.
 func (v *chatView) notesClipboard() {}
+
+// ended is whether the chat is terminal: closed, archived or handed off. It
+// takes no more turns, so it has no composer (#1054).
+func (v *chatView) ended() bool {
+	return v.chat != nil && chatstate.Terminal(chatstate.State(v.chat.State))
+}
+
+// endedChatNote says an ended chat takes no text.
+func endedChatNote(chat *apiclient.Chat) string {
+	return sendRefusal(chatstate.State(chat.State)) + " — nothing typed here can be sent"
+}
+
+// endedChatLine is what an ended chat draws where the composer was: that it
+// takes no more turns, and the keys that still do something with it.
+func endedChatLine(chat *apiclient.Chat, width int) []string {
+	var keys []string
+	add := func(key, label string) {
+		if key != "" {
+			keys = append(keys, styleKey.Render(key)+" "+label)
+		}
+	}
+	add(opKey(keymap.ExportChat), "export")
+	add(copyPickKey, "copy")
+	add(chatSearchKey, "search")
+	add(opKey(keymap.ChatMarkdown), "Markdown")
+	out := []string{" " + styleDim.Render(ansi.Truncate("this chat is "+chatStateLabel(chat.State)+" and takes no more turns", max(width-1, 1), "…"))}
+	if len(keys) > 0 {
+		out = append(out, " "+ansi.Truncate(strings.Join(keys, styleDim.Render(" · ")), max(width-1, 1), "…"))
+	}
+	return out
+}
+
+// chatRetryKey sends the failed turn's prompt again (#1070): before it, the
+// route was ↑ on an empty composer, then enter.
+const chatRetryKey = "alt+l"
+
+// failedTurn is the newest turn when it failed, nil otherwise: the one a
+// retry is about.
+func (v *chatView) failedTurn() *apiclient.ChatTurn {
+	if n := len(v.turns); n > 0 && v.turns[n-1].FailReason != "" && v.turns[n-1].State != "running" {
+		return &v.turns[n-1]
+	}
+	return nil
+}
+
+// retryFailedTurn sends the failed turn's prompt as the next turn, by the
+// route any send takes and with its refusals.
+func (v *chatView) retryFailedTurn() tea.Cmd {
+	t := v.failedTurn()
+	if t == nil {
+		v.note, v.noteBad = "the last turn did not fail — nothing to retry", false
+		return nil
+	}
+	if strings.TrimSpace(t.Prompt) == "" {
+		v.note, v.noteBad = "the failed turn has no prompt to send again", false
+		return nil
+	}
+	return v.sendMessage(t.Prompt)
+}
+
+// failedTurnNext is the next step a failed turn's reason calls for.
+func failedTurnNext(reason string) string {
+	retry := chatRetryKey + " sends the same prompt again"
+	switch reason {
+	case "usage_limit":
+		return "the quota comes back on its own; once it has, " + retry
+	case "agent_unauthenticated":
+		return "log the agent CLI in, then " + retry
+	case "agent_not_found":
+		return "install the agent CLI or pick another agent, then " + retry
+	case "session_lost":
+		return "the agent no longer has this conversation; " + retry + " in a fresh session"
+	}
+	return retry
+}

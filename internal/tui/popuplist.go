@@ -32,6 +32,18 @@ func popupBox(width, height, top int) (w, h int) {
 type popupPage struct {
 	entryRow []int
 	height   int
+	// shownEntry is, for each line the window shows, the entry on it — -1
+	// for a cue or a section header — so a click on a line finds its entry
+	// (#1065).
+	shownEntry []int
+}
+
+// entryOnLine is the entry a click on the window's line k lands on.
+func (pg popupPage) entryOnLine(k int) (int, bool) {
+	if k < 0 || k >= len(pg.shownEntry) || pg.shownEntry[k] < 0 {
+		return 0, false
+	}
+	return pg.shownEntry[k], true
 }
 
 // span is the entries [first,last] a render with the cursor on entry c
@@ -123,12 +135,25 @@ func popupWindow(rows []string, entryRow []int, cursorRow, height int) (out []st
 		}
 	}
 	cued := len(rows) > height && height >= 3
+	entryAt := make(map[int]int, len(entryRow))
+	for i, r := range entryRow {
+		entryAt[r] = i
+	}
 	if cued && start > 0 {
 		out = append(out, styleDim.Render(fmt.Sprintf("  ▲ %d more", before)))
+		page.shownEntry = append(page.shownEntry, -1)
 	}
 	out = append(out, rows[start:end]...)
+	for r := start; r < end; r++ {
+		e, ok := entryAt[r]
+		if !ok {
+			e = -1
+		}
+		page.shownEntry = append(page.shownEntry, e)
+	}
 	if cued && end < len(rows) {
 		out = append(out, styleDim.Render(fmt.Sprintf("  ▼ %d more", after)))
+		page.shownEntry = append(page.shownEntry, -1)
 	}
 	return out, page
 }

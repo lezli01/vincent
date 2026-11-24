@@ -50,6 +50,23 @@ type projectPicker struct {
 	// page is the last render's layout, which pgup and pgdown move
 	// through (task 135.10 decision 5).
 	page popupPage
+	// listTop is the popup line the list starts on, for a click (#1065).
+	listTop int
+}
+
+// clickLine puts the cursor on the row at popup line y and reports whether
+// there was one: a project, or the overview row after them.
+func (pp *projectPicker) clickLine(y int) bool {
+	i, ok := pp.page.entryOnLine(y - pp.listTop)
+	if !ok {
+		return false
+	}
+	if i >= len(pp.matches()) {
+		pp.overview = true
+		return true
+	}
+	pp.cursor, pp.overview = i, false
+	return true
 }
 
 // projectPickerGlyph marks the selected project's row: the header segment's
@@ -265,6 +282,7 @@ func (pp *projectPicker) render(w, h int) string {
 	}
 	shown, page := popupWindow(rows, entryRow, max(cursor, 0), h-2-len(lines))
 	pp.page = page
+	pp.listTop = 1 + len(lines) // the frame's top edge, then the input
 	lines = append(lines, shown...)
 	return frame("projects", strings.Join(lines, "\n"), w, h, true)
 }

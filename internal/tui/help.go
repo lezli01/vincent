@@ -161,7 +161,7 @@ func helpLines(ctx bindingContext, github bool, st helpState, width int) []strin
 		addSection("repair form ("+opKey(keymap.Repair)+" on a blocked task)", bindingsFor(ctxRepairForm))
 		addSection("follow-up form ("+opKey(keymap.FollowUp)+" on a finished task)", bindingsFor(ctxFollowUpForm))
 	}
-	addSection("go to (from the "+opKey(keymap.Palette)+" palette)", nav)
+	addSection("go to (from the "+opKey(keymap.GoTo)+" screens menu, by letter, or the "+opKey(keymap.Palette)+" palette)", nav)
 	return layoutHelp(sections, width)
 }
 

@@ -74,8 +74,8 @@ func TestChatCtrlFTakesTheKeyboardFromTheDraft(t *testing.T) {
 		t.Fatalf("context = %q, want the search line's", v.bindingContext())
 	}
 	pressAll(t, v, "x", "y")
-	if v.search.buf != "xy" {
-		t.Fatalf("the search line holds %q", v.search.buf)
+	if v.search.buf.String() != "xy" {
+		t.Fatalf("the search line holds %q", v.search.buf.String())
 	}
 	pressAll(t, v, "esc")
 	if v.capturesInput() || v.bindingContext() != ctxChatConversation {

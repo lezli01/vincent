@@ -126,6 +126,11 @@ type issuesView struct {
 
 	client *apiclient.Client
 	now    func() time.Time
+	// sortOrder is the order `z` chose (#1075), "" for the daemon's.
+	sortOrder string
+	// syncAsked is when `S` asked for a sync, zero when nothing is awaited:
+	// the listings after it say how the pass ended (#1069).
+	syncAsked time.Time
 
 	issues []apiclient.Issue
 	// sync is the selected project's sync status as the last listing read
@@ -186,7 +191,7 @@ type issuesView struct {
 
 func newIssuesView() *issuesView {
 	fi := newTextField()
-	fi.SetPlaceholder("filter by id, title, label or kind")
+	fi.SetPlaceholder("filter by id, title, label, kind, priority, author or source")
 	fi.SetPrompt("/")
 	v := &issuesView{now: time.Now, filter: fi, showDone: true, page: 1, w: newIssueWrites()}
 	v.reload = v.loadCmd
@@ -359,6 +364,10 @@ func (v *issuesView) route(msg tea.Msg) (panel, tea.Cmd) {
 			if msg.err == nil {
 				st := msg.status
 				v.sync, v.syncFor = &st, msg.projectID
+				if st.Enabled && !noSyncPass(st) {
+					// Watch the next listings for how the pass ended (#1069).
+					v.syncAsked = v.now()
+				}
 			}
 		}
 		return v, nil
@@ -374,10 +383,16 @@ func (v *issuesView) route(msg tea.Msg) (panel, tea.Cmd) {
 	case tea.KeyPressMsg:
 		return v.updateKey(msg)
 	case tea.MouseWheelMsg:
-		v.updateWheel(msg)
+		// The handoff form owns the pointer as it owns the keyboard (#1065):
+		// the board behind it does not move under a form about its selection.
+		if v.handoff == nil {
+			v.updateWheel(msg)
+		}
 		return v, nil
 	case tea.MouseClickMsg:
-		v.updateClick(msg)
+		if v.handoff == nil {
+			v.updateClick(msg)
+		}
 		return v, nil
 	}
 	return v, nil
@@ -474,6 +489,10 @@ func (v *issuesView) applyLoaded(msg issuesLoadedMsg) {
 	v.issues = msg.issues
 	if msg.sync != nil {
 		v.sync, v.syncFor = msg.sync, v.project.id
+		if note, bad, done := syncOutcome(*msg.sync, v.syncAsked); done {
+			v.syncAsked = time.Time{}
+			v.setNote(note, bad)
+		}
 	}
 	v.prunePicked()
 	v.reselect()
@@ -543,7 +562,7 @@ func (v *issuesView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 			v.filtering = false
 			v.filter.SetValue("")
 			v.filter.Blur()
-			v.clampCursor()
+			v.reselect() // by id, not by index (#1058)
 			return v, nil
 		case "enter":
 			v.filtering = false
@@ -552,7 +571,7 @@ func (v *issuesView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		}
 		var cmd tea.Cmd
 		v.filter, cmd = v.filter.Update(msg)
-		v.clampCursor()
+		v.reselectKeep()
 		return v, cmd
 	}
 
@@ -578,7 +597,7 @@ func (v *issuesView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		if v.filter.Value() != "" || v.note != "" {
 			v.filter.SetValue("")
 			v.note = ""
-			v.clampCursor()
+			v.reselect() // the issue that was selected, wherever it now is (#1058)
 			return v, nil
 		}
 		if v.tabRoot {
@@ -599,6 +618,19 @@ func (v *issuesView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	case opKey(keymap.Scope):
 		v.toggleDone()
 		return v, v.loadCmd()
+	case boardSortKey:
+		// Cycles the order within the lanes (#1075); the selection is kept
+		// by id.
+		v.sortOrder = nextSort(issueSorts, v.sortOrder)
+		v.reselect()
+		v.setNote("sorted by "+valueOr(v.sortOrder, "the daemon's order"), false)
+		return v, nil
+	case copyPickKey:
+		// The selected issue's id, reference and page (#1076).
+		if row, ok := v.current(); ok {
+			return v, openCopyItems(issueCopyItems(row.issue))
+		}
+		return v, nil
 	case "left":
 		v.moveLane(-1)
 		return v, nil
@@ -733,9 +765,9 @@ func syncedNote(msg issuesSyncedMsg) string {
 	case msg.err != nil:
 		return "could not ask for a sync: " + errString(msg.err)
 	case noSyncPass(s):
-		return "nothing to sync (" + s.Reason + ")"
+		return "nothing to sync: " + syncReason(s.Reason)
 	case !s.Enabled:
-		return "sync requested, but import is off (" + s.Reason + ")"
+		return "sync requested, but import is off: " + syncReason(s.Reason)
 	case s.Source != "":
 		return "sync requested from " + s.Source + " — the list updates as it lands"
 	case s.Repo != "":
@@ -800,13 +832,24 @@ func issueURL(iss apiclient.Issue) string {
 
 func (v *issuesView) setNote(text string, bad bool) { v.note, v.noteBad = text, bad }
 
-// issueMatches is `/`'s client-side match: id, title, labels and kind. The
-// project's name is no longer a term (task 132.11): every row is in it.
+// issueMatches is `/`'s client-side match: id, title, labels, kind, and —
+// since #1075 — the source reference (`MOB-7`, `octo/web#142`), the author
+// and the priority's word. The project's name is not a term (task 132.11):
+// every row is in it.
 func issueMatches(iss apiclient.Issue, q string) bool {
 	id := strconv.FormatInt(iss.ID, 10)
-	hay := strings.ToLower(strings.Join(append([]string{
-		"#" + id, id, iss.Title, iss.Kind,
-	}, iss.Labels...), " "))
+	fields := []string{"#" + id, id, iss.Title, iss.Kind, iss.Author}
+	if iss.Priority != 0 {
+		fields = append(fields, issuePriorityLabel(iss.Priority))
+	}
+	if s := iss.Source; s != nil {
+		fields = append(fields, s.Ref, s.ShortRef, s.Key)
+	}
+	hay := strings.ToLower(strings.Join(append(fields, iss.Labels...), " "))
+	if strings.HasPrefix(q, "#") {
+		// `#4` is an id: a whole token, so it does not also find `web#41`.
+		return strings.Contains(" "+hay+" ", " "+q+" ")
+	}
 	return strings.Contains(hay, q)
 }
 
@@ -910,7 +953,12 @@ func (v *issuesView) bodyNotice(width int) []string {
 	case !v.loaded:
 		return prose("listing "+v.project.name+"'s issues…", styleDim)
 	case len(v.issues) == 0:
-		return prose("`vincent issue add` files one; a GitHub project's issues arrive on the reconciler tick.", styleDim)
+		// The keys first (#1082): the CLI is not the way out from here.
+		line := "No issues yet — " + opKey(keymap.New) + " files one"
+		if v.syncable() {
+			line += ", " + issueSyncKey + " syncs from the project's issue source"
+		}
+		return prose(line+".", styleDim)
 	}
 	return nil
 }

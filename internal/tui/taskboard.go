@@ -74,6 +74,17 @@ func taskColumnOf(state string) int {
 	return taskColumnFinished
 }
 
+// taskColumnOfTask is the column a task's card is drawn in: its state's,
+// except that a fan-out parent one of whose lanes waits on a human is in
+// Needs you (#1067). Folded, its lanes are not on the board, and the parent
+// is the only card that can say so.
+func taskColumnOfTask(t apiclient.Task) int {
+	if keepsAttention(t) {
+		return taskColumnNeedsYou
+	}
+	return taskColumnOf(t.State)
+}
+
 // taskCardGroup is one issue's tasks inside one column.
 type taskCardGroup struct {
 	key    string
@@ -101,10 +112,10 @@ type taskCardHit struct {
 // order, with the tasks that belong to no issue last in every column.
 func (b *board) cardGroups() [taskColumnCount][]taskCardGroup {
 	tasks := slices.Clone(b.shownTasks())
-	sortTasks(tasks)
+	sortBoardTasks(tasks, b.sortOrder)
 	var byColumn [taskColumnCount][]apiclient.Task
 	for _, t := range tasks {
-		c := taskColumnOf(t.State)
+		c := taskColumnOfTask(t)
 		byColumn[c] = append(byColumn[c], t)
 	}
 	var out [taskColumnCount][]taskCardGroup
@@ -185,6 +196,13 @@ func (b *board) cardCursor(stops [taskColumnCount][]taskStop, groups [taskColumn
 	for c := range stops {
 		for i, s := range stops[c] {
 			if !s.header && s.id == b.selectedID && b.selectedID != 0 {
+				// A card that moved to another column on its own — an
+				// approve that sent it to Running — leaves the cursor in
+				// the column it was in (#1058).
+				if b.cardPlaced && !b.cardFollow && c != b.cardCol && len(stops[b.cardCol]) > 0 {
+					return b.restNear(stops)
+				}
+				b.cardCol, b.cardPos, b.cardPlaced, b.cardFollow = c, i, true, false
 				return c, i, true
 			}
 		}
@@ -194,6 +212,13 @@ func (b *board) cardCursor(stops [taskColumnCount][]taskStop, groups [taskColumn
 			if !g.folded || !slices.ContainsFunc(g.tasks, func(t apiclient.Task) bool { return t.ID == b.selectedID }) {
 				continue
 			}
+			// A card that moved on its own into a fold in another column
+			// leaves the cursor where it was, as it does onto a card: the
+			// fold header is not the task, and a question pending on the
+			// task must not find itself asked of a group (review finding 2).
+			if b.cardPlaced && !b.cardFollow && c != b.cardCol && len(stops[b.cardCol]) > 0 {
+				return b.restNear(stops)
+			}
 			for i, s := range stops[c] {
 				if s.header && s.key == g.key {
 					return c, i, true
@@ -201,12 +226,59 @@ func (b *board) cardCursor(stops [taskColumnCount][]taskStop, groups [taskColumn
 			}
 		}
 	}
+	// An explicit selection of a task the board does not list yet — one
+	// just created, or opened before the next refresh — rests the cursor
+	// for this frame without giving the selection up, so the refresh that
+	// lists the task puts the cursor on it (review finding 2).
+	if b.cardFollow && b.selectedID != 0 {
+		if b.cardPlaced && len(stops[b.cardCol]) > 0 {
+			return b.cardCol, min(b.cardPos, len(stops[b.cardCol])-1), true
+		}
+		for c := range stops {
+			if len(stops[c]) > 0 {
+				return c, 0, true
+			}
+		}
+		return 0, 0, false
+	}
+	// The card is gone — archived, or filtered out: the nearest card of the
+	// column it was in, not the board's first (#1058).
+	if b.cardPlaced && len(stops[b.cardCol]) > 0 {
+		return b.restNear(stops)
+	}
 	for c := range stops {
 		if len(stops[c]) > 0 {
 			return c, 0, true
 		}
 	}
 	return 0, 0, false
+}
+
+// follow makes id the selection the cursor goes to wherever the task is —
+// the explicit path: an open from the palette, the overview or another
+// screen, a created task, a `!` jump. Without it the board treats the
+// change like a card that moved on its own and leaves the cursor in its
+// column (#1058).
+func (b *board) follow(id int64) {
+	b.selectedID, b.cardFollow, b.cardHeader = id, true, nil
+	b.restoreSelection(b.rows())
+}
+
+// restNear rests the cursor on the stop nearest where it last was, in the
+// column it was in, and makes that the selection.
+func (b *board) restNear(stops [taskColumnCount][]taskStop) (column, pos int, ok bool) {
+	c := b.cardCol
+	i := min(b.cardPos, len(stops[c])-1)
+	s := stops[c][i]
+	if s.header {
+		stop := s
+		b.cardHeader = &stop
+	} else {
+		b.cardHeader = nil
+		b.selectedID = s.id
+	}
+	b.cardPos, b.cardFollow = i, false
+	return c, i, true
 }
 
 // cardStop is the stop under the cursor.
@@ -239,6 +311,7 @@ func (b *board) restOn(s taskStop) {
 	}
 	b.cardHeader = nil
 	b.selectedID = s.id
+	b.cardCol, b.cardPlaced, b.cardFollow = s.column, true, false
 }
 
 // moveCard moves the cursor delta stops within its column.
@@ -356,9 +429,12 @@ func (b *board) cardKey(key string) bool {
 		b.moveCard(-max(b.cardPage, 1))
 	case "pgdown":
 		b.moveCard(max(b.cardPage, 1))
-	case "home":
+	case "home", "g":
+		// g/G are the issues board's and the timeline's aliases (#1083). The
+		// cards always group by issue, so the table's `g` grouping cycle had
+		// nothing to show here.
 		b.moveCardEdge(false)
-	case "end":
+	case "end", "G":
 		b.moveCardEdge(true)
 	case "left":
 		b.moveColumn(-1)
@@ -575,10 +651,19 @@ func (b *board) cardColumn(c int, groups []taskCardGroup, at taskStop, lit strin
 		}
 		if g.folded {
 			spans = append(spans, span{from: len(body), h: 2, stop: stop})
+		} else {
+			// An open header folds on a click too (#1065).
+			spans = append(spans, span{from: len(body), h: 1, stop: stop})
 		}
 		body = append(body, cardGroupHeader(g, selected, g.key == lit && lit != groupNoIssue, inner))
 		if g.folded {
-			body = append(body, rail+styleDim.Render(cardFoldSummary(g.tasks)))
+			summary := styleDim.Render(cardFoldSummary(g.tasks))
+			// What a selection holds behind the fold (#1066): `V` marks the
+			// tasks a filter shows, folded or not, and A then acts on them.
+			if n := b.markedIn(g.tasks); n > 0 {
+				summary += styleDim.Render(" · ") + styleFocus.Render(ic("✔ ")+strconv.Itoa(n)+" selected")
+			}
+			body = append(body, rail+ansi.Truncate(summary, max(inner-ansi.StringWidth(rail), 1), "…"))
 			continue
 		}
 		for r := 0; r < len(g.tasks); r += perRow {
@@ -600,6 +685,11 @@ func (b *board) cardColumn(c int, groups []taskCardGroup, at taskStop, lit strin
 			}
 			if perRow > 1 {
 				continue // the archive's grid draws no lanes
+			}
+			// Lanes asked for and not here yet say so (#1072): L showed
+			// nothing while they loaded.
+			if p := g.tasks[r]; b.lanes.expanded.has(p.ID) && b.hasLanes(p) && len(b.lanes.lanesOf(p.ID)) == 0 {
+				body = append(body, rail+styleDim.Render("  loading lanes…"))
 			}
 			for _, e := range b.cardLaneEntries(g.tasks[r]) {
 				chosen := !at.header && e.lane.ID == at.id
@@ -630,15 +720,37 @@ func (b *board) cardColumn(c int, groups []taskCardGroup, at taskStop, lit strin
 		start = min(max(to-room, 0), len(body)-room)
 		start = min(start, from)
 	}
+	// A column with more cards than fit says how many are above and below
+	// on its top edge (#1072): it was cut silently.
+	above, below := 0, 0
 	for _, s := range spans {
-		if s.from >= start && s.from+s.h <= start+room {
-			y := top + 1 + s.from - start
-			x0, x1 := x+2, x+2+inner
-			if s.x1 > 0 {
-				x0, x1 = x+2+s.x0, x+2+s.x1
-			}
-			b.cardHits = append(b.cardHits, taskCardHit{x0, x1, y, y + s.h, s.stop})
+		switch {
+		case s.stop.header:
+		case s.from+s.h <= start:
+			above++
+		case s.from >= start+room:
+			below++
 		}
+	}
+	if above > 0 {
+		right += styleDim.Render(fmt.Sprintf(" ▲%d", above))
+	}
+	if below > 0 {
+		right += styleDim.Render(fmt.Sprintf(" ▼%d", below))
+	}
+	for _, s := range spans {
+		// What of the card is on screen takes the click, a card the column
+		// edge cuts included (#1065).
+		vis0, vis1 := max(s.from, start), min(s.from+s.h, start+room)
+		if vis0 >= vis1 {
+			continue
+		}
+		y0, y1 := top+1+vis0-start, top+1+vis1-start
+		x0, x1 := x+2, x+2+inner
+		if s.x1 > 0 {
+			x0, x1 = x+2+s.x0, x+2+s.x1
+		}
+		b.cardHits = append(b.cardHits, taskCardHit{x0, x1, y0, y1, s.stop})
 	}
 	return drawBox(title, right, body[start:], w, h, edgesRounded, styleDim)
 }
@@ -776,6 +888,20 @@ func taskCardStatus(t apiclient.Task, now time.Time) (string, lipgloss.Style) {
 	case stateAwaitingGate:
 		return attentionBadge + " needs your approval", styleWarn
 	case stateAwaitingChildren:
+		if needs := lanesNeedYou(t); needs.any() {
+			// What the lanes need leads, in the attention colour, with the
+			// key that hangs the lanes under the card beside it, then the
+			// done count, which is what a narrow card cuts first (#1067).
+			line := needs.text() + " (L)"
+			if c := t.Children; c != nil {
+				line += fmt.Sprintf(" · %d of %d done", c.Settled, c.Total)
+			}
+			style := styleWarn
+			if needs.blocked > 0 {
+				style = styleBad
+			}
+			return line, style
+		}
 		if c := t.Children; c != nil {
 			return fmt.Sprintf(ic("⑂ %d of %d lanes done"), c.Settled, c.Total), toneMagenta
 		}
@@ -1010,7 +1136,7 @@ func (b *board) issueTally(issue int64, inner int) string {
 	var counts [taskColumnCount]int
 	for _, t := range b.projectTasks() {
 		if t.Issue != nil && t.Issue.ID == issue {
-			counts[taskColumnOf(t.State)]++
+			counts[taskColumnOfTask(t)]++
 		}
 	}
 	words := [taskColumnCount]string{"need you", "running", "queued", "finished"}
@@ -1061,16 +1187,39 @@ func taskPreviewActions(t apiclient.Task, inner int) []string {
 	return out
 }
 
-// cardClick is a left click on the board: a card selects, a group's header folds.
-func (b *board) cardClick(x, y int) {
+// cardClick is a left click on the board: a card selects, a group's header
+// folds. open reports a click on the card that was already selected, which
+// opens it as enter does (#1065): the first click picks, the second goes in.
+func (b *board) cardClick(x, y int) (open bool) {
 	for _, h := range b.cardHits {
 		if x < h.x0 || x >= h.x1 || y < h.y0 || y >= h.y1 {
 			continue
+		}
+		cur, selected := b.cardSelected()
+		again := !h.stop.header && selected && cur == h.stop.id
+		if h.stop.header && !b.cardFolded(h.stop.column, h.stop.key) {
+			// An open group's header is not a stop: it folds, and the
+			// cursor rests on the folded header (#1065).
+			b.setCardFold(h.stop.column, h.stop.key, true)
+			b.restOn(h.stop)
+			return false
 		}
 		b.restOn(h.stop)
 		if h.stop.header {
 			b.toggleCardFold()
 		}
-		return
+		return again
 	}
+	return false
+}
+
+// markedIn is how many of tasks the board's selection holds.
+func (b *board) markedIn(tasks []apiclient.Task) int {
+	n := 0
+	for _, t := range tasks {
+		if b.marks.has(t.ID) {
+			n++
+		}
+	}
+	return n
 }

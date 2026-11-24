@@ -105,10 +105,10 @@ func TestDetailRetriesParkedParentLive(t *testing.T) {
 	}
 
 	// The key itself, not only the hint: pressing it must not reach the
-	// editor, and must not leave the "a gate has no prompt" complaint behind.
+	// editor, and says why it did nothing (#1059).
 	h.press(t, "E")
-	if status := detailOf(h.m).actions.status; strings.Contains(status, "edit+retry") {
-		t.Errorf("E acted on a parked parent: status = %q", status)
+	if status := detailOf(h.m).actions.status; !strings.Contains(status, "no prompt or command to edit") {
+		t.Errorf("E on a parked parent: status = %q", status)
 	}
 
 	h.press(t, "r")

@@ -35,6 +35,14 @@ func (w *workflowsView) renderEditor(width, height int) string {
 	var foot []string
 	if e.saving {
 		foot = append(foot, "", styleDim.Render("  saving…"))
+	} else if u := e.undo; u != nil && e.err == "" {
+		// What the last write replaced, and the key that puts it back (#1056).
+		was := u.row.value
+		if was == "" {
+			was = unsetMarker
+		}
+		line := "saved " + u.row.field.Name + " · it was " + oneLine(was) + " · u puts it back"
+		foot = append(foot, "", styleDim.Render("  "+ansi.Truncate(line, max(width-2, 1), "…")))
 	}
 	if e.err != "" {
 		// The refused value is still on its row above; the error names the
@@ -55,7 +63,7 @@ func (w *workflowsView) renderEditor(width, height int) string {
 		foot = append(foot, "", styleDim.Render("  enter commit · esc cancel"))
 	default:
 		foot = append(foot, "", styleDim.Render(
-			"  enter edit · "+opKey(keymap.Add)+" add · "+opKey(keymap.DraftRemove)+" remove · K/J move · "+
+			"  enter edit · "+opKey(keymap.Add)+" add · "+opKey(keymap.DraftRemove)+" remove · K/J move · u undo · "+
 				opKey(keymap.Refresh)+" reload · esc back · "+opKey(keymap.Editor)+" $EDITOR from the list"))
 	}
 	foot = truncateRows(foot, max(width, 1))
@@ -181,9 +189,10 @@ func layoutFormRows(formRows []wfEditRow, cursor, editing int, input *textField,
 			}
 		}
 		if i == cursor && row.field.Help != "" {
-			help := []string{row.field.Help}
+			text := plainHelp(row.field.Help)
+			help := []string{text}
 			if width > 0 {
-				help = wrapText(row.field.Help, valueW, wrapOpts{})
+				help = wrapText(text, valueW, wrapOpts{})
 			}
 			for _, h := range help {
 				lines = append(lines, pad+styleDim.Render(h))

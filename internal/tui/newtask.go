@@ -279,7 +279,12 @@ type newTask struct {
 	// err is a failure that belongs to no single row.
 	err        string
 	submitting bool
-	touched    bool
+	// wideText, wideListW, wideFormEnd and wfHits are the last wide
+	// render's layout, which a click is read against (#1065).
+	wideText               []string
+	wideListW, wideFormEnd int
+	wfHits                 []ntWorkflowHit
+	touched                bool
 
 	width, height int
 	// detailWidth is the width the last render laid the form out in: the
@@ -601,6 +606,8 @@ func (n *newTask) update(msg tea.Msg) (panel, tea.Cmd) {
 		n.width, n.height = msg.Width, msg.Height
 		n.desc.SetWidth(max(20, msg.Width-8))
 		return n, nil
+	case tea.MouseClickMsg:
+		return n, n.updateClick(msg)
 	case newTaskMsg:
 		return n, n.open(msg.projectID)
 	case newTaskFromPullMsg:
@@ -1178,6 +1185,12 @@ func (n *newTask) applyDescription(msg ntDescriptionMsg) {
 // and catalog membership are deliberately not checked here: the daemon
 // validates both, and a second implementation would only drift from it.
 func (n *newTask) submit() tea.Cmd {
+	// One request at a time (#1052): a second ctrl+s while the first create
+	// is in flight would create a second task. The form already says
+	// "creating…"; the triggers form guards the same way.
+	if n.submitting {
+		return nil
+	}
 	n.rowErr = map[ntRow]string{}
 	n.err = ""
 	if n.titleText() == "" {

@@ -94,7 +94,7 @@ func TestDiffNeverFetchedSaysHowToLoad(t *testing.T) {
 	}
 }
 
-var diffAsOf = regexp.MustCompile(`as of \d\d:\d\d:\d\d — reopen the tab to refresh`)
+var diffAsOf = regexp.MustCompile(`as of \d\d:\d\d:\d\d — ctrl\+r reloads`)
 
 // TestDiffDrawsAFreshnessCue (#799 W9): the pane follows no events, so it
 // says when its content was fetched and how to refresh it — over a diff and

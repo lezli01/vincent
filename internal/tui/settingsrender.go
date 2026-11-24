@@ -25,10 +25,14 @@ func (v *settingsView) render(width, height int) string {
 	if width < 4 || height < 3 {
 		return ""
 	}
+	if v.bindings != nil {
+		return v.renderBindings(width, height)
+	}
 	if !v.frameless() || width < mgmtWideMinW {
 		return v.renderNarrow(width, height)
 	}
 	search := v.searchBox(width)
+	v.searchRows = len(search)
 	h := max(height-len(search), 3)
 	helpW := min(width*25/100, settingsHelpW)
 	midW := width - settingsNavW - helpW
@@ -84,6 +88,7 @@ func (v *settingsView) navPane(w, h int) []string {
 		}
 	}
 	var body []string
+	v.navHits = v.navHits[:0]
 	total := 0
 	// The foot is six rows at most. A short terminal closes the gaps between the
 	// categories, so all of them stay on screen.
@@ -103,9 +108,11 @@ func (v *settingsView) navPane(w, h int) []string {
 		}
 		if i == selected {
 			line := padBetweenCells(styleFocus.Bold(true).Render(ic(c.glyph)+" "+c.name), right, inner-4)
+			v.navHits = append(v.navHits, settingsNavHit{y0: v.searchRows + 1 + len(body), y1: v.searchRows + 1 + len(body) + 3, category: i})
 			body = append(body, drawBox("", "", []string{line}, inner, 3, edgesThick, styleFocus)...)
 			continue
 		}
+		v.navHits = append(v.navHits, settingsNavHit{y0: v.searchRows + 1 + len(body), y1: v.searchRows + 2 + len(body), category: i})
 		name := c.name
 		if query != "" && matches[i] == 0 {
 			name = styleDim.Render(name)
@@ -155,10 +162,24 @@ func (v *settingsView) settingsPane(w, h int) []string {
 	case v.note != "" && v.noteBad:
 		right = styleBad.Render(ansi.Truncate("⚠ "+oneLine(v.note), max(w/2, 10), "…"))
 	case v.note != "":
-		right = styleOK.Render(ic("✓ ") + oneLine(v.note))
+		// Room beside the title: a saved note says what the value was and
+		// how to put it back (#1057), and must not run over the corner.
+		right = styleOK.Render(ansi.Truncate(ic("✓ ")+oneLine(v.note), max(w-ansi.StringWidth(title)-8, 10), "…"))
 	}
 	s := v.settingsStack(max(w-4, 1))
-	return drawBox(styleTitle.Render(title), right, s.view(max(h-2, 1)), w, h, edgesRounded, styleDim)
+	// Where each setting's lines landed, for a click (#1065): the pane sits
+	// right of the category list, under the search box, inside its border.
+	shown := s.view(max(h-2, 1))
+	start := s.viewStart(max(h-2, 1))
+	v.paneHits = v.paneHits[:0]
+	for k, line := range shown {
+		if i := start + k; i < len(s.tags) && s.tags[i] != "" {
+			v.paneHits = append(v.paneHits, settingsHit{
+				y: v.searchRows + 1 + k, x0: settingsNavW + 2, path: s.tags[i], text: ansi.Strip(line),
+			})
+		}
+	}
+	return drawBox(styleTitle.Render(title), right, shown, w, h, edgesRounded, styleDim)
 }
 
 // settingsStack draws the visible settings as titled sections, the one holding
@@ -187,17 +208,23 @@ func (v *settingsView) settingsStack(inner int) formStack {
 		if section.note != "" {
 			right = styleDim.Render(section.note)
 		}
-		var body []string
+		var body, tags []string
 		focused := false
 		for i, row := range rows[start:end] {
 			if i > 0 {
 				body = append(body, "")
+				tags = append(tags, "")
 			}
 			here := row.item.path == v.selected
 			focused = focused || here
-			body = append(body, v.settingLines(row, here, max(inner-4, 1))...)
+			lines := v.settingLines(row, here, max(inner-4, 1))
+			body = append(body, lines...)
+			for range lines {
+				tags = append(tags, row.item.path)
+			}
 		}
-		s.add(formSection(ic(section.title), right, body, inner, focused), focused)
+		// The box's top and bottom edges carry no setting.
+		s.addTagged(formSection(ic(section.title), right, body, inner, focused), append(append([]string{""}, tags...), ""), focused)
 		if focused && v.form != nil && v.form.confirming {
 			s.extend(v.confirmCard(inner))
 		}

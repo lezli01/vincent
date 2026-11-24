@@ -117,6 +117,17 @@ type wfEditorLayer struct {
 	// stale is a 409: the file changed on disk. The pending edit stays on
 	// screen and `R` re-reads it, which is the offer the brief asks for.
 	stale bool
+	// undo is the last write's row and the value it replaced, which `u` puts
+	// back (#1056); pending is the write in flight, promoted to undo when the
+	// daemon accepts it. One level: an undo is itself not undoable.
+	undo, pending *wfUndo
+}
+
+// wfUndo is one write the editor can take back: the row as it was, whose
+// value is what the write replaced.
+type wfUndo struct {
+	row     wfEditRow
+	undoing bool
 }
 
 // openEditor opens the structured editor on the entry under the cursor.

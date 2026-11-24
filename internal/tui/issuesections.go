@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"sort"
 	"strings"
 
 	"github.com/lezli01/vincent/internal/apiclient"
@@ -81,16 +82,40 @@ func (v *issuesView) shownSections() int {
 // filtered is the issues `/` keeps, in the daemon's order.
 func (v *issuesView) filtered() []apiclient.Issue {
 	q := strings.ToLower(strings.TrimSpace(v.filter.Value()))
-	if q == "" {
-		return v.issues
-	}
 	out := make([]apiclient.Issue, 0, len(v.issues))
 	for _, iss := range v.issues {
-		if issueMatches(iss, q) {
+		if q == "" || issueMatches(iss, q) {
 			out = append(out, iss)
 		}
 	}
+	sortIssues(out, v.sortOrder)
 	return out
+}
+
+// issueSorts are the orders `z` cycles the issues board through (#1075):
+// the daemon's, then newest, priority and title.
+var issueSorts = []string{"", "newest", "priority", "title"}
+
+// sortIssues orders issues within the board's lanes; "" keeps the daemon's
+// order, and every other order falls back to it on a tie.
+func sortIssues(issues []apiclient.Issue, order string) {
+	switch order {
+	case "newest":
+		sort.SliceStable(issues, func(i, j int) bool { return issues[i].CreatedAt.After(issues[j].CreatedAt) })
+	case "priority":
+		// 1 is urgent and 4 low; 0, none, sorts after every set priority.
+		rank := func(p int) int {
+			if p == 0 {
+				return 99
+			}
+			return p
+		}
+		sort.SliceStable(issues, func(i, j int) bool { return rank(issues[i].Priority) < rank(issues[j].Priority) })
+	case "title":
+		sort.SliceStable(issues, func(i, j int) bool {
+			return strings.ToLower(issues[i].Title) < strings.ToLower(issues[j].Title)
+		})
+	}
 }
 
 // partition splits issues into the sections, stably: the daemon's order
@@ -208,6 +233,17 @@ func (v *issuesView) reselect() {
 		}
 	}
 	v.clampCursor()
+}
+
+// reselectKeep is reselect for a filter keystroke: when the filter hides the
+// selected issue, the cursor rests elsewhere but the selection is kept, so
+// clearing the filter brings it back (#1058).
+func (v *issuesView) reselectKeep() {
+	sel := v.selected
+	v.reselect()
+	if sel != 0 {
+		v.selected = sel
+	}
 }
 
 // selectIssue moves the cursor onto an issue by id, if it is on screen.

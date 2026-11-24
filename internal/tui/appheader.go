@@ -5,6 +5,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/lezli01/vincent/internal/keymap"
+
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -105,6 +107,12 @@ func (m *root) headerLine() string {
 	}
 	if m.version != "" {
 		p.version += " " + m.version
+	}
+	// The screens menu's key, where the eye looks for where it can go
+	// (#1080). It rides with the version, so it is the first thing a narrow
+	// header sheds and never costs the tabs room.
+	if goTo := opKey(keymap.GoTo); goTo != "" {
+		p.version = goTo + " screens · " + p.version
 	}
 	// Connected is the normal case and says nothing a working screen does
 	// not (task 129.15): the badge is drawn only while it is news. The global

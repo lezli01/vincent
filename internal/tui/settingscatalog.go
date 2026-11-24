@@ -164,7 +164,7 @@ var settingsCatalog = []settingsCategory{
 			{path: "tui.chat.vim", label: "Vim keys", desc: "Insert and normal modes in the composer; enter still sends"},
 		}},
 		{"⌨ Keys", "", []settingsItem{
-			{path: "tui.keys", label: "Key bindings", desc: "operation=key pairs, such as refresh=f5"},
+			{path: "tui.keys", label: "Key bindings", desc: "enter lists every operation; press a key to bind it"},
 		}},
 	}},
 	{"⚙", "Daemon", []settingsSection{

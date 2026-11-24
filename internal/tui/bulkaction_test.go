@@ -122,7 +122,7 @@ func TestBulkArchiveAsksOnceAndSendsOneCallPerTask(t *testing.T) {
 	if !handled || cmd != nil {
 		t.Fatalf("A dispatched without asking (handled=%v, cmd=%v)", handled, cmd != nil)
 	}
-	if got := bar.confirmPrompt(target); !strings.Contains(got, "3 selected tasks") {
+	if got := bar.confirmPrompt(); !strings.Contains(got, "3 selected tasks") {
 		t.Fatalf("prompt = %q, want it to name the whole selection", got)
 	}
 
@@ -171,7 +171,7 @@ func TestBulkArchiveReAsksForTheDirtyOnesOnly(t *testing.T) {
 	if !bar.capturing() {
 		t.Fatal("a dirty worktree did not re-ask — the batch just failed")
 	}
-	prompt := bar.confirmPrompt(target)
+	prompt := bar.confirmPrompt()
 	if !strings.Contains(prompt, "1 of 3 selected tasks") {
 		t.Fatalf("re-ask = %q, want it scoped to the refusals", prompt)
 	}
@@ -255,7 +255,7 @@ func TestBulkKeysWorkFromAnyPanel(t *testing.T) {
 	if !s.bar.capturing() {
 		t.Fatal("A over the output pane did not raise the bulk confirmation")
 	}
-	if got := s.bar.confirmPrompt(s.board.target()); !strings.Contains(got, "2 selected tasks") {
+	if got := s.bar.confirmPrompt(); !strings.Contains(got, "2 selected tasks") {
 		t.Fatalf("prompt = %q, want the selection named", got)
 	}
 
@@ -307,7 +307,7 @@ func TestBulkForceReAskSurvivesTheCursorMoving(t *testing.T) {
 	if !s.bar.capturing() {
 		t.Fatal("the force re-ask was cleared when the cursor moved off the archived row")
 	}
-	if got := s.bar.confirmPrompt(s.board.target()); !strings.Contains(got, "uncommitted") {
+	if got := s.bar.confirmPrompt(); !strings.Contains(got, "uncommitted") {
 		t.Fatalf("prompt = %q, want the dirty-worktree question", got)
 	}
 }

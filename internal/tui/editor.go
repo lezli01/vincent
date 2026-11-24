@@ -329,7 +329,7 @@ func (d *detail) openTranscript() tea.Cmd {
 	// past transcript_retention_days, so it is a state a reader will meet.
 	if _, err := os.Stat(path); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			d.actions.setStatus("transcript is gone — pruned by retention (§12.3)", true)
+			d.actions.setStatus("transcript is gone — pruned by retention", true)
 			return nil
 		}
 		d.actions.setStatus("transcript: "+errString(err), true)

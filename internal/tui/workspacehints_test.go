@@ -80,7 +80,7 @@ func TestWorkspaceHelpListsEveryWorkspaceKey(t *testing.T) {
 // `E edit & retry` are on the footer, not behind `+N` — they are the
 // recovery actions a blocked task exists to offer.
 func TestBlockedFooterKeepsRepairAndEditRetryAt80(t *testing.T) {
-	blocked := taskActions{id: 12, state: stateBlocked, actions: []string{
+	blocked := taskActions{id: 12, state: stateBlocked, editRetry: true, actions: []string{
 		apiclient.ActionRetry, apiclient.ActionRepair, apiclient.ActionSkip,
 		apiclient.ActionCancel, apiclient.ActionArchive, apiclient.ActionChat,
 	}}
@@ -95,5 +95,24 @@ func TestBlockedFooterKeepsRepairAndEditRetryAt80(t *testing.T) {
 				t.Errorf("%s at 80 columns: a blocked task's footer does not show %q", ctx, want)
 			}
 		}
+	}
+}
+
+// #1059: E is hinted only where it works — not on a step with nothing to
+// edit, and not on the board, which has no editor.
+func TestFooterHintsEditRetryOnlyWhereItWorks(t *testing.T) {
+	blocked := taskActions{id: 12, state: stateBlocked, actions: []string{apiclient.ActionRetry}}
+	_, hits := buildFooter(160, bindingsFor(ctxTaskOverview), &actionBar{}, blocked, attentionTally{}, false, false)
+	for _, h := range hits {
+		if h.key == "E" {
+			t.Fatal("the footer hints E where there is nothing to edit")
+		}
+	}
+	if strings.Contains(taskRecoveryKeys(blocked), "edit+retry") {
+		t.Error("the pinned card hints E where there is nothing to edit")
+	}
+	blocked.editRetry = true
+	if !strings.Contains(taskRecoveryKeys(blocked), "edit+retry") {
+		t.Error("the pinned card drops E where it works")
 	}
 }

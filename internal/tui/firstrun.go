@@ -146,6 +146,9 @@ vincent at anything you cannot afford to lose.`
 // worth interrupting for.
 type firstRunNotice struct {
 	active bool
+	// again is the notice reopened from the palette (#1080): read before,
+	// so it says so, and esc closes it as well as enter.
+	again bool
 	// ackErr is a failed write. It does not keep the overlay up — the person
 	// read the notice, which was the point — but it says so, because the next
 	// launch will show it again.
@@ -157,6 +160,11 @@ type firstRunNotice struct {
 // must not permanently bury a warning nobody read.
 func (f *firstRunNotice) acknowledge(dataDir string) {
 	f.active = false
+	if f.again {
+		// Already recorded; reading it again changes nothing on disk.
+		f.again = false
+		return
+	}
 	f.ackErr = acknowledgeNotice(dataDir)
 }
 
@@ -179,9 +187,18 @@ func (f firstRunNotice) render() string {
 	b.WriteString(styleDim.Render("  ·  "))
 	b.WriteString(styleKey.Render("ctrl+c"))
 	b.WriteString(" quit")
+	if f.again {
+		b.WriteString(styleDim.Render("  (reopened — esc closes it too)"))
+		return b.String()
+	}
 	b.WriteString(styleDim.Render("  (shown once)"))
 	return b.String()
 }
+
+// showNoticeMsg reopens the notice: the palette's "show the full-auto
+// notice again" (#1080). Shown once at first launch, it was otherwise never
+// to be read again.
+type showNoticeMsg struct{}
 
 // statusLine reports a failed acknowledgment write, after the overlay is
 // already gone. It is a line and not a dialog: the notice was read, which is

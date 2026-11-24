@@ -298,7 +298,7 @@ func TestCopyPickerCapturesAtPickTime(t *testing.T) {
 	if !ok {
 		t.Fatal("ctrl+y did not open the picker")
 	}
-	p := newReaderPicker(msg.items)
+	p := newReaderPicker(outputItems(msg.items))
 
 	// The world moves on: the window is replaced by a later fetch, which is
 	// what a prune looks like from here, and the pane is resized.
@@ -335,7 +335,7 @@ func TestCopyPickerResolvesGrownDocument(t *testing.T) {
 	if !ok {
 		t.Fatal("ctrl+y did not open the picker")
 	}
-	p := newReaderPicker(msg.items)
+	p := newReaderPicker(outputItems(msg.items))
 
 	// The same document grows by another record while the popup is up.
 	d.appendChunk(apiclient.OutputNote{
@@ -654,4 +654,16 @@ func TestCopyPayloadsCarryTask075Blocks(t *testing.T) {
 			t.Fatalf("a document with no fenced block offered %q", it.label)
 		}
 	}
+}
+
+// outputItems drops the task's reference rows the Output tab now offers
+// first (#1076), leaving the transcript's documents these tests pick from.
+func outputItems(items []copyItem) []copyItem {
+	var out []copyItem
+	for _, it := range items {
+		if !strings.HasPrefix(it.group, "task #") && it.group != "output" {
+			out = append(out, it)
+		}
+	}
+	return out
 }
