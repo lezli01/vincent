@@ -29,6 +29,21 @@ func TestGoToMenuJumpsByLetter(t *testing.T) {
 	}
 }
 
+// Review finding 3: the menu's n opens the new-task form the way n does —
+// told to open, so it loads — rather than switching to a form that waits for
+// a load nobody asked for.
+func TestGoToMenuOpensTheNewTaskForm(t *testing.T) {
+	m := connectedRoot(t)
+	m.updateKey(keyPress("`"))
+	m.Update(keyPress("n"))
+	if m.active != viewNewTask {
+		t.Fatalf("n went to %v, want the new-task form", m.active)
+	}
+	if n, ok := m.views[viewNewTask].(*newTask); !ok || !n.opened {
+		t.Fatal("the form was shown without being opened, so it never loads")
+	}
+}
+
 // #1080: the header names the menu's key.
 func TestHeaderNamesTheScreensMenu(t *testing.T) {
 	m := connectedRoot(t)

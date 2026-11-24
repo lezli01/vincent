@@ -264,7 +264,7 @@ func TestFooterStatusLeadsAndIsCutFromTheRight(t *testing.T) {
 }
 
 func TestFooterConfirmationKeepsItsStart(t *testing.T) {
-	bar := &actionBar{pending: "cancel"}
+	bar := &actionBar{pending: "cancel", pendingID: 42}
 	for _, w := range []int{60, 80} {
 		line, _ := buildFooter(w, bindingsFor(ctxTasks), bar, taskActions{id: 42, state: "running", actions: []string{"cancel"}}, attentionTally{}, false, false)
 		got := ansi.Strip(line)
