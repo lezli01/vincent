@@ -401,6 +401,13 @@ func (w *workflowsView) editorInsert(t wfListTarget, typ string) tea.Cmd {
 		return nil
 	}
 	e.saving = true
+	// The first op is the new item itself; whatever rides along is inside
+	// it, so removing that one path takes the whole add back (#1136).
+	e.pending = &wfUndo{
+		ops:  []apiclient.WorkflowOp{{Op: apiclient.WorkflowOpRemove, Path: ops[0].Path}},
+		note: "added " + ops[0].Path + " · u takes it out",
+		at:   ops[0].Path,
+	}
 	return w.editorPatchCmd(ops)
 }
 
@@ -417,8 +424,11 @@ func (w *workflowsView) editorRemove() {
 	}
 	path := fmt.Sprintf("%s[%d]", row.list, row.index)
 	e.editing = e.cursor
-	e.overlay = newWFEditorConfirm("remove "+wfItemLabel(row)+"?", func() tea.Cmd {
+	// A remove is final (#1136, see [wfUndo]), and the question says so
+	// before y is pressed rather than after.
+	e.overlay = newWFEditorConfirm("remove "+wfItemLabel(row)+"? It cannot be undone.", func() tea.Cmd {
 		e.saving = true
+		e.pending = nil
 		return w.editorPatchCmd([]apiclient.WorkflowOp{{
 			Op: apiclient.WorkflowOpRemove, Path: path,
 		}})
@@ -449,7 +459,16 @@ func (w *workflowsView) editorMove(delta int) tea.Cmd {
 	// order, so the neighbouring row is where the item will be.
 	e.cursor = max(0, min(len(e.rows)-1, e.cursor+delta))
 	e.saving = true
+	from := fmt.Sprintf("%s[%d]", row.list, row.index)
+	// A move's inverse is the move back, from where it lands (#1136).
+	e.pending = &wfUndo{
+		ops: []apiclient.WorkflowOp{{
+			Op: apiclient.WorkflowOpMove, Path: fmt.Sprintf("%s[%d]", row.list, to), To: row.index,
+		}},
+		note: "moved " + wfItemLabel(row) + " to " + strconv.Itoa(to) + " · u moves it back",
+		at:   from,
+	}
 	return w.editorPatchCmd([]apiclient.WorkflowOp{{
-		Op: apiclient.WorkflowOpMove, Path: fmt.Sprintf("%s[%d]", row.list, row.index), To: to,
+		Op: apiclient.WorkflowOpMove, Path: from, To: to,
 	}})
 }

@@ -272,7 +272,7 @@ var fixed = []Fixed{
 	{"workflow editor", "up", "move between rows"},
 	{"workflow editor", "down", "move between rows"},
 	{"workflow editor", "enter", "edit the row, open its values, or descend into a nested body"},
-	{"workflow editor", "u", "undo the last write: put back the value it replaced"},
+	{"workflow editor", "u", "undo the last edit, add or move (a remove is final)"},
 	{"workflow editor", "esc", "leave the nested body, then the editor"},
 	{"workflow editor", "K", "move the item up"},
 	{"workflow editor", "J", "move the item up"},

@@ -36,12 +36,16 @@ func (w *workflowsView) renderEditor(width, height int) string {
 	if e.saving {
 		foot = append(foot, "", styleDim.Render("  saving…"))
 	} else if u := e.undo; u != nil && e.err == "" {
-		// What the last write replaced, and the key that puts it back (#1056).
-		was := u.row.value
-		if was == "" {
-			was = unsetMarker
+		// What the last write replaced, and the key that puts it back (#1056),
+		// or what the add or move did and the key that takes it back (#1136).
+		line := u.note
+		if u.ops == nil {
+			was := u.row.value
+			if was == "" {
+				was = unsetMarker
+			}
+			line = "saved " + u.row.field.Name + " · it was " + oneLine(was) + " · u puts it back"
 		}
-		line := "saved " + u.row.field.Name + " · it was " + oneLine(was) + " · u puts it back"
 		foot = append(foot, "", styleDim.Render("  "+ansi.Truncate(line, max(width-2, 1), "…")))
 	}
 	if e.err != "" {
@@ -62,8 +66,14 @@ func (w *workflowsView) renderEditor(width, height int) string {
 	case e.input != nil:
 		foot = append(foot, "", styleDim.Render("  enter commit · esc cancel"))
 	default:
+		// u is offered only when there is a write it will take back (#1136):
+		// a fresh editor, a remove and an undo leave none.
+		undo := ""
+		if e.undo != nil {
+			undo = "u undo · "
+		}
 		foot = append(foot, "", styleDim.Render(
-			"  enter edit · "+opKey(keymap.Add)+" add · "+opKey(keymap.DraftRemove)+" remove · K/J move · u undo · "+
+			"  enter edit · "+opKey(keymap.Add)+" add · "+opKey(keymap.DraftRemove)+" remove · K/J move · "+undo+
 				opKey(keymap.Refresh)+" reload · esc back · "+opKey(keymap.Editor)+" $EDITOR from the list"))
 	}
 	foot = truncateRows(foot, max(width, 1))
