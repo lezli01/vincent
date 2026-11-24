@@ -535,7 +535,7 @@ func (v *chatView) bodyLinesAt(width int) ([]string, []lineAnchor) {
 			// What it means and what to do (#1070), on the newest turn
 			// only: an older failure has been moved past.
 			if last := v.failedTurn(); last != nil && last.Seq == t.Seq {
-				more := reasons.Explain(t.FailReason).Meaning
+				more := failedTurnMeaning(t.FailReason)
 				if more != "" {
 					more += " "
 				}
