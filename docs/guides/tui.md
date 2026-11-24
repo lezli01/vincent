@@ -198,7 +198,7 @@ off, its default) cannot say so, and rings for a task's question whatever
 you are looking at, as it always has. Chats asking you a question count and are on `!`'s walk too
 ([Chats](#chats)). `enter` on a blocked task
 opens a **failure card**: the step and attempt that stopped, the reason in
-words with its code dim beside it, the last lines of the failing attempt's
+words, the last lines of the failing attempt's
 output as evidence, and the actions that answer the reason — `r` retry, `E`
 edit and retry, `R` repair, `T` chat. `enter` from the card opens Output where
 the attempt failed, and `N` walks every failure in the task, a blocked lane's
@@ -541,9 +541,9 @@ Linked rows that open somewhere, and `enter` opens the one under it. Below
 the cards is the task's whole document.
 
 A **blocked** or **aborted** task's Overview is a **failure card**. Its first
-line says what stopped: `✗ Step 3 verify · attempt 2 · check failed
-check_failed` — the step, the loop iteration and item or the lane when there
-is one, the attempt, and the reason in words with its code beside it. `✗` is a
+line says what stopped: `✗ Step 3 verify · attempt 2 · check failed` — the
+step, the loop iteration and item or the lane when there is one, the
+attempt, and the reason in words (Task Details has its code). `✗` is a
 failure, `⚠` a fan-out one of its lanes stopped, `■` an aborted task, so the
 card reads without colour. Under the reason's meaning, a step that has failed
 the same way before says so: `↻ same failure as attempts 2–5`. Below it:
@@ -570,15 +570,17 @@ the same way before says so: `↻ same failure as attempts 2–5`. Below it:
   is stuck on; `l` opens that lane.
 - **What you can do** — the actions that answer the reason first (retry, with
   `E` edit & retry right after it, then skip, repair, chat), then everything
-  else on offer, each with a line on what it does.
+  else on offer, each with a line on what it does. When those lines would
+  crowd the evidence off the screen, as at 80x24, they shrink to the keys
+  alone: `r retry · E edit retry · s skip · R repair · …`.
 
 An aborted task's card is muted and shows no evidence; it offers what the
 daemon offers, which never includes retry. The card spends the rows it has
 in order: its first line and its actions, the jump links, the reason's
 meaning, the evidence (shrunk before it is dropped), then the status — so a
 taller terminal never shows fewer of its keys than a shorter one. Only when
-even the first line and the actions will not fit does it collapse to its first
-line and a row of action keys. An Overview taller than the screen scrolls with
+even the first line and the actions' keys will not fit does it collapse to its
+first line and a row of action keys. An Overview taller than the screen scrolls with
 `pgup`/`pgdn`, `home`/`end` and the wheel, and its last row says what is above
 and below.
 
@@ -4059,7 +4061,8 @@ knowing.
 The TUI uses one word for each thing, and never prints a snake_case identifier
 as prose. A state reads as its words; a reason reads as its title, with the
 code the CLI, the API and MCP use dim beside it — `check failed · check_failed`
-— so either spelling finds the other. An unknown reason, from a daemon newer
+— so either spelling finds the other; the failure card's first line, read
+rather than copied from, shows the title alone. An unknown reason, from a daemon newer
 than the TUI, prints once as its code. Task Details is the one place that
 keeps the raw identifiers, undimmed, for copying into a command.
 

@@ -145,17 +145,18 @@ func (c failureCard) glyph() string {
 }
 
 // headline is the card's first line without its styling: the step, the
-// loop iteration or lane, the attempt and the reason's title, with the raw
-// code returned apart so it can be dimmed beside it.
-func (c failureCard) headline() (line, code string) {
-	head, name, tail, code := c.headlineParts()
-	return head + name + tail, code
+// loop iteration or lane, the attempt and the reason's title. The raw code
+// is not beside the title (#1146): the card is read, not copied from, and
+// Task Details keeps the identifiers for the CLI (task 049 decision 3).
+func (c failureCard) headline() string {
+	head, name, tail := c.headlineParts()
+	return head + name + tail
 }
 
 // headlineParts splits the headline for truncateKeep: the step name is the
 // long part, and the attempt and the reason after it are what the card is
 // about, so they survive a narrow card and the name gives way (#800 W4).
-func (c failureCard) headlineParts() (head, name, tail, code string) {
+func (c failureCard) headlineParts() (head, name, tail string) {
 	var parts []string
 	head = c.glyph() + " "
 	switch {
@@ -188,14 +189,11 @@ func (c failureCard) headlineParts() (head, name, tail, code string) {
 		title = reasons.Explain(c.reason).Title
 	}
 	parts = append(parts, title)
-	if c.reason != "" && c.reason != title {
-		code = c.reason
-	}
 	tail = strings.Join(parts, " · ")
 	if name != "" {
 		tail = " · " + tail
 	}
-	return head, name, tail, code
+	return head, name, tail
 }
 
 // wantsEvidence reports whether the card fetches a transcript: a blocked
@@ -613,15 +611,24 @@ type cardParts struct {
 	status    []string
 	blame     []string
 	actions   []string
+	// actionKeys is "What you can do" as lines of keys alone, which a short
+	// screen draws in place of actions (#1146).
+	actionKeys []string
 }
 
 // essential is the card that must fit whole before anything else is added:
-// the headline, the lane it blames and what can be done.
-func (p cardParts) essential() int { return 1 + len(p.blame) + len(p.actions) }
+// the headline, the lane it blames and what can be done, as full rows or,
+// compact, as keys alone.
+func (p cardParts) essential(compact bool) int {
+	if compact {
+		return 1 + len(p.blame) + len(p.actionKeys)
+	}
+	return 1 + len(p.blame) + len(p.actions)
+}
 
 // lines assembles the card in reading order from the sections the budget
 // kept.
-func (p cardParts) lines(meaning, evidence, diagnosis, status bool) []string {
+func (p cardParts) lines(meaning, evidence, diagnosis, status, compact bool) []string {
 	out := []string{p.headline}
 	if meaning {
 		out = append(out, p.meaning...)
@@ -635,8 +642,11 @@ func (p cardParts) lines(meaning, evidence, diagnosis, status bool) []string {
 	if status {
 		out = append(out, p.status...)
 	}
-	out = append(append(out, p.blame...), p.actions...)
-	return out
+	out = append(out, p.blame...)
+	if compact {
+		return append(out, p.actionKeys...)
+	}
+	return append(out, p.actions...)
 }
 
 // collapsedCard is the card at its smallest: its first line and its
@@ -649,19 +659,38 @@ func (t *taskView) collapsedCard(width int) []string {
 	return []string{c.renderHeadline(width), c.renderActionKeys(actions)}
 }
 
+// minEvidenceRows is how many lines of evidence the full action rows must
+// leave room for before they give way to their keys (#1146): the command,
+// how it exited and one line it printed.
+const minEvidenceRows = 3
+
 // failureCardLines renders the full card within the given height budget,
 // spending rows in priority order (#799 W1): the headline and the actions
 // are the card's floor — the caller collapses it when even they will not
 // fit — then the reason's meaning, then the evidence, shrunk to what is left
 // before it is dropped, then the status. budget < 0 means unbounded.
+//
+// The actions are drawn as full rows, each saying what it does, only when
+// those rows leave the meaning and a few lines of evidence on screen; on a
+// shorter screen they are one or two lines of keys under the same heading
+// (#1146). Eight full rows filled an 80x24 Overview and pushed the evidence
+// below the fold, inverting the order #1086 set — what happened, the
+// evidence, then what you can do — and a key's name says enough beside the
+// evidence it answers.
 func (t *taskView) failureCardLines(width, budget int) []string {
 	c := t.failureCard()
 	actions := cardActions(c.reason, t.detail.task.AvailableActions)
 	if budget < 0 {
-		return t.cardParts(c, actions, width, math.MaxInt).lines(true, true, true, true)
+		return t.cardParts(c, actions, width, math.MaxInt).lines(true, true, true, true, false)
 	}
 	p := t.cardParts(c, actions, width, 1)
-	left := budget - p.essential()
+	full := budget - p.essential(false)
+	// Keys alone when the full rows do not fit at all, or when they crowd
+	// out the evidence that the keys would leave at least a line of.
+	evidenceRows := func(floor int) int { return budget - floor - len(p.meaning) - 3 }
+	compact := full < 0 || len(p.evidence) > 0 &&
+		evidenceRows(p.essential(false)) < minEvidenceRows && evidenceRows(p.essential(true)) >= 1
+	left := budget - p.essential(compact)
 	meaning := len(p.meaning) <= left
 	if meaning {
 		left -= len(p.meaning)
@@ -689,19 +718,21 @@ func (t *taskView) failureCardLines(width, budget int) []string {
 		left -= len(p.diagnosis)
 	}
 	status := len(p.status) <= left
-	return p.lines(meaning, evidence, diagnosis, status)
+	return p.lines(meaning, evidence, diagnosis, status, compact)
 }
 
-// minCardRows is how many rows the full card needs at its floor.
+// minCardRows is how many rows the card needs at its floor: the headline
+// and its actions as keys.
 func (t *taskView) minCardRows(width int) int {
 	c := t.failureCard()
-	return t.cardParts(c, cardActions(c.reason, t.detail.task.AvailableActions), width, 1).essential()
+	p := t.cardParts(c, cardActions(c.reason, t.detail.task.AvailableActions), width, 1)
+	return min(p.essential(true), p.essential(false))
 }
 
 // renderHeadline draws the headline in width cells, the step name giving
 // way first; a width of zero or less draws it whole.
 func (c failureCard) renderHeadline(width int) string {
-	head, name, tail, code := c.headlineParts()
+	head, name, tail := c.headlineParts()
 	style := styleBad
 	switch {
 	case c.aborted:
@@ -709,25 +740,50 @@ func (c failureCard) renderHeadline(width int) string {
 	case c.blamed:
 		style = styleWarn
 	}
-	dim := ""
-	if code != "" {
-		dim = "  " + styleDim.Render(code)
-	}
-	if whole := "  " + style.Render(head+name+tail) + dim; width <= 0 || cols(whole) <= width {
+	if whole := "  " + style.Render(head+name+tail); width <= 0 || cols(whole) <= width {
 		return whole
 	}
-	return truncateKeep("  "+style.Render(head), style.Render(name), style.Render(tail)+dim, width)
+	return truncateKeep("  "+style.Render(head), style.Render(name), style.Render(tail), width)
 }
 
 func (c failureCard) renderActionKeys(actions []cardAction) string {
 	if len(actions) == 0 {
 		return styleDim.Render("  no action available")
 	}
+	return "  " + strings.Join(actionKeyParts(actions), styleDim.Render(" · "))
+}
+
+// actionKeyParts are the actions as `key name`, the form the collapsed card
+// and the compact actions draw them in.
+func actionKeyParts(actions []cardAction) []string {
 	parts := make([]string, len(actions))
 	for i, a := range actions {
 		parts[i] = styleKey.Render(a.key) + " " + strings.ReplaceAll(a.action, "_", " ")
 	}
-	return "  " + strings.Join(parts, styleDim.Render(" · "))
+	return parts
+}
+
+// actionKeyLines are the actions' keys packed into as few lines of width
+// cells as they need, broken only between two actions, so no key is cut.
+func actionKeyLines(actions []cardAction, width int) []string {
+	if len(actions) == 0 {
+		return []string{styleDim.Render("  no action available")}
+	}
+	sep := styleDim.Render(" · ")
+	var out []string
+	line := ""
+	for _, part := range actionKeyParts(actions) {
+		switch {
+		case line == "":
+			line = "  " + part
+		case width > 0 && cols(line+sep+part) > width:
+			out = append(out, line)
+			line = "  " + part
+		default:
+			line += sep + part
+		}
+	}
+	return append(out, ansi.Truncate(line, max(width, 1), "…"))
 }
 
 // cardParts renders the card's sections with at most n lines of evidence.
@@ -763,6 +819,7 @@ func (t *taskView) cardParts(c failureCard, actions []cardAction, width, n int) 
 			strings.ReplaceAll(a.action, "_", " ") + styleDim.Render(" — "+a.does)
 		p.actions = append(p.actions, ansi.Truncate(line, max(width, 1), "…"))
 	}
+	p.actionKeys = append([]string{"", section("What you can do"), ""}, actionKeyLines(actions, width)...)
 	return p
 }
 

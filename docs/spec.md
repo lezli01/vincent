@@ -16255,6 +16255,16 @@ stream for the live tail.
    when its headline and actions will not fit, and spends rows in priority
    order — see "Wrap or truncate, never clip" in §15.*
 
+   *Amended 2026-11-24 (issue #1146).* The card's first line ends at the
+   reason's §18 title; the raw code is no longer printed beside it (Task
+   Details keeps the identifiers for the CLI). Its actions are full rows,
+   each with what it does, only while those rows leave the meaning and three
+   lines of evidence on screen; on a shorter body "What you can do" is the
+   actions' keys alone (`r retry · E edit retry · s skip · …`), wrapped
+   between actions, so an 80x24 Overview shows evidence without scrolling.
+   The card collapses to its first line only when even the keys will not
+   fit.
+
    *Amended 2026-09-29 (task 129.14, issue #602).* **A finished task's
    ended frame is an outcome card.** It renders on `done` and `archived` in
    place of the three facts above, and on `aborted` under the failure card,

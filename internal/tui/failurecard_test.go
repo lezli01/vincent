@@ -67,9 +67,8 @@ func TestFailureCardNonzeroExit(t *testing.T) {
 	if !c.hasRun || c.run.ID != 5 || c.stepless {
 		t.Fatalf("card = %+v, want attempt 5 carrying the reason", c)
 	}
-	line, code := c.headline()
-	if line != "✗ Step 2 verify · attempt 2 · command exited non-zero" || code != "nonzero_exit" {
-		t.Fatalf("headline = %q, %q", line, code)
+	if line := c.headline(); line != "✗ Step 2 verify · attempt 2 · command exited non-zero" {
+		t.Fatalf("headline = %q", line)
 	}
 	recs := []apiclient.TranscriptRecord{
 		{Type: "vincent.output", Phase: "run", Text: "compiling"},
@@ -101,7 +100,7 @@ func TestFailureCardNamesTheLoopIteration(t *testing.T) {
 	run := failedRun(5, 1, "nonzero_exit")
 	run.Iteration, run.LoopTotal, run.LoopItem = 4, 10, ptr("x")
 	c := deriveFailureCard(cardTask("nonzero_exit", run), laneBlame{}, false)
-	line, _ := c.headline()
+	line := c.headline()
 	if !strings.Contains(line, `· iteration 4 of 10 · item "x" · attempt 1 ·`) {
 		t.Fatalf("headline = %q", line)
 	}
@@ -112,7 +111,7 @@ func TestFailureCardBlamesTheLane(t *testing.T) {
 	v.tab = taskTabOverview
 	got := ansi.Strip(v.render(120, 40))
 	for _, want := range []string{
-		`⚠ Step 1 lanes · lane "api" · attempt 1 · lane failed  lane_failed`,
+		`⚠ Step 1 lanes · lane "api" · attempt 1 · lane failed`,
 		"task 42", "the lane is blocked on worktree has uncommitted changes · worktree_dirty", "l open the lane",
 	} {
 		if !strings.Contains(got, want) {
@@ -148,7 +147,7 @@ func TestFailureCardSteplessBlockUsesBlockDetail(t *testing.T) {
 		t.Fatal("a step-less block issued a transcript fetch")
 	}
 	got := ansi.Strip(v.render(100, 40))
-	for _, want := range []string{"worktree has uncommitted changes  worktree_dirty", "README.md is modified in the worktree"} {
+	for _, want := range []string{"✗ Step 2 build · worktree has uncommitted changes", "README.md is modified in the worktree"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("card misses %q:\n%s", want, got)
 		}
@@ -229,7 +228,7 @@ func TestFailureCardStatusIsNeverTheReason(t *testing.T) {
 	run.StatusMessage = ptr("all green here")
 	task := cardTask("check_failed", run)
 	c := deriveFailureCard(task, laneBlame{}, false)
-	if line, _ := c.headline(); strings.Contains(line, "all green") {
+	if line := c.headline(); strings.Contains(line, "all green") {
 		t.Fatalf("the status reached the headline: %q", line)
 	}
 	got := ansi.Strip(cardView(t, task).render(100, 40))
@@ -517,5 +516,63 @@ func TestPinnedFailureCardCarriesEvidence(t *testing.T) {
 	}
 	if strings.Contains(got, "compiling") {
 		t.Errorf("pinned card is not shortened:\n%s", got)
+	}
+}
+
+// overviewRowsAt80x24 is the task view's height on an 80x24 terminal: the
+// root's header, its rule and its footer take three rows (root.bodyHeight).
+const overviewRowsAt80x24 = 21
+
+// #1146: at 80x24 the card's evidence is on screen without scrolling. The
+// full "What you can do" rows filled the screen and pushed it below the
+// fold, so the actions give way to one line of keys first.
+func TestFailureCardShowsEvidenceAt80x24(t *testing.T) {
+	recs := []apiclient.TranscriptRecord{commandStarted("run", "go test ./...")}
+	for i := range 20 {
+		recs = append(recs, apiclient.TranscriptRecord{Type: "vincent.output", Phase: "run", Text: fmt.Sprintf("row %02d", i)})
+	}
+	task := cardTask("nonzero_exit", failedRun(5, 1, "nonzero_exit"))
+	task.AvailableActions = append(task.AvailableActions, apiclient.ActionPause)
+	frame := withEvidence(t, task, recs).render(80, overviewRowsAt80x24)
+	got := ansi.Strip(frame)
+	for _, want := range []string{"Evidence", "the command exited 2", "row 19", "What you can do", "enter output of attempt 1"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("80x24 card misses %q:\n%s", want, got)
+		}
+	}
+	// Every action keeps its key, in the card's order.
+	keys := []string{"r retry", "E edit retry", "s skip", "R repair", "Q diagnose", "T chat", "p pause", "c cancel"}
+	at := 0
+	for _, k := range keys {
+		i := strings.Index(got[at:], k)
+		if i < 0 {
+			t.Fatalf("80x24 card misses key %q after offset %d:\n%s", k, at, got)
+		}
+		at += i + len(k)
+	}
+	for _, line := range strings.Split(frame, "\n") {
+		if w := ansi.StringWidth(line); w > 80 {
+			t.Errorf("line is %d wide at 80 columns: %q", w, ansi.Strip(line))
+		}
+	}
+	// A tall screen keeps the full rows, each with what it does.
+	if tall := ansi.Strip(withEvidence(t, task, recs).render(80, 60)); !strings.Contains(tall, "r      retry — run the step again") {
+		t.Errorf("a tall card lost its full action rows:\n%s", tall)
+	}
+}
+
+// #1146: the reason reads as its plain-language title; the raw code is not
+// printed beside it on the card.
+func TestFailureCardHeadlineHasNoRawCode(t *testing.T) {
+	got := ansi.Strip(cardView(t, cardTask("nonzero_exit", failedRun(5, 2, "nonzero_exit"))).render(100, 40))
+	first := ""
+	for _, line := range strings.Split(got, "\n") {
+		if strings.Contains(line, "✗ Step 2") {
+			first = line
+			break
+		}
+	}
+	if !strings.Contains(first, "command exited non-zero") || strings.Contains(first, "nonzero_exit") {
+		t.Fatalf("headline = %q, want the title without its code", first)
 	}
 }
