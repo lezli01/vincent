@@ -12475,7 +12475,7 @@ POST   /v1/triggers                     { id, project_id, source_type?, poll_int
                                         daemon-rendered starter: `type: command`, `create_task`,
                                         `enabled: false` and **no `on_fire` line**, so no YAML
                                         travels on the wire. 409 when the file exists.
-                                        *Amended 2026-11-23 (issue #1123):* `source_type` picks
+                                        *Amended 2026-11-23 (issue #1082):* `source_type` picks
                                         the starter's source — `command` (absent), `issues`,
                                         `schedule`, `github_prs` or `http`; the deprecated
                                         `github_issues` is not offered. Each starter loads as
@@ -16716,6 +16716,27 @@ stream for the live tail.
    single-key global would otherwise land in the text field. There is still no
    seventh view — the daemon view already owned this block.
 
+   *Amended 2026-11-24 (issue #1081).* **The view restarts the daemon, and
+   only restarts it.** "It reports, it does not act" is narrowed a second
+   time. `r` asks, and `y` stops the daemon gracefully the way `vincent daemon
+   stop` does, with the same PID-identity guard, then reruns the connect flow,
+   which auto-starts a new one. A *stop* is still not offered: the argument
+   above is about a TUI that leaves no daemon behind, and a restart leaves one.
+   The question names its consequence (running steps are interrupted and
+   re-run when the daemon is back, §12.4) and puts its key first: `y`
+   restarts, and any other key keeps the daemon. It is drawn over an empty,
+   unread or unreadable log too, and so is a failed stop, which leaves the
+   connection alone. The replacement is the TUI's detached auto-start, not the
+   service manager's: the stop exits 0, which none of `vincent service
+   install`'s definitions restarts (they restart on failure only, §12.1), so
+   a daemon that was running under a service keeps running outside it, with
+   the TUI's environment, until the service is next started. That is a
+   recorded limitation rather than a hidden one; restart a service-managed
+   daemon through its service manager. The log pane hides the successful
+   `http request` lines, mostly the TUI's own polling, counts them and shows
+   them on `h`; a failed request stays. `/` narrows the log to the lines that
+   contain what is typed.
+
    The log tail is read straight from `{data_dir}/logs/daemon.log`, the one
    place the TUI is not a pure API client: an endpoint cannot serve the log when
    the daemon is the thing that died, which is when the log is worth reading —
@@ -17480,7 +17501,7 @@ stream for the live tail.
    **Create and edit** use task 065's form, rendered from
    `GET /v1/triggers/schema` rather than from a client copy of the rules.
    - `a` creates: the daemon renders a disabled starter, of the source the
-     prompt picks (amended 2026-11-23, issue #1123).
+     prompt picks (amended 2026-11-23, issue #1082).
    - `i` or `enter` opens the form on a file.
    - `e` hands the file to `$EDITOR`.
    - `space` toggles `enabled`.
@@ -17670,6 +17691,16 @@ stream for the live tail.
    key, the arrows and reset included. The daemon view keeps a digest and no
    longer edits. `POST /v1/config/branch-preview` renders a candidate template
    with the daemon's own renderer, and `GET /v1/info` adds `config_path`.
+
+   *Amended 2026-11-24 (issue #1079).* **Settings has a Key bindings screen.**
+   `enter` on Key bindings lists every rebindable operation, grouped as the
+   guide's key tables are, with the key in force and, for a changed one, its
+   default. `enter` on a row binds the next key pressed. A clash is checked
+   with the same `keymap.Build` the daemon runs over `tui.keys` (§12.3) and
+   named before anything is saved; a free key is written through
+   `PATCH /v1/config` and works at once. `backspace` puts one operation back
+   on its default, and `t` keeps the line of `operation=key` pairs for
+   pasting a whole keymap. It is a screen inside Settings, not a fifteenth view.
 
    *Amended 2026-11-18 (task 150.6; applies to views 1 and 2).* **The live task
    board is four columns of cards**: Needs you (`taskstate.NeedsHuman`), Running
@@ -19554,6 +19585,23 @@ swallowed. **In the workspace the palette has a tabs group**, one "go to the
 replays the digit. Overview's jump links are not copied into it: from another
 tab, `3` would switch tabs without moving the attempt cursor.
 
+*Amended 2026-11-24 (issue #1080).* **The palette finds items, and a screens
+menu reaches every screen in two keys.** Once a query is typed the palette
+also lists the selected project's tasks, chats and issues by number and
+title, and running one opens it. Where some row contains the query, those rows
+are still the answer; otherwise the query's words match in any order, as a
+word's start, as letters in order, or one typo off for a word of four letters
+or more, best first. A palette row reopens the full-auto notice of §16,
+marked as reopened; reading it again writes nothing. `` ` `` opens the
+**screens menu**: the palette in a mode with no search line, listing every
+screen on a letter (`t` tasks, `i` issues, `c` chats, `/` chat search, `n` new
+task, `p` projects, `w` workflows, `d` daemon, `s` settings, `r` pull requests,
+`a` and `A` the archived boards, `T` triggers). A letter goes there, and
+`↑`/`↓` and `enter` work as they do in the palette. Its new-task row opens the
+form the way `n` does. The header's right edge names the key. "Navigation
+living here" above still holds: the menu is a faster route to the palette's
+own screen rows, not a second set of view keys to memorise.
+
 **The footer is one line and never wraps.** Left to right: the focused panel's
 keys (at most five, in registry priority order), then the task's
 `available_actions`, then — pinned right and never truncated — `: commands`,
@@ -19621,6 +19669,9 @@ Global: `:` palette (`ctrl+p` where a text field has the keyboard) · `?` help (
 a status line reminds of the running task count on exit) · `M` toggle mouse · `@` switch project (*added 2026-10-05,
 task 132.4*: opens the project picker, §15 Layout; the operation is `project`,
 rebindable like every global).
+
+*Added 2026-11-24 (issue #1080):* `` ` `` opens the screens menu (§15
+Discovery). The operation is `go_to`, rebindable like every global.
 
 *Added 2026-11-17 (task 149):* `Z` pauses all work, or continues it (§11). It
 asks y/n on the status line first — it changes what every project is doing —
