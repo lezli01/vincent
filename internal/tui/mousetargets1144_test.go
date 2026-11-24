@@ -184,3 +184,41 @@ func TestRowAtFindsWholeRows(t *testing.T) {
 		}
 	}
 }
+
+// #1144: a click on a rewind-list row only points at it, in every mode of
+// the picker — rewinding drops later turns, and a fork or compare starts
+// chats, so only enter does them.
+func TestRewindRowClickOnlySelects(t *testing.T) {
+	for _, mode := range []string{"rewind", "fork", "compare"} {
+		t.Run(mode, func(t *testing.T) {
+			m := connectedRoot(t)
+			v := chatViewFixture()
+			v.client = offlineClient()
+			turns := []apiclient.ChatTurn{
+				{Seq: 1, Prompt: "first ask", Rewind: &apiclient.ChatTurnRewind{}},
+				{Seq: 2, Prompt: "second ask", Rewind: &apiclient.ChatTurnRewind{}},
+			}
+			p := newChatRewindPicker(v.chat, turns, mode != "rewind", nil)
+			if mode == "compare" {
+				p.compareMode()
+				p.agents = []string{"codex"}
+			}
+			v.rewind = p
+			m.views[viewChat] = v
+			m.switchNow(viewChat)
+			m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+			if p.cursor != 1 {
+				t.Fatalf("the picker opened on row %d, want the newest", p.cursor)
+			}
+			if cmd := clickText(t, m, "turn 1  first ask", 1); cmd != nil || p.busy || v.rewind != p {
+				t.Fatalf("a click sent something: cmd %v, busy %v", cmd != nil, p.busy)
+			}
+			if p.cursor != 0 {
+				t.Fatalf("a click on turn 1 left the cursor on row %d", p.cursor)
+			}
+			if _, cmd := m.Update(enterKey()); cmd == nil || !p.busy {
+				t.Fatalf("enter after the click did not %s", mode)
+			}
+		})
+	}
+}

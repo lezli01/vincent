@@ -29,6 +29,12 @@ type clickList interface {
 	pointAt(index int) bool
 }
 
+// selectOnClick is a list whose click only moves the cursor (#1144): enter
+// on it does what a stray click must not, such as rewinding a chat.
+type selectOnClick interface {
+	selectsOnClick()
+}
+
 // clickListOwner is a view that may have such a list open. openList is nil
 // while none is, and while a confirmation owns the keyboard.
 type clickListOwner interface {

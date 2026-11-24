@@ -553,6 +553,9 @@ func (m *root) updateMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 	// Every other picker runs a row on a click too (#1144), as enter does.
 	if msg.Button == tea.MouseLeft && !m.notice.active && !m.help {
 		if l := m.openList(); l != nil && m.clickListRow(l, msg.X, msg.Y) {
+			if _, only := l.(selectOnClick); only {
+				return m, nil
+			}
 			return m.updateKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 		}
 	}

@@ -20489,7 +20489,10 @@ and a chat keep saying it themselves, and the root stays quiet there.
 as `enter` on it does: the command palette and the project picker (#1065),
 the copy and link pickers, the chat-with popup's list, the lists the forms
 open (new task, follow-up, repair, new chat, issue, project, workflow
-editor, pull requests) and a chat's model, prompt-history and rewind lists.
+editor, pull requests) and a chat's model and prompt-history lists. A
+click on a chat's rewind list — rewinding, forking or comparing — only
+moves the cursor to that row: rewinding drops the later turns and a fork or
+compare starts chats, so only `enter` does them, never one stray click.
 A click chooses nothing while a question owns the keyboard. `[ create task ]`
 takes a click at every width and while a row or list is open, committing it
 first as `ctrl+s` does, and a click on a Settings setting selects it in the

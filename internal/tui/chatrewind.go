@@ -102,6 +102,11 @@ type chatRewindPicker struct {
 
 func (p *chatRewindPicker) clickRows() []clickRow { return p.drawn }
 
+// selectsOnClick: a click on a row only points at it. Rewinding drops the
+// later turns, and a fork or compare starts chats; enter does those, and
+// one stray click must not (#1144).
+func (p *chatRewindPicker) selectsOnClick() {}
+
 // pointAt is a click on a row (#1144).
 func (p *chatRewindPicker) pointAt(i int) bool {
 	if p.busy || i < 0 || i >= len(p.rows) {

@@ -4384,8 +4384,9 @@ key.
 
 What looks clickable is: a row of any picker runs it, as `enter` does — the
 command palette, the project, copy and link pickers, the lists a form opens
-for a workflow, an agent, a model or a branch, and a chat's model, history
-and rewind lists; a task card's first click selects it and a second opens it,
+for a workflow, an agent, a model or a branch, and a chat's model and history
+lists; a click on a chat's rewind, fork or compare list only selects the turn,
+and `enter` then does it, so a stray click never drops turns; a task card's first click selects it and a second opens it,
 and a group's header folds or opens; on Settings a category, a setting and
 its `−`/`+` stepper; on the new-task form the `[ create task ]` button at any
 width, even while a field is being typed in, and on the wide form a workflow
