@@ -17,6 +17,7 @@ import (
 	"github.com/lezli01/vincent/internal/chatstate"
 	"github.com/lezli01/vincent/internal/clipimage"
 	"github.com/lezli01/vincent/internal/keymap"
+	"github.com/lezli01/vincent/internal/reasons"
 )
 
 // The chat workspace (§15, task 067, closing task 063.2): turn history above,
@@ -231,6 +232,11 @@ type chatView struct {
 	// daemon takes the turn (#790), so this is what stops a second enter
 	// sending it twice meanwhile.
 	sending bool
+	// resending is the Seq of the failed turn alt+l last resent, until the
+	// reload shows a newer turn or the send is refused (#1149): the send
+	// lands before the reload does, and in between the failed turn is
+	// still the newest, so a second alt+l would send its prompt twice.
+	resending int
 
 	// blurred is the terminal having lost focus, from the FocusMsg/BlurMsg
 	// the root broadcasts (task 165). The zero value is focused, which is
@@ -524,6 +530,7 @@ func (v *chatView) openAt(id int64, seq int) tea.Cmd {
 	v.resetRecords()
 	v.note, v.loadErr = "", ""
 	v.closing, v.sending, v.compacting = false, false, false
+	v.resending = 0
 	v.raising, v.picker, v.clampTask = false, nil, 0
 	v.clearingQueue = false
 	v.skills = chatSkillList{}
@@ -884,6 +891,11 @@ func (v *chatView) applyLoaded(msg chatLoadedMsg) (finished bool) {
 	finished = v.chat != nil && turnFinished(v.everyTurn(), msg.turns)
 	v.chat, v.allTurns, v.queue = msg.chat, msg.turns, msg.queue
 	v.turns = visibleTurns(msg.turns, v.showRewound)
+	// The resent turn is on the page once the failed one is no longer the
+	// newest (#1149).
+	if f := v.failedTurn(); f == nil || f.Seq != v.resending {
+		v.resending = 0
+	}
 	v.applyLoadedDraft(msg.chat)
 	// The message being edited may have started or been deleted elsewhere:
 	// the edit ends with it, and what was typed stays in the composer.
@@ -1218,6 +1230,7 @@ func (v *chatView) applySent(msg chatSentMsg) tea.Cmd {
 	}
 	v.sending = false
 	if msg.err != nil {
+		v.resending = 0 // refused: nothing was resent (#1149)
 		// A 409 chat_cap_reached is a refusal, never a queued turn and never
 		// a spinner: the daemon will not run this turn, and a client that
 		// showed one pending would be inventing state (§11, decision 1).
@@ -2646,7 +2659,34 @@ func (v *chatView) retryFailedTurn() tea.Cmd {
 		v.note, v.noteBad = "the failed turn has no prompt to send again", false
 		return nil
 	}
-	return v.sendMessage(t.Prompt)
+	if v.resending == t.Seq {
+		// Once per resend (#1149), the way the forms submit once per
+		// request (#1052, #1134).
+		v.note, v.noteBad = "already sent again — waiting for the new turn", false
+		return nil
+	}
+	cmd := v.sendMessage(t.Prompt)
+	if cmd != nil {
+		v.resending = t.Seq
+	}
+	return cmd
+}
+
+// failedTurnMeaning is what a failed turn's reason means for a chat turn
+// (#1149). The reasons catalogue is worded for tasks and steps and leaves
+// chat reasons to chats (its doc.go), so a stop reads as a stopped turn here
+// rather than "a human cancelled the task", and the reasons only a chat turn
+// fails with are worded here; the rest mean what they mean for a step.
+func failedTurnMeaning(reason string) string {
+	switch reason {
+	case "canceled":
+		return "The turn was stopped before it finished, and its agent process was killed."
+	case "session_lost":
+		return "The agent CLI no longer knows this conversation's session, so it could not resume it."
+	case "checkpoint_failed":
+		return "vincent could not snapshot the chat's worktree before the turn, so the agent never started."
+	}
+	return reasons.Explain(reason).Meaning
 }
 
 // failedTurnNext is the next step a failed turn's reason calls for.
@@ -2657,7 +2697,7 @@ func failedTurnNext(reason string) string {
 		return "the quota comes back on its own; once it has, " + retry
 	case "agent_unauthenticated":
 		return "log the agent CLI in, then " + retry
-	case "agent_not_found":
+	case "agent_unavailable": // the chat reason's spelling (#1149)
 		return "install the agent CLI or pick another agent, then " + retry
 	case "session_lost":
 		return "the agent no longer has this conversation; " + retry + " in a fresh session"
