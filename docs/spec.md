@@ -15557,7 +15557,11 @@ stream for the live tail.
    `(! N elsewhere)` badge (*The selected project*, below): root tasks in
    other projects in a needs-a-human state, from the same global listing.
    The footer's `!` hint counts everything `!` will visit — this project plus
-   every other — and carries no label, `! next attention (N)`. The slot head
+   every other — and carries no label, `! next attention (N)`.
+   *Amended 2026-11-24 (issue #1139):* the hint is offered only where `!`
+   jumps — not while a text field has the keyboard (#1060), and not while a
+   root popup (the palette, a picker, a question) is open, since each owns
+   every key but `ctrl+c` and `!` is typed into the palette's query. The slot head
    is the selected project's: `2 running · cap 3 · daemon 5/8`, its
    `slots_used`, its own `max_parallel_tasks` and the daemon's `slots.used`
    over the global cap, read from a plain `GET /v1/projects` the board makes
