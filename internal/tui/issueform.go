@@ -411,6 +411,19 @@ func (f *issueForm) updateEditing(msg tea.KeyPressMsg) tea.Cmd {
 		f.editing = false
 		f.title.Blur()
 		return f.submit()
+	case "down", "tab", "up", "shift+tab":
+		// The title is one line, so these keys have nothing to do inside
+		// it (#1142): they commit it and move, as on the rows and as the
+		// new-chat form's text rows do — a new issue opens typing here
+		// (#1063), and tab was the obvious way on to the description.
+		f.editing = false
+		f.title.Blur()
+		if s := msg.String(); s == "down" || s == "tab" {
+			f.move(1)
+		} else {
+			f.move(-1)
+		}
+		return nil
 	}
 	var cmd tea.Cmd
 	f.title, cmd = f.title.Update(msg)
