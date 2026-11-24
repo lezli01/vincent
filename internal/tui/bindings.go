@@ -1054,8 +1054,9 @@ var bindings = []binding{
 	{op: keymap.Add, key: "a", label: "add a step, lane or declared field after the one under the cursor", scope: scopePanel, context: ctxWorkflowEditor, hint: "a add", priority: 5, term: termAdd},
 	{op: keymap.DraftRemove, key: "d", label: "remove the item under the cursor (asks first)", scope: scopePanel, context: ctxWorkflowEditor, hint: "d remove", priority: 6, term: termDraftDrop},
 	{key: "K/J", label: "move the item up (K) or down (J); k and j still move the cursor", scope: scopePanel, context: ctxWorkflowEditor, hint: "K/J move", priority: 7},
-	// #1056: the last write, taken back — the value it replaced, written.
-	{key: "u", label: "undo the last write: put back the value it replaced", scope: scopePanel, context: ctxWorkflowEditor, hint: "u undo", priority: 7},
+	// #1056: the last write, taken back — the value it replaced, written;
+	// #1136: an add taken out, a move moved back. A remove is final.
+	{key: "u", label: "undo the last edit, add or move (a remove is final)", scope: scopePanel, context: ctxWorkflowEditor, hint: "u undo", priority: 7},
 	{key: "ctrl+s", label: "in the multi-line pane: save (enter inserts a newline there)", scope: scopePanel, context: ctxWorkflowEditor, hint: "ctrl+s save", priority: 8},
 	{op: keymap.FreeText, key: "t", label: "in an open list: type a value it does not offer", scope: scopePanel, context: ctxWorkflowEditor, priority: 9, term: termFreeText},
 

@@ -117,17 +117,26 @@ type wfEditorLayer struct {
 	// stale is a 409: the file changed on disk. The pending edit stays on
 	// screen and `R` re-reads it, which is the offer the brief asks for.
 	stale bool
-	// undo is the last write's row and the value it replaced, which `u` puts
-	// back (#1056); pending is the write in flight, promoted to undo when the
-	// daemon accepts it. One level: an undo is itself not undoable.
+	// undo is the last write the editor can take back, which `u` does
+	// (#1056, #1136); pending is the write in flight, promoted to undo when
+	// the daemon accepts it. One level: an undo is itself not undoable.
 	undo, pending *wfUndo
 }
 
-// wfUndo is one write the editor can take back: the row as it was, whose
-// value is what the write replaced.
+// wfUndo is one write the editor can take back. A row write carries the row
+// as it was, whose value is what the write replaced. An add or a move carries
+// ops instead: its inverse, computed when it is sent — the added item's
+// remove, the moved item's move back (#1136). A remove has none: the form
+// holds the item only as parsed values, not as the lines the file had, so a
+// re-insert would drop its comments and any key the form does not model.
+// Its confirmation says it is final, and it leaves nothing to undo.
 type wfUndo struct {
-	row     wfEditRow
-	undoing bool
+	row wfEditRow
+	ops []apiclient.WorkflowOp
+	// note is what the footer says an ops undo will do, and at is the item
+	// path the cursor goes to when it is taken back.
+	note, at string
+	undoing  bool
 }
 
 // openEditor opens the structured editor on the entry under the cursor.

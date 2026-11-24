@@ -16621,6 +16621,16 @@ stream for the live tail.
      field's newline-flattening is deliberate everywhere else it is used and
      is unchanged.
 
+   *Amended 2026-11-24 (issue #1136).* **`u` takes back the last add or
+   move, not only the last value.** An add is undone by removing the item it
+   inserted (with whatever rode along inside it), a move by moving the item
+   back; each inverse is computed when the write is sent and is itself one
+   PATCH. A remove stays final: the form holds the item only as parsed
+   values, so re-inserting it would drop its comments and any key the form
+   does not model. Its confirmation says it cannot be undone, and it leaves
+   nothing for `u`. The key hint offers `u undo` only while there is a write
+   `u` will take back.
+
    Unamended: `e` still means `$EDITOR`; the forms are still rendered from the
    served descriptor and never from a second copy of §8.2 — the agent, model
    and effort pickers read `GET /v1/agents`, which is where those sets live
