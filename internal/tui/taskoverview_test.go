@@ -128,7 +128,7 @@ func TestOverviewStateChangeSwapsFrameNotCursor(t *testing.T) {
 	v.detail.task.BlockReason = &reason
 	v.detail.task.AvailableActions = []string{apiclient.ActionRetry, apiclient.ActionCancel}
 	got := ansi.Strip(v.render(100, 30))
-	for _, want := range []string{"Blocked", "check failed  check_failed", "retry", "enter output of attempt 1"} {
+	for _, want := range []string{"Blocked", "✗ Step 1 · check failed", "retry", "enter output of attempt 1"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("blocked overview misses %q:\n%s", want, got)
 		}
