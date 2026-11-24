@@ -15820,6 +15820,10 @@ stream for the live tail.
 	   only place the column is written. The form states before the human
 	   confirms that only committed work is pushed. This section's other two
 	   states are unchanged, and the popup still has no tab strip.*
+	   *Amended 2026-11-24 (issue #1133): `ctrl+s` means one thing in the
+	   pull-request form — push and create. From inside the title or body
+	   field it keeps the text first and then sends, as the new-task, project
+	   and issue forms' fields do; `esc` alone leaves a field without sending.*
 	   **Output** renders the selected attempt's live or historical transcript and
 	   lets the reader move that selection with `←`/`→` (or `h`/`l`) without
 	   returning to the timeline. `enter` on a Steps & Attempts row opens Output
@@ -18409,6 +18413,13 @@ draft and applies the switch; the view lands on a fresh form for the new
 project, or on its list for a form inside a detail. `n` or `esc` drops the
 switch: the selection, the header and `tui.json` are untouched. The new-task
 form's own `esc` prompt is not this one.
+*Amended 2026-11-24 (issue #1133).* Leaving the screen, rather than
+switching the project, asks through the same root line and the one choke
+point every screen change takes: the new-task form with a typed draft
+(#1051), and now the task workspace's form popups — the answer, repair,
+follow-up, pull-request and comment forms — once typed into, ask
+``discard the repair and leave? y/n`` before a tab, the palette or `!` takes
+the human elsewhere. A form whose request is in flight does not ask.
 
 **An open follows its object.** Every open of a task, chat or issue carries the
 object's project, from the row its sender holds; the trigger ledger takes the

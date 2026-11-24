@@ -319,7 +319,10 @@ Leaving the new-task form any other way asks too, once you have typed into
 it: `q` asks `discard the task draft and quit? y/n`, and going to another
 screen — a tab, the palette, `!` — asks `discard the task draft and leave?
 y/n`. `ctrl+c` never asks. A form whose create is on its way asks nothing:
-the task it lands on is where it was going.
+the task it lands on is where it was going. The task workspace's popups —
+an answer, a repair, a follow-up, a pull request or a pull request
+comment — ask the same before another screen, once typed into:
+`discard the repair and leave? y/n`.
 A chat's unsent message does not ask: it is the chat's [draft](#drafts-stash-and-prompt-history),
 which the switch saves.
 
@@ -676,7 +679,8 @@ instead](../assets/tui-create-pr.png)
 | `esc` | Close without sending anything — once you have typed into it, it asks `discard this draft? y/n` first |
 
 Inside a field `enter` is a newline (a pull-request body usually wants more than
-one line), `ctrl+s` or `esc` keeps the text. A title is required:
+one line), `esc` keeps the text and leaves the field, and `ctrl+s` keeps it and
+pushes and creates — it means the same everywhere in the popup. A title is required:
 `ctrl+s` without one says so rather than sending something GitHub cannot use.
 
 The popup's footer — the compare URL, an error, the status and the key line —
