@@ -1503,6 +1503,20 @@ var bindings = []binding{
 	{key: "n", label: "no — nothing is sent (esc too)", scope: scopePanel, context: ctxPullConfirm, hint: "n no", priority: 2, noPalette: true},
 }
 
+// answerBinding is what enter means in a task's workspace while a question
+// is pending: it opens the answer form from every tab (#1062), so every
+// row of the tab's own on the same key stands behind it. The ? sheet lists
+// it among the actions now and leaves those rows out (#1141), as the footer
+// shows `enter answer` and withholds them. It is declared here, beside the
+// rows it shadows, rather than in the bindings slice: it is no §6 action
+// the palette could run — answering is the form, and the form is the popup
+// enter opens — and on the board, where enter opens the workspace first,
+// it is not what enter does at all.
+var answerBinding = binding{
+	key: "enter", label: "answer the question the task is waiting on — the answer form opens from every tab",
+	scope: scopeTaskAction, action: apiclient.ActionAnswer,
+}
+
 // isHomeContext reports whether a context belongs to the board/task daily loop
 // — the surfaces a task's actions and forms belong to, as opposed to a
 // management takeover.

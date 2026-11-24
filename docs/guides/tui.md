@@ -1642,7 +1642,8 @@ When a claude step asks something mid-run, the task enters `awaiting_input` and
 gets a badge on its row plus a footer hint. Press `enter` on the row to open the
 answer form. In the task's workspace `enter` opens it from every tab while the
 question is pending, so the tabs' own `enter` hints give way to `enter answer`
-until it is answered.
+until it is answered — on the footer and on the `?` sheet alike, where the
+answer leads the actions now and the tab's own `enter` row is left out.
 
 ![The answer form over a task waiting on input: a single-choice question with
 one option picked, and a multi-select question below it with one box ticked,
