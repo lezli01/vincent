@@ -197,7 +197,7 @@ func (t *taskView) liveBindings(rows []binding) []binding {
 		// While a question is pending, enter opens the answer on every tab
 		// (#1062): the tab's own enter — unfold, the output link — cannot be
 		// reached, and the footer's `enter answer` says what it does.
-		if b.key == "enter" && t.detail.form != nil {
+		if b.key == answerBinding.key && t.detail.form != nil {
 			continue
 		}
 		if b.context == ctxTaskOverview {

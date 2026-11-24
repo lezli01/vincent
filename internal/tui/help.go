@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/lezli01/vincent/internal/keymap"
@@ -140,9 +141,19 @@ func helpLines(ctx bindingContext, github bool, st helpState, width int) []strin
 			}
 		}
 	}
+	surface := bindingsFor(ctx)
+	if st.tabs != nil && isHomeContext(ctx) && st.offersNow(answerBinding) {
+		// A pending question takes enter on every tab of the workspace
+		// (#1062): the answer is what it means now, so it leads the actions
+		// and the tab's own row on that key is left out — two meanings for
+		// one key on one sheet is what #1141 found. Only on a tab: a find
+		// bar or a confirmation over one keeps its own keys.
+		now = append([]binding{answerBinding}, now...)
+		surface = slices.DeleteFunc(surface, func(b binding) bool { return b.key == answerBinding.key })
+	}
 	// This surface first: it is the answer to "what can I do here".
 	if ctx != "" {
-		addSection(string(ctx), mainTabRows(withoutUnsyncable(withoutGitHub(bindingsFor(ctx), github), !st.unsyncable), st.nextTab))
+		addSection(string(ctx), mainTabRows(withoutUnsyncable(withoutGitHub(surface, github), !st.unsyncable), st.nextTab))
 	}
 	if isHomeContext(ctx) {
 		addSection("actions now (on "+st.targetNoun()+")", now)
