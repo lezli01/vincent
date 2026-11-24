@@ -615,6 +615,9 @@ func (v *chatView) noteLines(width int) []string {
 		text, style, keys = v.compactQuestion(), styleWarn, chatCloseAnswers
 	case v.raising && v.chat != nil:
 		text, style, keys = v.raiseQuestion(), styleWarn, chatCloseAnswers
+	case v.clearingQueue && v.chat != nil:
+		// Keys first (#1162): the question is short, so they lead.
+		text, style = v.clearQueueQuestion(), styleWarn
 	case v.note != "":
 		text = v.note
 		if v.noteBad {

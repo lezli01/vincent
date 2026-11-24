@@ -321,13 +321,17 @@ func (t *taskView) askRerun() {
 	}
 }
 
-// updatePullConfirmKey answers the inline prompt. `y` sends; every other key
-// declines and is spent on declining, as the takeover's unlink prompt does —
-// a stray `q` or digit must neither send nor do what it does elsewhere.
+// updatePullConfirmKey answers the inline prompt by the shared rule
+// (#1162): `y` sends, `n` or esc declines, and any other key leaves the
+// question up — a stray `q` or digit must neither send, nor decline, nor do
+// what it does elsewhere.
 func (t *taskView) updatePullConfirmKey(msg tea.KeyPressMsg) tea.Cmd {
 	c := t.pullTab.confirm
-	t.pullTab.confirm = nil
-	if msg.String() != "y" {
+	yes, no := confirmAnswer(msg.String())
+	if yes || no {
+		t.pullTab.confirm = nil
+	}
+	if !yes {
 		return nil
 	}
 	switch c.write {

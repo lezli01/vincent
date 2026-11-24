@@ -272,9 +272,9 @@ func (v *pullRequestsView) promptKeys() promptAnswers {
 }
 
 // capturesInput is true while the filter is typed into, while the unlink
-// question is up — every other key cancels it, so `n` and `q` must answer it
-// rather than reach the root's New task and quit with it still armed (review
-// F2) — and while the picker's filter or free text is being typed into.
+// question is up — it owns the keyboard until answered (#1162), so `n` must
+// answer it and `q` wait, rather than reach the root's New task and quit with
+// it still armed (review F2) — and while the picker's filter or free text is being typed into.
 func (v *pullRequestsView) capturesInput() bool {
 	if v.filtering || v.confirm != nil {
 		return true
@@ -842,10 +842,15 @@ func (v *pullRequestsView) askUnlink() {
 
 func (v *pullRequestsView) updateConfirmKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	c := v.confirm
-	v.confirm = nil
-	if msg.String() != "y" && msg.String() != "Y" {
+	// The shared rule (#1162): a stray key leaves the question up.
+	yes, no := confirmAnswer(msg.String())
+	if !yes {
+		if no {
+			v.confirm = nil
+		}
 		return v, nil
 	}
+	v.confirm = nil
 	client := v.client
 	if client == nil {
 		v.setNote("not connected", true)

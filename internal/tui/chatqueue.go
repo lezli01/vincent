@@ -145,6 +145,36 @@ func (v *chatView) resumeQueueCmd() tea.Cmd {
 	})
 }
 
+// askClearQueue raises the alt+c confirmation (#1162): a clear deletes
+// every queued message unsent, so it asks first rather than on the key.
+// Nothing queued says so without asking.
+func (v *chatView) askClearQueue() {
+	if !queueWanted(v.chat) {
+		v.note, v.noteBad = "nothing is queued", false
+		return
+	}
+	v.clearingQueue = true
+	v.note = ""
+	v.hideInline("")
+	v.hideFiles()
+}
+
+// clearQueueQuestion is the alt+c confirmation's text, answer keys first.
+func (v *chatView) clearQueueQuestion() string {
+	n := 0
+	if v.chat != nil {
+		n = v.chat.QueuedCount
+	}
+	if n <= 0 {
+		return "clear the queue? (y/n) · its messages are deleted unsent"
+	}
+	verb := " are"
+	if n == 1 {
+		verb = " is"
+	}
+	return "clear the queue? (y/n) · " + countNoun(n, "queued message") + verb + " deleted unsent"
+}
+
 func (v *chatView) clearQueueCmd() tea.Cmd {
 	if !queueWanted(v.chat) {
 		v.note, v.noteBad = "nothing is queued", false

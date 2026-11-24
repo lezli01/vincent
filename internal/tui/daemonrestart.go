@@ -118,11 +118,15 @@ func (d *daemonView) logHeader() string {
 	return "  " + strings.Join(parts, " · ")
 }
 
-// updateRestartAsk answers the restart question: y restarts, anything else
-// keeps the daemon.
+// updateRestartAsk answers the restart question by the shared rule (#1162):
+// y restarts, n or esc keeps the daemon, and any other key leaves the
+// question up.
 func (d *daemonView) updateRestartAsk(msg tea.KeyPressMsg) tea.Cmd {
-	d.restartAsk = false
-	if msg.String() == "y" {
+	yes, no := confirmAnswer(msg.String())
+	if yes || no {
+		d.restartAsk = false
+	}
+	if yes {
 		d.restarting = true
 		return func() tea.Msg { return restartDaemonMsg{} }
 	}

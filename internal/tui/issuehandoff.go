@@ -341,11 +341,12 @@ func (f *handoffForm) updateKey(msg tea.KeyPressMsg) (cmd tea.Cmd, closed bool) 
 		return nil, false
 	}
 	if f.discard {
-		f.discard = false
-		if s := msg.String(); s == "y" || s == "Y" {
-			return nil, true
+		// The shared rule (#1162): any key but yes or no leaves it up.
+		yes, no := confirmAnswer(msg.String())
+		if yes || no {
+			f.discard = false
 		}
-		return nil, false
+		return nil, yes
 	}
 	switch msg.String() {
 	case "esc":
@@ -432,7 +433,7 @@ func (f *handoffForm) render(width, height int) string {
 	case f.busy:
 		lines = append(lines, "  "+styleDim.Render("starting the handoff…"))
 	case f.discard:
-		lines = append(lines, "  "+styleWarn.Render("Discard this handoff? y discards · any other key keeps it"))
+		lines = append(lines, "  "+styleWarn.Render("Discard this handoff? y discards · n keeps it"))
 	default:
 		lines = append(lines, "  "+styleDim.Render("↑/↓ move · space toggles · ←/→ workflow · ctrl+s hands off · esc closes"))
 	}

@@ -1075,7 +1075,7 @@ func (b *board) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		}
 	}
 	if msg.String() == opKey(keymap.Diagnose) {
-		if cmd := diagnoseCmd(b.client, b.target(), b.actions); cmd != nil {
+		if cmd, handled := diagnoseCmd(b.target(), b.actions); handled {
 			return b, cmd
 		}
 	}
@@ -2195,19 +2195,22 @@ func (b *board) askDelete() {
 // delete must not be cancelled *or* confirmed by a stray key.
 func (b *board) answerDelete(key string) tea.Cmd {
 	p := b.delPrompt
-	switch key {
-	case "b":
+	// `b` is this question's third answer; yes and no are the shared rule's
+	// (#1162).
+	yes, no := confirmAnswer(key)
+	switch {
+	case key == "b":
 		if p.force {
 			return nil // a force delete never deletes a branch (task 153)
 		}
 		b.delPrompt = nil
 		b.delNote, b.delNoteBad = "deleting…", false
 		return dispatchDelete(b.client, p.ids, deleteAsk{archived: b.archived, branch: true})
-	case "y":
+	case yes:
 		b.delPrompt = nil
 		b.delNote, b.delNoteBad = "deleting…", false
 		return dispatchDelete(b.client, p.ids, deleteAsk{archived: b.archived, force: p.force})
-	case "n", "esc":
+	case no:
 		b.delPrompt = nil
 		b.delNote, b.delNoteBad = "", false
 	}

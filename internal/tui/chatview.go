@@ -257,8 +257,9 @@ type chatView struct {
 	loadErr string
 
 	// closing is the close confirmation on screen (task 119). It owns the
-	// next key: `y` closes, anything else keeps the chat open and is spent
-	// on declining, so a draft is never typed into by the answer.
+	// keyboard until it is answered (#1162): `y` closes, `n` or esc keeps
+	// the chat open, and any other key is ignored, so a draft is never
+	// typed into by the answer.
 	closing bool
 	// compacting is the compact confirmation on screen (task 157): like
 	// closing, it owns the next key. compactCmds is each adapter's compact
@@ -270,6 +271,10 @@ type chatView struct {
 	// model-and-effort list; agents is GET /v1/agents by name, which the
 	// picker is sourced from.
 	raising bool
+	// clearingQueue is the alt+c confirmation on screen (#1162): clearing
+	// deletes every queued message unsent, which nothing brings back, so it
+	// asks first and owns the keyboard as compacting does.
+	clearingQueue bool
 	// clampTask is the restricted task a linked chat's raise was refused
 	// for (task 162 decision 3), once the daemon has said so; shift+tab then
 	// says why instead of asking (review F3). Zero is "not known".
@@ -515,6 +520,7 @@ func (v *chatView) openAt(id int64, seq int) tea.Cmd {
 	v.note, v.loadErr = "", ""
 	v.closing, v.sending, v.compacting = false, false, false
 	v.raising, v.picker, v.clampTask = false, nil, 0
+	v.clearingQueue = false
 	v.skills = chatSkillList{}
 	v.files = chatFileList{}
 	v.composer.SetValue("")
@@ -1295,7 +1301,7 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	// the composer, and over a pending question's popup too — the question
 	// stays the chat's, and the popup is back when the chat is.
 	if sw, ok := chatSwitchFor(msg.String()); ok {
-		v.closing = false
+		v.closing, v.clearingQueue = false, false
 		return v, v.switchChat(sw)
 	}
 	if v.form != nil {
@@ -1303,6 +1309,7 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		// the popup owns the keyboard, and a `y` meant for the prompt must
 		// not be read as an answer to something else later.
 		v.closing, v.compacting, v.raising, v.picker, v.rewind = false, false, false, nil, nil
+		v.clearingQueue = false
 		cmd, exit := v.form.updateWith(msg, v.answerCmd)
 		if exit {
 			// Put away, not dropped (issue #801 F7): alt+a brings it back
@@ -1311,29 +1318,56 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		}
 		return v, cmd
 	}
+	// The chat's own questions answer by the shared rule (#1162): y or Y
+	// goes ahead, n, N or esc declines, and any other key leaves the
+	// question up rather than declining it.
 	if v.closing {
-		v.closing = false
-		if msg.String() == "y" {
+		yes, no := confirmAnswer(msg.String())
+		switch {
+		case yes:
+			v.closing = false
 			return v, v.closeCmd()
+		case no:
+			v.closing = false
+			v.note, v.noteBad = "the chat stays open", false
 		}
-		v.note, v.noteBad = "the chat stays open", false
 		return v, nil
 	}
 	if v.compacting {
-		v.compacting = false
-		if msg.String() == "y" {
+		yes, no := confirmAnswer(msg.String())
+		switch {
+		case yes:
+			v.compacting = false
 			return v, v.sendMessage(v.compactCommand())
+		case no:
+			v.compacting = false
+			v.note, v.noteBad = "nothing was sent", false
 		}
-		v.note, v.noteBad = "nothing was sent", false
 		return v, nil
 	}
 	if v.raising {
-		v.raising = false
-		if msg.String() == "y" {
+		yes, no := confirmAnswer(msg.String())
+		switch {
+		case yes:
+			v.raising = false
 			mode := modeFullAuto
 			return v, v.patchSettingsCmd(apiclient.PatchChatRequest{PermissionMode: &mode})
+		case no:
+			v.raising = false
+			v.note, v.noteBad = "the chat stays restricted", false
 		}
-		v.note, v.noteBad = "the chat stays restricted", false
+		return v, nil
+	}
+	if v.clearingQueue {
+		yes, no := confirmAnswer(msg.String())
+		switch {
+		case yes:
+			v.clearingQueue = false
+			return v, v.clearQueueCmd()
+		case no:
+			v.clearingQueue = false
+			v.note, v.noteBad = "the queue stays", false
+		}
 		return v, nil
 	}
 	if v.picker != nil {
@@ -1458,7 +1492,8 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	case chatQueueResumeKey:
 		return v, v.resumeQueueCmd()
 	case chatQueueClearKey:
-		return v, v.clearQueueCmd()
+		v.askClearQueue()
+		return v, nil
 	case opKey(keymap.Steer):
 		v.steerNote()
 		return v, nil
@@ -1810,7 +1845,7 @@ func (v *chatView) syncInlineSkills() tea.Cmd {
 	// and no turn will run in a terminal chat. Ordering in updateKey already
 	// returns before this for the first two; this is the same refusal for
 	// the paths that do not go through a key at all.
-	if !ok || v.form != nil || v.closing || v.compacting || v.chat == nil ||
+	if !ok || v.form != nil || v.closing || v.compacting || v.clearingQueue || v.chat == nil ||
 		chatstate.Terminal(chatstate.State(v.chat.State)) ||
 		tok.text == v.skills.suppressed {
 		v.hideInline("")
@@ -1994,7 +2029,7 @@ func (v *chatView) syncInlineFiles() tea.Cmd {
 	// keyboard, and no turn will run in a terminal chat. Ordering in
 	// updateKey already returns before this for the first two; this is the
 	// same refusal for the paths that do not go through a key at all.
-	if !ok || v.form != nil || v.closing || v.compacting || v.chat == nil ||
+	if !ok || v.form != nil || v.closing || v.compacting || v.clearingQueue || v.chat == nil ||
 		chatstate.Terminal(chatstate.State(v.chat.State)) ||
 		tok.text == v.files.suppressed || v.skillsOwnTheMentionSigil() ||
 		v.files.insideAccepted(tok.text, v.composer.Value()) {
@@ -2279,8 +2314,8 @@ func (v *chatView) closeQuestion() string {
 }
 
 // promptKeys names the close confirmation's answers while it is up, so the
-// root footer shows those and nothing else (#790): every other key is spent
-// on declining.
+// root footer shows those and nothing else (#790): any other key leaves the
+// question up (#1162).
 func (v *chatView) promptKeys() promptAnswers {
 	if v.closing && v.chat != nil && v.form == nil {
 		return promptHint("y", "close", "n", "keep it open")
@@ -2290,6 +2325,9 @@ func (v *chatView) promptKeys() promptAnswers {
 	}
 	if v.raising && v.chat != nil && v.form == nil {
 		return promptHint("y", "full-auto", "n", "stay restricted")
+	}
+	if v.clearingQueue && v.chat != nil && v.form == nil {
+		return promptHint("y", "clear the queue", "n", "keep it")
 	}
 	// While a hunk reject waits, x and a answer "no": the footer offers the
 	// answers instead of the pane's keys (review finding 4).
@@ -2372,7 +2410,7 @@ func (v *chatView) liveBindings(rows []binding) []binding {
 	closable := v.chat != nil && v.chat.LinkedTaskID != nil || onIssue
 	free := v.chat != nil && v.chat.LinkedTaskID == nil
 	ended := v.chat == nil || chatstate.Terminal(chatstate.State(v.chat.State))
-	owned := v.closing || v.compacting || v.raising || v.picker != nil || v.rewind != nil || v.form != nil
+	owned := v.closing || v.compacting || v.raising || v.clearingQueue || v.picker != nil || v.rewind != nil || v.form != nil
 	live := v.chat != nil && (v.chat.State == string(chatstate.Running) || v.chat.State == string(chatstate.AwaitingInput))
 	running := v.chat != nil && v.chat.State == string(chatstate.Running)
 	out := make([]binding, 0, len(rows))

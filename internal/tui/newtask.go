@@ -1147,15 +1147,18 @@ func (n *newTask) abandon() (panel, tea.Cmd) {
 	return n, nil
 }
 
+// updateConfirm answers "discard this draft?" by the shared rule (#1162):
+// a key that is neither yes nor no leaves it up.
 func (n *newTask) updateConfirm(msg tea.KeyPressMsg) (panel, tea.Cmd) {
-	switch msg.String() {
-	case "y", "Y":
+	yes, no := confirmAnswer(msg.String())
+	switch {
+	case yes:
 		n.reset()
 		return n, backToTab
-	default:
+	case no:
 		n.mode = ntNavigating
-		return n, nil
 	}
+	return n, nil
 }
 
 // editDescription opens $EDITOR on the draft description, seeded with

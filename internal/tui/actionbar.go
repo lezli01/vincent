@@ -219,15 +219,20 @@ func (a *actionBar) capturing() bool { return a.pending != "" }
 // as its own.
 func (a *actionBar) handleKey(key string, client *apiclient.Client, t taskActions) (cmd tea.Cmd, handled bool) {
 	if a.pending != "" {
-		switch key {
-		case "y":
+		yes, no := confirmAnswer(key)
+		switch {
+		case yes:
 			action, force, ids, id := a.pending, a.force, a.pendingIDs, a.pendingID
 			a.resetPending()
+			if action == actionDiagnose {
+				// Not a §6 call: `Q` opens a chat (#1162 made it ask).
+				return diagnoseRun(client, id, a), true
+			}
 			if len(ids) > 0 {
 				return a.dispatchBulk(client, ids, action, force), true
 			}
 			return a.dispatch(client, id, action, force), true
-		case "n", "esc":
+		case no:
 			a.resetPending()
 			a.setStatus("cancelled", false)
 			return nil, true
@@ -493,6 +498,11 @@ func (a *actionBar) confirmPrompt() string {
 		return fmt.Sprintf("skip #%d's current step? (y/n) · it is marked skipped and the task goes on without it", a.pendingID)
 	case a.pending == apiclient.ActionReject:
 		return fmt.Sprintf("reject #%d's gate? (y/n) · the task is blocked there until you retry, skip or cancel", a.pendingID)
+	case a.pending == actionDiagnose:
+		// A linked chat takes its task's permission mode (spec §5.5), so the
+		// turn is full-auto unless the task runs restricted.
+		return fmt.Sprintf("diagnose #%d? (y/n) · starts an agent turn in a new chat on its worktree, "+
+			"full-auto unless the task runs restricted; the task stays locked until the chat closes", a.pendingID)
 	default:
 		return fmt.Sprintf("%s #%d? (y/n)", a.pending, a.pendingID)
 	}

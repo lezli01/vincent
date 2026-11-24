@@ -15922,7 +15922,9 @@ stream for the live tail.
    Actions run. Each confirms first, in one of three shapes: **close, reopen and
    re-run** ask inline with a y/n that names the consequence (the re-run prompt
    lists every failed row of the run, since the route takes one run id), and
-   any key but `y` declines; **merge** opens a popup listing merge, squash and
+   any key but `y` declines *(amended 2026-11-24, issue #1162: `n` or `esc`
+   declines and any other key leaves the question up, by the confirmation
+   rule under the footer)*; **merge** opens a popup listing merge, squash and
    rebase with **no method preselected** — `y` does nothing until `←`/`→` picks
    one, `n`/`esc` close it, and `enter` never confirms; **comment** opens a
    popup that is its own confirmation (task 069 decision 2's reasoning) —
@@ -16728,7 +16730,9 @@ stream for the live tail.
    above is about a TUI that leaves no daemon behind, and a restart leaves one.
    The question names its consequence (running steps are interrupted and
    re-run when the daemon is back, §12.4) and puts its key first: `y`
-   restarts, and any other key keeps the daemon. It is drawn over an empty,
+   restarts, and any other key keeps the daemon. *Amended 2026-11-24 (issue
+   #1162):* `n` or `esc` keeps the daemon and any other key leaves the
+   question up, by the confirmation rule under the footer. It is drawn over an empty,
    unread or unreadable log too, and so is a failed stop, which leaves the
    connection alone. The replacement is the TUI's detached auto-start, not the
    service manager's: the stop exits 0, which none of `vincent service
@@ -19634,6 +19638,23 @@ it while there is room and are counted into `+N` when there is not. Its start
 is what it says, and the left cut removed exactly that. The footer is still one
 row.
 
+*Amended 2026-11-24 (issue #1162).* **Every y/n confirmation answers by one
+rule.** `y` or `Y` confirms; `n`, `N` or `esc` declines; any other key is
+ignored and the question stays until it is answered. One client helper
+(`confirmAnswer`) reads the key for every question — the action bar's, the
+leave and project-switch guards, the global pause, every delete, archive,
+close, compact, raise, unlink, hunk-reject, keep, discard-draft and
+dangerous-setting question, the workflow editor's remove and the daemon
+restart — so the rule cannot drift by surface again. Before it, some took
+`Y` and some did not, and some declined on any key while others waited. A
+question leads with its answer keys and then names the consequence, and the
+footer while it is up offers `y` and `n` rather than "any other key keeps it".
+A question with a third answer keeps it beside the rule (the delete
+confirmation's `b`); the daemon screen's offers (status line, skills, font),
+whose `n` is remembered and whose `esc` is not, are choices rather than y/n
+questions and keep their own keys. Where the key that opened a pane closes it
+(the chat diff pane's), it still closes it with the question up.
+
 *Amended 2026-09-10 (task 094, issue #352).* **The width decides how many keys
 reach the line, and the line says how many it is not showing.** "At most five"
 is superseded: the hinted rows are admitted as a strict prefix of priority
@@ -19932,7 +19953,9 @@ refusing it, and the composer's placeholder says so. Queued messages render as
 faded `You` cards marked `queued` below the live turn; `↑` on an empty
 composer edits the newest (`enter` saves, `ctrl+d` deletes, `esc` stops). A
 paused queue renders a card naming why, with `alt+r` to resume and `alt+c` to
-clear. `ctrl+s` is the rebindable `steer` operation (task 118's registry, with
+clear. *Amended 2026-11-24 (issue #1162):* `alt+c` asks first — `clear the
+queue? (y/n) · N queued messages are deleted unsent` — since a clear deletes
+messages nothing brings back; with nothing queued it says so instead. `ctrl+s` is the rebindable `steer` operation (task 118's registry, with
 a recorded exception beside the forms' fixed `ctrl+s`); no adapter can steer
 yet, so it puts the daemon's `steer_reason` in the composer note.
 *Amended 2026-11-20 (task 164, issue #1012).* **The composer is the chat's
@@ -20079,6 +20102,13 @@ opened after the failing attempt finished, under *Stopped here before* when it
 was about an earlier stop — and a later `diagnose` passes that answer to the
 new chat to check first. `Q` because every mnemonic letter was taken on a
 surface the task actions share: `W` is the issue screen's comment.
+*Amended 2026-11-24 (issue #1162):* `Q` **asks first** when it would open a
+new chat, on the action bar like `cancel` — `diagnose #7? (y/n) · starts an
+agent turn in a new chat on its worktree, full-auto unless the task runs
+restricted; the task stays locked until the chat closes` — because a yes
+starts an agent turn that spends and runs with the task's permissions.
+Reopening a chat already open on the task asks nothing. `approve` stays
+unconfirmed: it moves the task on, which is what a gate is for.
 
 An **open new-chat draft captures input on every row**, not only on the two
 text ones. This is a deliberate, scoped exception to the rule above that the

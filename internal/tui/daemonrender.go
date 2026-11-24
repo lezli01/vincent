@@ -770,7 +770,7 @@ func humanBytes(n int64) string {
 func (d *daemonView) restartLine() string {
 	switch {
 	case d.restartAsk:
-		return styleWarn.Render("  restart the daemon? y restart · any other key keeps it · running steps are interrupted and re-run when it is back")
+		return styleWarn.Render("  restart the daemon? y restart · n keep it · running steps are interrupted and re-run when it is back")
 	case d.restarting:
 		return styleDim.Render("  restarting the daemon…")
 	case d.restartErr != nil:
@@ -787,7 +787,7 @@ func (d *daemonView) renderLog(height int) string {
 	if body, ok := d.logEmptyState(); ok {
 		// The question is drawn over an empty log too: `r` arms it either
 		// way, and an unseen question would let the next `y` restart the
-		// daemon and swallow any other key (review finding 5).
+		// daemon and hold every other key (review finding 5).
 		if restart != "" {
 			header += "\n" + restart
 		}

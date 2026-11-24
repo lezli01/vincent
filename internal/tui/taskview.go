@@ -608,8 +608,8 @@ func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		return t.updatePopupKey(msg)
 	}
 	if t.pullTab.confirm != nil {
-		// The inline y/n owns the keyboard: tab, the digits, esc and the §6
-		// letters are all spent on declining it.
+		// The inline y/n owns the keyboard (#1162): tab, the digits and the
+		// §6 letters wait for its answer; n or esc declines it.
 		return t.updatePullConfirmKey(msg)
 	}
 

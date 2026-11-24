@@ -75,12 +75,11 @@ func TestCompareSplitView(t *testing.T) {
 	}
 }
 
-// TestCompareKeepAsksAndRefuses: keep asks first, any key but y declines,
-// and keeping is not offered while a side works or once one was kept.
+// TestCompareKeepAsksAndRefuses: keep asks first, n declines, and keeping is not offered while a side works or once one was kept.
 func TestCompareKeepAsksAndRefuses(t *testing.T) {
 	v := compareFixture()
 	v.updateKey(tea.KeyPressMsg{Code: ']', Text: "]"})
-	if v.confirm != 1 || !strings.Contains(v.note, "keep right (codex)? the left side (claude)") {
+	if v.confirm != 1 || !strings.Contains(v.note, "keep right (codex)? (y/n) · the left side (claude)") {
 		t.Fatalf("confirm %d note %q", v.confirm, v.note)
 	}
 	if _, cmd := v.updateKey(tea.KeyPressMsg{Code: 'n', Text: "n"}); cmd != nil || v.confirm != -1 || v.note != "nothing kept" {

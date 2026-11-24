@@ -273,8 +273,12 @@ func (f *issueForm) update(msg tea.Msg) (cmd tea.Cmd, ok bool) {
 func (f *issueForm) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	switch {
 	case f.confirming:
-		f.confirming = false
-		if s := msg.String(); s == "y" || s == "Y" {
+		// The shared rule (#1162): any key but yes or no leaves it up.
+		yes, no := confirmAnswer(msg.String())
+		if yes || no {
+			f.confirming = false
+		}
+		if yes {
 			return f.close(nil, false)
 		}
 		return nil
@@ -707,7 +711,7 @@ func (f *issueForm) render(width, height int) string {
 	tail := []string{""}
 	switch {
 	case f.confirming:
-		tail = append(tail, styled(wrapText("discard your changes? y discards · any other key keeps editing", width, hanging("  ")), styleWarn)...)
+		tail = append(tail, styled(wrapText("discard your changes? y discards · n keeps editing", width, hanging("  ")), styleWarn)...)
 	case f.saving:
 		tail = append(tail, styleDim.Render("  saving…"))
 	case f.err != "":

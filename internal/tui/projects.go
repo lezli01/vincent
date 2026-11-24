@@ -534,14 +534,16 @@ func (p *projectsView) askDelete() {
 
 func (p *projectsView) updateConfirm(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	c := p.confirm
-	switch msg.String() {
-	case "y", "Y":
+	// The shared rule (#1162): a stray key leaves the question up.
+	yes, no := confirmAnswer(msg.String())
+	switch {
+	case yes:
 		p.confirm = nil
 		return p, p.deleteCmd(c.id, c.force)
-	default:
+	case no:
 		p.confirm = nil
-		return p, nil
 	}
+	return p, nil
 }
 
 func (p *projectsView) deleteCmd(id int64, force bool) tea.Cmd {
