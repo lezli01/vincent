@@ -17770,6 +17770,13 @@ stream for the live tail.
    archived chats at any width, and `enter` opens an archived task. Every frame in
    the TUI has rounded corners.
 
+   *Amended 2026-11-24 (issue #1143).* On the wide pull requests layout **the
+   wheel walks the column under the pointer**: a notch over the selection's
+   column moves it one card, and one over the other column crosses to it at the
+   same height and moves from there. A notch outside both columns walks the
+   selection's own. It used to step through the listing's order, which
+   interleaves the two columns.
+
    *Amended 2026-11-18 (task 150.8).* `tui.icons` (§12.3) picks the glyphs of the
    app header, boards, cards and side panes: `unicode`, the default, or `nerd`. It
    applies from every config answer, and only to text the TUI itself wrote.
