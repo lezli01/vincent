@@ -279,9 +279,10 @@ type newTask struct {
 	// err is a failure that belongs to no single row.
 	err        string
 	submitting bool
-	// wideText, wideListW, wideFormEnd and wfHits are the last wide
-	// render's layout, which a click is read against (#1065).
-	wideText               []string
+	// shownText is the last render as text, at any width (#1144);
+	// wideListW, wideFormEnd and wfHits are the last wide render's layout.
+	// A click is read against them (#1065).
+	shownText              []string
 	wideListW, wideFormEnd int
 	wfHits                 []ntWorkflowHit
 	touched                bool

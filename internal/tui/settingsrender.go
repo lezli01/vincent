@@ -51,7 +51,12 @@ func (v *settingsView) renderNarrow(width, height int) string {
 		lines = []string{toneBlue.Render(ic("⌕ ")) + v.searchText(width-2)}
 	}
 	s := v.settingsStack(width)
-	return strings.Join(append(lines, s.view(max(height-len(lines), 1))...), "\n")
+	shown := s.view(max(height-len(lines), 1))
+	// Where each setting's lines landed, for a click (#1144): under the
+	// heading, inside the root's frame.
+	v.navHits = v.navHits[:0]
+	v.recordPaneHits(s.tags, shown, s.viewStart(max(height-len(lines), 1)), 1+len(lines), 1)
+	return strings.Join(append(lines, shown...), "\n")
 }
 
 func (v *settingsView) searchText(width int) string {
@@ -170,15 +175,7 @@ func (v *settingsView) settingsPane(w, h int) []string {
 	// Where each setting's lines landed, for a click (#1065): the pane sits
 	// right of the category list, under the search box, inside its border.
 	shown := s.view(max(h-2, 1))
-	start := s.viewStart(max(h-2, 1))
-	v.paneHits = v.paneHits[:0]
-	for k, line := range shown {
-		if i := start + k; i < len(s.tags) && s.tags[i] != "" {
-			v.paneHits = append(v.paneHits, settingsHit{
-				y: v.searchRows + 1 + k, x0: settingsNavW + 2, path: s.tags[i], text: ansi.Strip(line),
-			})
-		}
-	}
+	v.recordPaneHits(s.tags, shown, s.viewStart(max(h-2, 1)), v.searchRows+1, settingsNavW+2)
 	return drawBox(styleTitle.Render(title), right, shown, w, h, edgesRounded, styleDim)
 }
 
@@ -488,4 +485,18 @@ func (v *settingsView) footerSummary(width int) string {
 		out += styleDim.Render("  ·  ") + styleWarn.Render(attentionBadge+" waiting for your answer")
 	}
 	return " " + out + "  "
+}
+
+// recordPaneHits notes where each shown line of a setting landed: shown is
+// a window from start of the lines tags names the settings of, drawn from
+// screen line y0 and column x0.
+func (v *settingsView) recordPaneHits(tags, shown []string, start, y0, x0 int) {
+	v.paneHits = v.paneHits[:0]
+	for k, line := range shown {
+		if i := start + k; i < len(tags) && tags[i] != "" {
+			v.paneHits = append(v.paneHits, settingsHit{
+				y: y0 + k, x0: x0, path: tags[i], text: ansi.Strip(line),
+			})
+		}
+	}
 }

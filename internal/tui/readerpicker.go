@@ -243,6 +243,8 @@ type readerPicker struct {
 	// page is the last render's layout, which pgup and pgdown move
 	// through (task 135.10 decision 5).
 	page popupPage
+	// listTop is the popup line the list starts on, for a click (#1144).
+	listTop int
 }
 
 func newReaderPicker(items []copyItem) *readerPicker {
@@ -363,6 +365,13 @@ func (p *readerPicker) render(w, h int) string {
 	}
 	shown, page := popupWindow(rows, entryRow, cursorRow, h-2-len(lines))
 	p.page = page
+	p.listTop = 1 + len(lines) // the frame's top edge, then the lines above
 	lines = append(lines, shown...)
 	return frame("copy", strings.Join(lines, "\n"), w, h, true)
+}
+
+// clickLine is a click on the popup's line y (0 is the frame's top edge): the
+// row on it, which a click selects and runs as enter does (#1144).
+func (p *readerPicker) clickLine(y int) (int, bool) {
+	return p.page.entryOnLine(y - p.listTop)
 }

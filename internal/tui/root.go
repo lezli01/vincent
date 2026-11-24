@@ -120,6 +120,9 @@ type root struct {
 	mouseOn bool
 	// footerHits are the clickable spans of the last-rendered footer.
 	footerHits []footerHit
+	// lastFrame is the last frame View drew, which a click on an inline
+	// list's row is read against (#1144).
+	lastFrame string
 	// notice is §16's full-auto warning. It owns the whole screen until it
 	// is dismissed, ahead of and independent of the connect flow: the
 	// warning is about what the daemon will do, so it must not wait on the
@@ -540,11 +543,18 @@ func (m *root) updatePaste(text string) tea.Cmd {
 // header's `◆` segment opens the project picker (task 132.4), a main-tab
 // strip label switches to its tab (task 136.3), the rest of the header is
 // inert, and everything else lands in the active screen's body. The palette
-// and the project picker take a click on a row (#1065); the other popups stay
+// and the project picker take a click on a row (#1065), and so do the copy and
+// link pickers and every inline picker (#1144); the other popups stay
 // keyboard; right-clicks and the rest are out of scope.
 func (m *root) updateMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
-	if msg.Button == tea.MouseLeft && !m.notice.active && !m.help && (m.palette != nil || m.projPick != nil) {
+	if msg.Button == tea.MouseLeft && !m.notice.active && !m.help && (m.palette != nil || m.projPick != nil || m.reader != nil || m.linkPick != nil) {
 		return m.updatePopupClick(msg)
+	}
+	// Every other picker runs a row on a click too (#1144), as enter does.
+	if msg.Button == tea.MouseLeft && !m.notice.active && !m.help {
+		if l := m.openList(); l != nil && m.clickListRow(l, msg.X, msg.Y) {
+			return m.updateKey(tea.KeyPressMsg{Code: tea.KeyEnter})
+		}
 	}
 	if msg.Button != tea.MouseLeft || m.notice.active || m.popupOpen() || m.help {
 		return m, nil
@@ -2661,6 +2671,7 @@ func (m *root) View() tea.View {
 		pw, ph := popupBox(m.width, m.height, top)
 		frame = overlay(frame, popup(pw, ph), max((m.width-pw)/2, 0), top)
 	}
+	m.lastFrame = frame
 	v := tea.NewView(frame)
 	// The alternate screen, which the teardown path (tui.go's quit reminder)
 	// and the board's mouse handling were written against: without it
@@ -3113,6 +3124,22 @@ func (m *root) updatePopupClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 	}
 	y := msg.Y - top
 	enter := tea.KeyPressMsg{Code: tea.KeyEnter}
+	// The copy and link pickers are the root's too, drawn in the same box
+	// (#1144); they are checked in the order keys reach them.
+	if m.reader != nil {
+		if i, ok := m.reader.clickLine(y); ok {
+			m.reader.cursor = i
+			return m.updateReaderKey(enter)
+		}
+		return m, nil
+	}
+	if m.linkPick != nil {
+		if i, ok := m.linkPick.clickLine(y); ok {
+			m.linkPick.cursor = i
+			return m.updateLinksKey(enter)
+		}
+		return m, nil
+	}
 	if m.palette != nil {
 		if i, ok := m.palette.clickLine(y); ok {
 			m.palette.cursor = i
@@ -3124,4 +3151,37 @@ func (m *root) updatePopupClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 		return m.updateProjectPickerKey(enter)
 	}
 	return m, nil
+}
+
+// openList is the inline list a click may choose a row of (#1144): the
+// chat-with popup's picker, or one the active screen has open. None while a
+// question owns the keyboard — a draft or quit question, `Z`'s — or a popup
+// without a list is up, or the screen is not the one drawn.
+func (m *root) openList() clickList {
+	switch {
+	case m.pending != nil, m.leave != nil, m.globalPause.asking:
+		return nil
+	case m.chatWith != nil:
+		if m.chatWith.pick == nil {
+			return nil
+		}
+		return m.chatWith.pick
+	case m.popupOpen(), m.connScreen():
+		return nil
+	}
+	if o, ok := m.views[m.active].(clickListOwner); ok {
+		return o.openList()
+	}
+	return nil
+}
+
+// clickListRow points l at the row drawn under (x, y) on the last frame, and
+// reports whether there was one.
+func (m *root) clickListRow(l clickList, x, y int) bool {
+	lines := strings.Split(ansi.Strip(m.lastFrame), "\n")
+	if y < 0 || y >= len(lines) {
+		return false
+	}
+	i, ok := rowAt(lines[y], x, l.clickRows())
+	return ok && l.pointAt(i)
 }

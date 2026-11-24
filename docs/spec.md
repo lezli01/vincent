@@ -20485,6 +20485,15 @@ or "mouse on â€” M turns it off for native selection", naming the key as bound â
 until the next key. The same line carries a copy's outcome on a surface with no
 note of its own (the issue screen's link and copy pickers); the task workspace
 and a chat keep saying it themselves, and the root stays quiet there.
+*Amended 2026-11-24 (issue #1144):* every picker runs a row on a left click,
+as `enter` on it does: the command palette and the project picker (#1065),
+the copy and link pickers, the chat-with popup's list, the lists the forms
+open (new task, follow-up, repair, new chat, issue, project, workflow
+editor, pull requests) and a chat's model, prompt-history and rewind lists.
+A click chooses nothing while a question owns the keyboard. `[ create task ]`
+takes a click at every width and while a row or list is open, committing it
+first as `ctrl+s` does, and a click on a Settings setting selects it in the
+narrow layout as in the wide one. The other popups stay keyboard-only.
 
 Capturing the mouse costs native click-drag text selection. Every terminal has a
 modifier override for it (shift-drag; option-drag on Terminal.app and iTerm) and
