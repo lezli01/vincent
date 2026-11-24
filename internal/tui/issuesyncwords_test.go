@@ -54,3 +54,37 @@ func TestSyncOutcomeIsReported(t *testing.T) {
 		t.Errorf("a failed pass said %q (bad %v, done %v)", note, bad, done)
 	}
 }
+
+// Review finding 7: an unhealthy source's line is the longest the edge
+// carries, and the edge drops a label whole that does not fit. At every
+// width the failure stays on screen and the issue count with it.
+func TestIssueSyncHealthSurvivesNarrowWidths(t *testing.T) {
+	now := time.Date(2026, 11, 23, 12, 0, 0, 0, time.UTC)
+	for name, s := range map[string]apiclient.IssueSyncStatus{
+		"origin_changed": {Enabled: true, Provider: "github", Source: "octo/web", Reason: "origin_changed"},
+		"jira unauthorized": {
+			Enabled: true, Provider: "jira", Source: "example.atlassian.net/PLAT", Reason: "unauthorized",
+			WritesFailed: 3, WritesConflict: 1, WritesPending: 2,
+		},
+	} {
+		v := issuesFixture()
+		v.now = func() time.Time { return now }
+		v.lastLoad = now
+		v.sync, v.syncFor = &s, v.project.id
+		want, _ := syncSummary(s, now)
+		for _, w := range []int{80, 100, 120} {
+			got := ansi.Strip(strings.Join(v.filterBox(w), "\n"))
+			if !strings.Contains(got, syncReason(s.Reason)) {
+				t.Errorf("%s at %d: the failing source is not on screen (%q):\n%s", name, w, want, got)
+			}
+			if !strings.Contains(got, plural(len(v.issues), "issue", "issues")) {
+				t.Errorf("%s at %d: the issue count is gone:\n%s", name, w, got)
+			}
+			for _, line := range strings.Split(got, "\n") {
+				if lw := ansi.StringWidth(line); lw > w {
+					t.Errorf("%s at %d: a %d-cell line", name, w, lw)
+				}
+			}
+		}
+	}
+}
