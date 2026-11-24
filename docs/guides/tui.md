@@ -4104,7 +4104,9 @@ the task actions that did not fit. When a task offers more
 actions than the line holds, the ones listed first stay — on a `blocked` task
 that is `r retry`, `E edit+retry` and `R repair` — and the rest give their place
 up from the end: the `!` attention count, then `T chat`, then archive, cancel
-and skip. Click it, or press `:`, and
+and skip. The `!` attention count is also left off while `!` would not
+jump: while a text field has the keyboard, and while the palette or another
+popup is open. Click it, or press `:`, and
 the palette lists them. No `+N` means nothing is left over. The popups and
 forms never carry one at all — the palette does not list their keys, so it has
 nothing to point them at, and `?` is what shows those — or `f1`, on the ones

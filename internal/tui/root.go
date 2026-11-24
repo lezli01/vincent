@@ -2899,7 +2899,10 @@ func (m *root) footerLine() string {
 		target    taskActions
 		attention attentionTally
 	)
-	if s, ok := m.views[viewHome].(*shell); ok {
+	// Not while a root popup is up (#1139): each owns every key but ctrl+c,
+	// so `!` is typed into the palette's query or dropped rather than
+	// jumping — the rule #1060 applied to a view's own text field.
+	if s, ok := m.views[viewHome].(*shell); ok && !m.popupOpen() {
 		attention = s.board.attentionTally()
 	}
 	if s, ok := m.views[m.active].(*shell); ok {
