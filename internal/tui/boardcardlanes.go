@@ -100,7 +100,7 @@ func (b *board) toggleCardLanes() tea.Cmd {
 	if !b.hasLanes(t) {
 		if t.ParentTaskID == nil || !b.lanes.expanded.has(*t.ParentTaskID) {
 			// Said, not silent (#1072).
-			b.actions.setStatus(fmt.Sprintf("#%d is not a fan-out — L hangs a fan-out's lanes under its card", t.ID), false)
+			b.actions.setNote(fmt.Sprintf("#%d is not a fan-out — L hangs a fan-out's lanes under its card", t.ID))
 			return nil
 		}
 		parent := *t.ParentTaskID

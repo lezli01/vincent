@@ -1433,7 +1433,10 @@ selected on the board it acts on all of them; see
 [Acting on several tasks at once](#acting-on-several-tasks-at-once). An action
 key the task does not offer does nothing and says why on the same line:
 `retry: not available while running`, or that the cursor is on a group, or
-that a chat holds the task.
+that a chat holds the task. `R`, `F`, `T` and `Q` say why in the task workspace
+too. The explanation is about the card and the tab it was given on: moving the
+cursor to another card, or switching tabs, clears it, while the result of an
+action you took stays until something replaces it.
 
 | Key | Action | Valid from |
 |---|---|---|
@@ -2101,7 +2104,9 @@ counts the cards it hides, as `▲ 3  ▼ 8 more`.
 
 `s` hides the Done column, listing open issues only, and `s` again shows it. That
 choice lasts until you quit and survives a project switch. `/` filters within the
-columns and keeps them on screen, so an empty one reads "none match".
+columns and keeps them on screen, so an empty one reads "none match". With no
+card to select, `enter` and `a` say so — `open: no issue selected — n files
+one` — rather than doing nothing.
 
 Each card carries the issue's id, kind and age, two lines of title, its labels,
 where it was imported from — `owner/repo#N` for GitHub, the key such as `PROJ-12`

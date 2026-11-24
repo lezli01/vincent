@@ -208,6 +208,12 @@ type actionBar struct {
 
 	status    string
 	statusBad bool
+	// statusNote marks status as an explanation of a key that did nothing
+	// ("approve: not available while running"), set by setNote. It is about
+	// the row or tab the key was pressed on, so moving off either drops it
+	// (dropNote, #1138); an action's result, set by setStatus, is news the
+	// human may not have read yet and stays until something replaces it.
+	statusNote bool
 }
 
 // capturing reports that a confirmation owns the keyboard, so the shell stops
@@ -248,7 +254,7 @@ func (a *actionBar) handleKey(key string, client *apiclient.Client, t taskAction
 		// surfaces that call here, so nothing falls through that would have
 		// done something.
 		if name, isAction := keyAction(key, t); isAction {
-			a.setStatus(unavailableText(name, t), false)
+			a.setNote(unavailableText(name, t))
 			return nil, true
 		}
 		return nil, false
@@ -451,7 +457,21 @@ func (a *actionBar) applyResult(msg actionResultMsg) {
 }
 
 func (a *actionBar) setStatus(text string, bad bool) {
-	a.status, a.statusBad = text, bad
+	a.status, a.statusBad, a.statusNote = text, bad, false
+}
+
+// setNote says why a key did nothing. Unlike setStatus it lasts only while
+// the cursor and the tab stay where the key was pressed (#1138).
+func (a *actionBar) setNote(text string) {
+	a.status, a.statusBad, a.statusNote = text, false, true
+}
+
+// dropNote takes a setNote explanation away when the cursor or the tab has
+// moved on, and leaves any other status alone (#1138).
+func (a *actionBar) dropNote() {
+	if a != nil && a.statusNote {
+		a.status, a.statusNote = "", false
+	}
 }
 
 // clear drops transient state when the bar moves to another task.
