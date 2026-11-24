@@ -1495,7 +1495,8 @@ step's rendered prompt or command, the failure reason and exit codes, the last
 the agent can read further itself.
 
 Inside the prompt field `enter` is a newline (a repair prompt usually wants
-more than one line), `ctrl+s` or `esc` keeps the text. Agent,
+more than one line), `esc` keeps the text and leaves the field, and `ctrl+s`
+keeps it and starts the repair — it means the same everywhere in the popup. Agent,
 model and effort are optional; set they apply to this run only and win over the
 task's overrides and the workflow's defaults.
 
@@ -1543,6 +1544,10 @@ means:
 
 Switching between the three keeps what you typed in each, so you can look at the
 command form and come back to your prompt.
+
+Inside the prompt or command field `enter` is a newline, `esc` keeps the text
+and leaves the field, and `ctrl+s` keeps it and starts the follow-up — it means
+the same everywhere in the popup.
 
 **The start row** at the bottom works like the new-task form's. Left alone, the
 follow-up runs when a slot is free. Switched with `enter`, the follow-up is

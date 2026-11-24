@@ -85,8 +85,8 @@ func TestDetailRepairsBlockedTaskLive(t *testing.T) {
 		t.Errorf("the popup is not on screen: %q", content(h.m))
 	}
 
-	// Type a prompt: enter opens the field, ctrl+s keeps it, ctrl+s again
-	// starts the repair.
+	// Type a prompt: enter opens the field, and ctrl+s keeps it and starts
+	// the repair (#1172).
 	const prompt = "add the missing file"
 	h.press(t, "enter")
 	if !form.editing {
@@ -97,7 +97,6 @@ func TestDetailRepairsBlockedTaskLive(t *testing.T) {
 	if form.prompt != prompt {
 		t.Fatalf("form prompt = %q, want %q", form.prompt, prompt)
 	}
-	h.pressCtrlS(t)
 
 	h.p.until(60*time.Second, "the repair to be admitted", func() bool {
 		return h.state(t, task.ID) != store.TaskBlocked
