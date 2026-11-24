@@ -199,6 +199,12 @@ type actionBar struct {
 	// so the re-ask can say "2 of 5".
 	pendingIDs []int64
 	bulkTotal  int
+	// pendingID is the task a single-task question is about, captured when
+	// it is asked. The cursor is not a stable answer: the board keeps the
+	// cursor in its column when a card moves away (#1058), so the row under
+	// it when `y` arrives can be another task than the one the question
+	// named — "cancel #21?" must never kill #22 (review finding 1).
+	pendingID int64
 
 	status    string
 	statusBad bool
@@ -215,14 +221,14 @@ func (a *actionBar) handleKey(key string, client *apiclient.Client, t taskAction
 	if a.pending != "" {
 		switch key {
 		case "y":
-			action, force, ids := a.pending, a.force, a.pendingIDs
-			a.pending, a.force, a.pendingIDs, a.cause = "", false, nil, ""
+			action, force, ids, id := a.pending, a.force, a.pendingIDs, a.pendingID
+			a.resetPending()
 			if len(ids) > 0 {
 				return a.dispatchBulk(client, ids, action, force), true
 			}
-			return a.dispatch(client, t.id, action, force), true
+			return a.dispatch(client, id, action, force), true
 		case "n", "esc":
-			a.pending, a.force, a.pendingIDs, a.cause = "", false, nil, ""
+			a.resetPending()
 			a.setStatus("cancelled", false)
 			return nil, true
 		}
@@ -248,6 +254,7 @@ func (a *actionBar) handleKey(key string, client *apiclient.Client, t taskAction
 	if needsConfirm(action) {
 		a.pending, a.force = action, false
 		a.pendingIDs, a.bulkTotal = ids, len(ids)
+		a.pendingID = t.id
 		return nil, true
 	}
 	if len(ids) > 0 {
@@ -412,7 +419,7 @@ func (a *actionBar) applyResult(msg actionResultMsg) {
 	if isDirtyWorktree(msg.action, msg.err) {
 		a.pending, a.force = apiclient.ActionArchive, true
 		a.pendingIDs, a.bulkTotal = nil, 0
-		a.status = ""
+		a.pendingID, a.status = msg.taskID, ""
 		return
 	}
 	if isStuckArchive(msg.action, msg.err) {
@@ -420,6 +427,7 @@ func (a *actionBar) applyResult(msg actionResultMsg) {
 		// instead of leaving the task on the board for good.
 		a.pending, a.force = actionForceDelete, false
 		a.pendingIDs, a.bulkTotal = nil, 0
+		a.pendingID = msg.taskID
 		a.cause, a.status = actionErrString(msg.err), ""
 		return
 	}
@@ -453,32 +461,37 @@ func (a *actionBar) clear() {
 	if len(a.pendingIDs) > 0 {
 		return
 	}
-	a.pending, a.force, a.cause = "", false, ""
+	a.resetPending()
 	a.status, a.statusBad = "", false
+}
+
+// resetPending drops the question, whatever it was about.
+func (a *actionBar) resetPending() {
+	a.pending, a.force, a.pendingIDs, a.cause, a.pendingID = "", false, nil, "", 0
 }
 
 // confirmPrompt is the question a pending confirmation asks. It names the
 // consequence, not the action: "archive?" is not what a human needs to know.
-func (a *actionBar) confirmPrompt(t taskActions) string {
+func (a *actionBar) confirmPrompt() string {
 	if n := len(a.pendingIDs); n > 0 {
 		return a.bulkPrompt(n)
 	}
 	switch {
 	case a.pending == actionForceDelete:
 		return fmt.Sprintf("force delete #%d? (y/n) · archive failed: %s · the task goes anyway, its branch stays",
-			t.id, ansi.Truncate(a.cause, forceCauseWidth, "…"))
+			a.pendingID, ansi.Truncate(a.cause, forceCauseWidth, "…"))
 	case a.pending == apiclient.ActionArchive && a.force:
-		return fmt.Sprintf("#%d has uncommitted changes — archive anyway and lose them? (y/n)", t.id)
+		return fmt.Sprintf("#%d has uncommitted changes — archive anyway and lose them? (y/n)", a.pendingID)
 	case a.pending == apiclient.ActionArchive:
-		return fmt.Sprintf("archive #%d? its worktree is removed (y/n)", t.id)
+		return fmt.Sprintf("archive #%d? its worktree is removed (y/n)", a.pendingID)
 	case a.pending == apiclient.ActionCancel:
-		return fmt.Sprintf("cancel #%d? a running step is killed (y/n)", t.id)
+		return fmt.Sprintf("cancel #%d? a running step is killed (y/n)", a.pendingID)
 	case a.pending == apiclient.ActionSkip:
-		return fmt.Sprintf("skip #%d's current step? it is marked skipped and the task goes on without it (y/n)", t.id)
+		return fmt.Sprintf("skip #%d's current step? it is marked skipped and the task goes on without it (y/n)", a.pendingID)
 	case a.pending == apiclient.ActionReject:
-		return fmt.Sprintf("reject #%d's gate? the task is blocked there until you retry, skip or cancel (y/n)", t.id)
+		return fmt.Sprintf("reject #%d's gate? the task is blocked there until you retry, skip or cancel (y/n)", a.pendingID)
 	default:
-		return fmt.Sprintf("%s #%d? (y/n)", a.pending, t.id)
+		return fmt.Sprintf("%s #%d? (y/n)", a.pending, a.pendingID)
 	}
 }
 
@@ -529,7 +542,7 @@ func actionLabel(t taskActions, action string) string {
 // accept — plus whatever the last action reported.
 func (a *actionBar) render(t taskActions) string {
 	if a.pending != "" {
-		return styleWarn.Render(" " + a.confirmPrompt(t))
+		return styleWarn.Render(" " + a.confirmPrompt())
 	}
 	parts := make([]string, 0, len(actionOps)+2)
 	for _, o := range actionOps {

@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/taskstate"
@@ -209,11 +210,36 @@ func TestSkipAndRejectAskFirst(t *testing.T) {
 		if cmd, handled := bar.handleKey(tc.key, nil, target); !handled || cmd != nil || !bar.capturing() {
 			t.Fatalf("%s acted without asking", tc.key)
 		}
-		if got := bar.confirmPrompt(target); got != tc.want {
+		if got := bar.confirmPrompt(); got != tc.want {
 			t.Errorf("%s asks %q, want %q", tc.key, got, tc.want)
 		}
 		if cmd, _ := bar.handleKey("n", nil, target); cmd != nil || bar.capturing() {
 			t.Errorf("%s: n did not cancel", tc.key)
 		}
+	}
+}
+
+// TestConfirmationActsOnTheTaskItAskedAbout is review finding 1: the cursor
+// can move on its own while a question is on screen (a card leaves its
+// column and #1058 keeps the cursor there), so `y` must go to the task the
+// question named, not to the row under the cursor when it is answered.
+func TestConfirmationActsOnTheTaskItAskedAbout(t *testing.T) {
+	srv := newBulkServer(t)
+	var bar actionBar
+	asked := taskActions{id: 21, state: "running", actions: []string{apiclient.ActionCancel}}
+	if _, handled := bar.handleKey("c", srv.client(), asked); !handled || !bar.capturing() {
+		t.Fatal("c did not ask")
+	}
+	moved := taskActions{id: 22, state: "running", actions: []string{apiclient.ActionCancel}}
+	if got := bar.confirmPrompt(); !strings.Contains(got, "#21") {
+		t.Errorf("the question no longer names #21 after the cursor moved: %q", got)
+	}
+	cmd, _ := bar.handleKey("y", srv.client(), moved)
+	if cmd == nil {
+		t.Fatal("y dispatched nothing")
+	}
+	runCmd(t, cmd, 30*time.Second)
+	if got := srv.seen(); len(got) != 1 || got[0] != "cancel 21" {
+		t.Errorf("calls = %v, want [cancel 21]", got)
 	}
 }
