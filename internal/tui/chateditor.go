@@ -63,6 +63,20 @@ func (v *chatView) applyEditorDraft(msg chatEditorMsg) tea.Cmd {
 	if msg.chatID != v.chatID {
 		return nil
 	}
+	if v.ended() {
+		// The chat ended while the editor was open (#1135): it has no
+		// composer to take the text and keeps no draft, and losing what was
+		// typed is the one outcome not to have — so it goes on the
+		// clipboard, through the copy keys' own write (task 076).
+		text := trimEditorNewline(msg.text, msg.original)
+		if strings.TrimSpace(text) == "" {
+			v.note, v.noteBad = "editor: the chat has ended — nothing was written, so nothing is kept", false
+			return nil
+		}
+		v.note, v.noteBad = "editor: the chat has ended — putting what you wrote on the clipboard", false
+		return writeClipboardCmdSaying("editor: the chat has ended — what you wrote",
+			"editor: the chat has ended — what you wrote is on the clipboard", text)
+	}
 	if msg.err != nil {
 		v.note, v.noteBad = "editor: "+errString(msg.err)+" — the draft is unchanged", true
 		return nil

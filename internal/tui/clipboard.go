@@ -74,6 +74,9 @@ type clipboardResultMsg struct {
 	// the notice names.
 	osc string
 	err error
+	// done, when set, is the whole notice of a copy that succeeded, for a
+	// copy the human did not ask for and so needs saying in full (#1135).
+	done string
 }
 
 // notice renders the result as the line a human reads, and whether it is bad.
@@ -90,6 +93,8 @@ func (msg clipboardResultMsg) notice() (string, bool) {
 			label, errString(msg.err)), false
 	case msg.err != nil:
 		return fmt.Sprintf("%s: %s", label, errString(msg.err)), true
+	case msg.done != "":
+		return msg.done, false
 	default:
 		return label + " copied", false
 	}
@@ -112,5 +117,18 @@ func writeClipboardCmd(label, text string) tea.Cmd {
 			return clipboardResultMsg{label: label, osc: clean, err: err}
 		}
 		return clipboardResultMsg{label: label}
+	}
+}
+
+// writeClipboardCmdSaying is writeClipboardCmd whose success reads done in
+// full rather than "<label> copied" (#1135).
+func writeClipboardCmdSaying(label, done, text string) tea.Cmd {
+	write := writeClipboardCmd(label, text)
+	return func() tea.Msg {
+		msg, ok := write().(clipboardResultMsg)
+		if ok && msg.err == nil {
+			msg.done = done
+		}
+		return msg
 	}
 }
