@@ -149,7 +149,7 @@ func TestChatDiffHunkKeys(t *testing.T) {
 	if _, cmd := v.updateKey(registryKey(t, "x")); cmd != nil || v.diff.busy || v.diff.rejectAsk == nil {
 		t.Fatal("x rejected the hunk without asking")
 	}
-	if screen := chatDiffScreen(v); !strings.Contains(screen, "revert this hunk of a.go on disk?") {
+	if screen := chatDiffScreen(v); !strings.Contains(screen, "revert this hunk on disk? (y/n) · a.go") {
 		t.Fatalf("the question is not on screen:\n%s", screen)
 	}
 	if _, cmd := v.updateKey(registryKey(t, "n")); cmd != nil || v.diff.rejectAsk != nil {
@@ -451,5 +451,24 @@ func TestChatDiffSendsTheRawPath(t *testing.T) {
 	}
 	if _, ok := v.diffTarget(); ok || !strings.Contains(v.note, "binary file") {
 		t.Fatalf("x on the binary file: target %v, note %q", ok, v.note)
+	}
+}
+
+// Review finding 4: the hunk question keeps its answer keys at 80 columns
+// whatever the path, and the footer offers the answers while it waits.
+func TestRejectHunkQuestionLeadsWithItsKeys(t *testing.T) {
+	ref := diffHunkRef{path: "internal/some/deeply/nested/package/with_a_long_file_name_test.go", id: "h1"}
+	line := ansi.Truncate(" "+rejectHunkQuestion(ref), 80, "…")
+	if !strings.Contains(line, "(y/n)") {
+		t.Fatalf("the answer keys are cut at 80 columns: %q", line)
+	}
+	v := chatViewFixture()
+	v.diff.open, v.diff.rejectAsk = true, &ref
+	if got := strings.Join(v.promptKeys(), " "); !strings.Contains(got, "y revert the hunk") {
+		t.Fatalf("the footer does not offer the answers: %q", got)
+	}
+	v.closeDiff()
+	if v.diff.rejectAsk != nil {
+		t.Fatal("closing the pane left the question armed")
 	}
 }

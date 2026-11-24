@@ -84,6 +84,31 @@ func TestDaemonRestartAsksAndReportsAFailure(t *testing.T) {
 	}
 }
 
+// Review finding 5: the question and a failed restart are drawn over an
+// empty or unread log too, and the question keeps its key at 80 columns.
+func TestDaemonRestartIsVisibleOverAnEmptyLog(t *testing.T) {
+	for name, log := range map[string]tea.Msg{
+		"empty":      daemonLogMsg{lines: nil},
+		"unread":     nil,
+		"unreadable": daemonLogMsg{err: errors.New("permission denied")},
+	} {
+		d := newTestDaemonView(nil, nil)
+		loadedDaemon(d)
+		if log != nil {
+			d.update(log)
+		}
+		d.update(tea.KeyPressMsg{Code: 'r', Text: "r"})
+		if out := renderDaemon(d); !strings.Contains(out, "restart the daemon? y restart") {
+			t.Errorf("%s log: the question is not on screen:\n%s", name, out)
+		}
+		d.update(tea.KeyPressMsg{Code: 'n', Text: "n"})
+		d.update(daemonStoppedMsg{err: errors.New("connection refused")})
+		if out := renderDaemon(d); !strings.Contains(out, "could not restart") {
+			t.Errorf("%s log: a failed restart is not reported:\n%s", name, out)
+		}
+	}
+}
+
 // #1081: a stopped daemon reruns the connect flow, which starts a new one;
 // a failed stop leaves the connection alone.
 func TestRootRestartReconnectsOnceTheDaemonStopped(t *testing.T) {

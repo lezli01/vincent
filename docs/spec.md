@@ -19568,7 +19568,7 @@ It is still measured first and never truncated, and its extra width comes out
 of the hints' budget.
 *Amended 2026-10-21 (task 135.10, issue #794):* **a status or a confirmation
 leads, cut from the right.** The left cut above is for hints. When the action
-bar holds a confirmation (`cancel #42? a running step is killed (y/n)`) or a
+bar holds a confirmation (`cancel #42? (y/n) · a running step is killed`) or a
 status (an action's error), that text is the line's first segment and is cut
 from the right with `…` to the room the pinned segment leaves; the hints follow
 it while there is room and are counted into `+N` when there is not. Its start
