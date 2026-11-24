@@ -63,7 +63,7 @@ func syncSummary(s apiclient.IssueSyncStatus, now time.Time) (text string, bad b
 		bad = true
 	case !s.OK && s.Reason != "":
 		parts = append(parts, syncReason(s.Reason))
-		bad = s.Reason != "pending"
+		bad = s.Reason != "pending" && !syncSwitchedOff(s.Reason)
 	case s.LastSyncedAt != nil:
 		parts = append(parts, "synced "+syncAgo(now, *s.LastSyncedAt))
 	}
@@ -79,6 +79,19 @@ func syncSummary(s apiclient.IssueSyncStatus, now time.Time) (text string, bad b
 		parts = append(parts, fmt.Sprintf("%d write-back pending", n))
 	}
 	return strings.Join(parts, " · "), bad
+}
+
+// syncSwitchedOff reports a reason that is a config switch the human set,
+// not a failure (#1148): the provider's `enabled: false` (github_disabled,
+// or Jira's provider-neutral disabled) and its `poll_interval: 0`. The API
+// derives all three from config.yaml (internal/api/issuesync.go), so the
+// edge says them in its plain tone; a failed write-back still turns it red.
+func syncSwitchedOff(reason string) bool {
+	switch reason {
+	case "github_disabled", "disabled", "poll_disabled":
+		return true
+	}
+	return false
 }
 
 // syncAgo is how long ago the last import was, in words.

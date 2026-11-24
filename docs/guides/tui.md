@@ -2086,6 +2086,9 @@ health: where issues come from and when they last arrived — `⇅ octo/web ·
 synced 5m ago` — or, in red, why the import is not working (`the credential
 was rejected`, `rate limited until 14:20`), and any write-back that failed,
 conflicted or is still pending.
+A source switched off on purpose — its provider's `enabled: false` or
+`poll_interval: 0` in `config.yaml` — is said in the plain tone, not in red:
+it is a state, not a failure.
 
 The lanes are columns, left to right:
 

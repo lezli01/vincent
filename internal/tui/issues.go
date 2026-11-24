@@ -223,6 +223,10 @@ func (v *issuesView) setProject(p projectSel) tea.Cmd {
 		v.w.act = nil
 		v.picked, v.handoff = nil, nil
 		v.forgetPreviews()
+		// A sync `S` asked for is the project just left's: kept, the next
+		// project's first listing would report its pass as one asked for
+		// there (#1148).
+		v.syncAsked = time.Time{}
 	}
 	return v.projectScope.setProject(p)
 }
@@ -360,7 +364,9 @@ func (v *issuesView) route(msg tea.Msg) (panel, tea.Cmd) {
 		return v, nil
 	case issuesSyncedMsg:
 		if msg.projectID == v.project.id {
-			v.setNote(syncedNote(msg), msg.err != nil || !msg.status.Enabled)
+			// A switch the human set is a state, not a failure (#1148).
+			v.setNote(syncedNote(msg), msg.err != nil ||
+				(!msg.status.Enabled && !syncSwitchedOff(msg.status.Reason)))
 			if msg.err == nil {
 				st := msg.status
 				v.sync, v.syncFor = &st, msg.projectID
