@@ -101,15 +101,42 @@ func TestEndedChatOffersNoComposerKeys(t *testing.T) {
 		}
 	}
 
-	// An editor session that outlives the chat: what comes back is dropped,
-	// and said so, rather than put into a composer that is no longer drawn.
+	// An editor session that outlives the chat: what comes back is not put
+	// into a composer that is no longer drawn, nor lost — it goes on the
+	// clipboard, through the copy keys' own write, and the note says so.
+	var copied []string
+	prev := clipboardWrite
+	clipboardWrite = func(text string) error { copied = append(copied, text); return nil }
+	t.Cleanup(func() { clipboardWrite = prev })
 	v := chatViewFixture()
 	v.chat.State = "closed"
-	v.applyEditorDraft(chatEditorMsg{chatID: 1, text: "written after it ended"})
+	cmd := v.applyEditorDraft(chatEditorMsg{chatID: 1, text: "written after it ended\n"})
 	if v.composer.Value() != "" {
 		t.Fatalf("the editor's text reached an ended chat's composer: %q", v.composer.Value())
 	}
-	if !strings.Contains(v.note, "the chat has ended") {
-		t.Errorf("the dropped text said %q", v.note)
+	if cmd == nil {
+		t.Fatalf("the editor's text was dropped (note %q)", v.note)
+	}
+	res, ok := cmd().(clipboardResultMsg)
+	if !ok {
+		t.Fatal("the editor's text did not go through the clipboard write")
+	}
+	v.update(res)
+	if len(copied) != 1 || copied[0] != "written after it ended" {
+		t.Fatalf("clipboard got %q", copied)
+	}
+	if want := "editor: the chat has ended — what you wrote is on the clipboard"; v.note != want {
+		t.Errorf("note %q, want %q", v.note, want)
+	}
+
+	// Nothing written: nothing to keep, and it says so.
+	copied = nil
+	v = chatViewFixture()
+	v.chat.State = "closed"
+	if cmd := v.applyEditorDraft(chatEditorMsg{chatID: 1, text: " \n"}); cmd != nil || len(copied) != 0 {
+		t.Fatalf("an empty editor file was copied: %q", copied)
+	}
+	if want := "editor: the chat has ended — nothing was written, so nothing is kept"; v.note != want {
+		t.Errorf("note %q, want %q", v.note, want)
 	}
 }

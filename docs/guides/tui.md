@@ -3017,8 +3017,8 @@ typed there goes nowhere and says why, rather than filling a draft that could
 never be sent. The footer leaves out the composer's keys — stash, history,
 newline, editor, model and mode — and close and hand-off, and a composer key
 pressed anyway says it is not available because the chat has ended: `ctrl+g`
-opens no editor, and text from an editor still open when the chat ended is not
-kept.
+opens no editor, and what you wrote in an editor still open when the chat
+ended goes on the clipboard rather than being lost.
 
 ![The chat workspace at `quiet`: the second turn's prompt as a right-aligned
 card, the answer rendered below it with its fenced block, and the titled
