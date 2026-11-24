@@ -657,13 +657,25 @@ func (b *board) cardColumn(c int, groups []taskCardGroup, at taskStop, lit strin
 		}
 		body = append(body, cardGroupHeader(g, selected, g.key == lit && lit != groupNoIssue, inner))
 		if g.folded {
-			summary := styleDim.Render(cardFoldSummary(g.tasks))
+			room := max(inner-ansi.StringWidth(rail), 1)
+			summary := cardFoldSummary(g.tasks)
 			// What a selection holds behind the fold (#1066): `V` marks the
 			// tasks a filter shows, folded or not, and A then acts on them.
+			// The count is what A acts on, so it is the last thing a narrow
+			// column cuts: the state summary in front of it gives way first,
+			// and goes altogether once nothing of it fits (#1145).
 			if n := b.markedIn(g.tasks); n > 0 {
-				summary += styleDim.Render(" · ") + styleFocus.Render(ic("✔ ")+strconv.Itoa(n)+" selected")
+				marked := ic("✔ ") + strconv.Itoa(n) + " selected"
+				sep := " · "
+				left := room - ansi.StringWidth(marked) - ansi.StringWidth(sep)
+				line := styleFocus.Render(ansi.Truncate(marked, room, "…"))
+				if left >= 2 {
+					line = styleDim.Render(ansi.Truncate(summary, left, "…")+sep) + line
+				}
+				body = append(body, rail+line)
+				continue
 			}
-			body = append(body, rail+ansi.Truncate(summary, max(inner-ansi.StringWidth(rail), 1), "…"))
+			body = append(body, rail+styleDim.Render(ansi.Truncate(summary, room, "…")))
 			continue
 		}
 		for r := 0; r < len(g.tasks); r += perRow {
