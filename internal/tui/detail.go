@@ -907,11 +907,25 @@ func (d *detail) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		// panel-scoped, so the capital is free in the task-action scope.
 		return d.openFollowUp()
 	case opKey(keymap.Chat):
+		// T, alt+t and Q say why when the task does not offer them (#1138).
+		// Here and not in the shared commands: on the board a key they do not
+		// take falls through to the view's own meaning.
+		if !d.target().offersChat() {
+			d.actions.setNote(unavailableText("chat", d.target()))
+			return nil
+		}
 		return taskChatCmd(d.client, d.target(), d.actions)
 	case opKey(keymap.ChatWith):
+		if !d.target().offersChat() {
+			d.actions.setNote(unavailableText("chat", d.target()))
+			return nil
+		}
 		return taskChatWithCmd(d.client, d.target(), d.actions)
 	case opKey(keymap.Diagnose):
-		cmd, _ := diagnoseCmd(d.target(), d.actions)
+		cmd, handled := diagnoseCmd(d.target(), d.actions)
+		if !handled {
+			d.actions.setNote(unavailableText("ask why", d.target()))
+		}
 		return cmd
 	case "f":
 		d.setFollowing(true)
@@ -1306,6 +1320,8 @@ func (d *detail) capturesInput() bool {
 // action has to be on the task's available_actions (§6).
 func (d *detail) openRepair() tea.Cmd {
 	if !d.target().has(apiclient.ActionRepair) {
+		// Said, not silent (#1138), as the board says it (#1059).
+		d.actions.setNote(unavailableText("repair", d.target()))
 		return nil
 	}
 	reason := ""
@@ -1323,6 +1339,7 @@ func (d *detail) openRepair() tea.Cmd {
 // which is `done` and `aborted` and no other state.
 func (d *detail) openFollowUp() tea.Cmd {
 	if !d.target().has(apiclient.ActionFollowUp) {
+		d.actions.setNote(unavailableText("follow-up", d.target()))
 		return nil
 	}
 	d.followUp = newFollowUpForm(d.taskID, d.task.ProjectID, d.task.State)
@@ -1341,10 +1358,10 @@ func (d *detail) editRetryKey() tea.Cmd {
 	}
 	// Hinted wherever retry is, so it says why it did nothing (#1059).
 	if d.target().has(apiclient.ActionRetry) {
-		d.actions.setStatus("edit+retry: this step has no prompt or command to edit — "+
-			opKey(keymap.Retry)+" retries it as it is", false)
+		d.actions.setNote("edit+retry: this step has no prompt or command to edit — " +
+			opKey(keymap.Retry) + " retries it as it is")
 	} else {
-		d.actions.setStatus(unavailableText("edit+retry", d.target()), false)
+		d.actions.setNote(unavailableText("edit+retry", d.target()))
 	}
 	return nil
 }

@@ -640,6 +640,7 @@ func (v *issuesView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	case opKey(keymap.OpenRow):
 		row, ok := v.current()
 		if !ok {
+			v.setNote(noIssueNote("open"), false)
 			return v, nil
 		}
 		id, pid := row.issue.ID, row.issue.ProjectID
@@ -659,6 +660,7 @@ func (v *issuesView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 			}
 			return v, newTaskFromIssueCmd(row.issue)
 		}
+		v.setNote(noIssueNote("new task"), false)
 	case issueEditKey:
 		if row, ok := v.current(); ok {
 			return v, issueEditFor(v.client, row.issue.ID)
@@ -831,6 +833,16 @@ func issueURL(iss apiclient.Issue) string {
 }
 
 func (v *issuesView) setNote(text string, bad bool) { v.note, v.noteBad = text, bad }
+
+// noIssueNote is why a key that acts on the selected issue did nothing on
+// a board with no issue to select (#1138), in #1059's "<op>: …" form.
+func noIssueNote(op string) string {
+	text := op + ": no issue selected"
+	if k := opKey(keymap.New); k != "" {
+		text += " — " + k + " files one"
+	}
+	return text
+}
 
 // issueMatches is `/`'s client-side match: id, title, labels, kind, and —
 // since #1075 — the source reference (`MOB-7`, `octo/web#142`), the author

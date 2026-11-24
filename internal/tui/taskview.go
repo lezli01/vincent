@@ -580,7 +580,7 @@ func (t *taskView) runThen() tea.Cmd {
 	// rather than open nothing.
 	for _, w := range workspaceOps {
 		if w.op == op && !t.detail.target().has(w.action) {
-			t.detail.actions.setStatus(unavailableText(w.name, t.detail.target()), false)
+			t.detail.actions.setNote(unavailableText(w.name, t.detail.target()))
 			return nil
 		}
 	}
@@ -959,6 +959,8 @@ func (t *taskView) setTab(tab taskViewTab) tea.Cmd {
 		return nil
 	}
 	t.tab = tab
+	// A key's "not available" note was said on the tab being left (#1138).
+	t.detail.actions.dropNote()
 	if tab == taskTabDiff {
 		t.detail.tab = tabDiff
 		t.detail.diff.openTask(t.detail.taskID)
