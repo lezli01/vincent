@@ -164,12 +164,6 @@ func (v *settingsView) settingsPane(w, h int) []string {
 	switch {
 	case v.form != nil && v.form.confirming:
 		right = formPill(false, attentionBadge+" confirm")
-	case v.note != "" && v.noteBad:
-		right = styleBad.Render(ansi.Truncate("⚠ "+oneLine(v.note), max(w/2, 10), "…"))
-	case v.note != "":
-		// Room beside the title: a saved note says what the value was and
-		// how to put it back (#1057), and must not run over the corner.
-		right = styleOK.Render(ansi.Truncate(ic("✓ ")+oneLine(v.note), max(w-ansi.StringWidth(title)-8, 10), "…"))
 	}
 	s := v.settingsStack(max(w-4, 1))
 	// Where each setting's lines landed, for a click (#1065): the pane sits

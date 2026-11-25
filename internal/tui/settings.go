@@ -108,8 +108,8 @@ type settingsView struct {
 	navHits    []settingsNavHit
 	paneHits   []settingsHit
 
-	note    string
-	noteBad bool
+	// statusPoster is where the screen's results and notes go (#1164).
+	statusPoster
 	// undo is the last saved change and the value it replaced, which `u`
 	// writes back (#1057); undoing marks that write, which is not itself
 	// undoable. burstPath and burstWas are the value a run of arrow presses
@@ -291,9 +291,10 @@ func (v *settingsView) update(msg tea.Msg) (panel, tea.Cmd) {
 		v.openKey(msg.path)
 		return v, v.armPreview()
 	case settingsEditedMsg:
-		v.note, v.noteBad = "config.yaml closed", false
 		if msg.err != nil {
-			v.note, v.noteBad = "could not open the editor: "+errString(msg.err), true
+			v.status().result("could not open the editor: "+errString(msg.err), true)
+		} else {
+			v.status().result("config.yaml closed", false)
 		}
 		return v, v.configCmd()
 	case branchPreviewDueMsg:
@@ -417,7 +418,7 @@ func (v *settingsView) applySaved(msg configSavedMsg) tea.Cmd {
 	if msg.err != nil {
 		delete(v.shown, msg.path)
 		v.queued, v.undoing = nil, false
-		v.note, v.noteBad = errString(msg.err), true
+		v.status().result(errString(msg.err), true)
 		return nil
 	}
 	v.adopt(msg)
@@ -439,10 +440,11 @@ func (v *settingsView) adopt(msg configSavedMsg) {
 		}
 	}
 	v.config, v.configOK, v.configErr = msg.cfg, true, nil
-	v.note, v.noteBad = "saved", false
+	note := "saved"
 	if known && k.restart {
-		v.note = "saved, applies after the daemon restarts"
+		note = "saved, applies after the daemon restarts"
 	}
+	defer func() { v.status().result(note, false) }()
 	if v.queued != nil && v.queued.key.path == msg.path {
 		return // a held arrow is still on its way: the burst is one change
 	}
@@ -452,11 +454,11 @@ func (v *settingsView) adopt(msg configSavedMsg) {
 		v.undoing, v.undo = false, nil
 		// Named, since the undo may have been asked for elsewhere (#1137).
 		_, item, _ := settingsLocate(msg.path)
-		v.note += " · " + valueOr(item.label, msg.path) + " put back"
+		note += " · " + valueOr(item.label, msg.path) + " put back"
 	case known && was != k.read(v.config):
 		// What it was, and the key that puts it back (#1057).
 		v.undo = &settingsUndo{key: k, was: was}
-		v.note += " · was " + valueOr(oneLine(was), "(unset)") + " · u puts it back"
+		note += " · was " + valueOr(oneLine(was), "(unset)") + " · u puts it back"
 	}
 }
 
@@ -619,7 +621,6 @@ func (v *settingsView) moveCategory(delta int) {
 	n := len(settingsCatalog)
 	v.category = (v.category + delta + n) % n
 	v.selectFirst()
-	v.note = ""
 }
 
 // nextValue is the value one arrow press away, for a key the arrows can change.
@@ -658,7 +659,7 @@ func (v *settingsView) change(delta int) tea.Cmd {
 	}
 	value, ok := nextValue(row.item, row.key, v.value(row.key), delta)
 	if !ok {
-		v.note, v.noteBad = "press enter to edit this setting", false
+		v.status().note("press enter to edit this setting", false)
 		return nil
 	}
 	return v.apply(row.key, value)
@@ -687,7 +688,7 @@ type settingsUndo struct {
 func (v *settingsView) undoLast() tea.Cmd {
 	u := v.undo
 	if u == nil || !v.configOK {
-		v.note, v.noteBad = "nothing to undo", false
+		v.status().note("nothing to undo", false)
 		return nil
 	}
 	if u.op != "" {
@@ -717,7 +718,6 @@ func (v *settingsView) apply(k configKey, value string) tea.Cmd {
 	}
 	change := settingsChange{k, value}
 	v.shown[k.path] = value
-	v.note = ""
 	if v.saving != nil {
 		v.queued = &change
 		return nil
@@ -734,7 +734,7 @@ func (v *settingsView) send(change settingsChange) tea.Cmd {
 	if err != nil {
 		delete(v.shown, change.key.path)
 		v.undoing = false
-		v.note, v.noteBad = errString(err), true
+		v.status().result(errString(err), true)
 		return nil
 	}
 	v.saving = &change
@@ -751,7 +751,7 @@ func (v *settingsView) send(change settingsChange) tea.Cmd {
 // a valid edit and keeps the last good configuration otherwise.
 func (v *settingsView) openFile() tea.Cmd {
 	if !v.infoOK || v.info.ConfigPath == "" {
-		v.note, v.noteBad = "the daemon has not said where config.yaml is yet", true
+		v.status().note("the daemon has not said where config.yaml is yet", true)
 		return nil
 	}
 	return openEditorPath(v.exec, v.info.ConfigPath, func(err error) tea.Msg { return settingsEditedMsg{err} })
@@ -798,7 +798,6 @@ func (v *settingsView) updateClick(msg tea.MouseClickMsg) tea.Cmd {
 				v.clearSearch()
 				v.category = h.category
 				v.selectFirst()
-				v.note = ""
 				return nil
 			}
 		}

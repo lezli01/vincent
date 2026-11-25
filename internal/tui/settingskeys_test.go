@@ -104,14 +104,14 @@ func TestKeyBindingsScreen(t *testing.T) {
 	if cmd := v.updateKey(keyPress("q")); cmd != nil || v.bindings.saving {
 		t.Fatal("a clash with quit's q was saved")
 	}
-	if !v.bindings.noteBad || !strings.Contains(v.bindings.note, "not saved") {
-		t.Fatalf("the clash is not named: %q", v.bindings.note)
+	if !v.status().bad || !strings.Contains(v.status().text, "not saved") {
+		t.Fatalf("the clash is not named: %q", v.status().text)
 	}
 
 	v.updateKey(namedKey("enter"))
 	cmd := v.updateKey(synthKey("f5"))
 	if cmd == nil || !v.bindings.saving {
-		t.Fatalf("a free key was not saved: %q", v.bindings.note)
+		t.Fatalf("a free key was not saved: %q", v.status().text)
 	}
 }
 
@@ -144,12 +144,12 @@ func TestKeyBindingsResetIsUndoable(t *testing.T) {
 		t.Fatal("backspace did not reset")
 	}
 	v.update(keysSaved(v, map[string]string{}))
-	if note := v.bindings.note; !strings.Contains(note, "was f5") || !strings.Contains(note, "u puts it back") {
+	if note := v.status().text; !strings.Contains(note, "was f5") || !strings.Contains(note, "u puts it back") {
 		t.Fatalf("the reset does not say how to take it back: %q", note)
 	}
 	bindingCursorOn(t, v, keymap.Quit)
 	if cmd := v.updateKey(keyPress("u")); cmd == nil || !v.bindings.saving {
-		t.Fatalf("u did not put the binding back: %q", v.bindings.note)
+		t.Fatalf("u did not put the binding back: %q", v.status().text)
 	}
 	if got := v.bindings.sending["refresh"]; got != "f5" {
 		t.Fatalf("u sends refresh=%q, want f5", got)
@@ -158,14 +158,14 @@ func TestKeyBindingsResetIsUndoable(t *testing.T) {
 		t.Fatal("u did not put the cursor on the operation it puts back")
 	}
 	v.update(keysSaved(v, map[string]string{"refresh": "f5"}))
-	if note := v.bindings.note; !strings.Contains(note, "refresh put back to f5") {
+	if note := v.status().text; !strings.Contains(note, "refresh put back to f5") {
 		t.Fatalf("the undo is not named: %q", note)
 	}
 	if v.undo != nil {
 		t.Fatalf("the undo is itself undoable: %+v", v.undo)
 	}
-	if cmd := v.updateKey(keyPress("u")); cmd != nil || !strings.Contains(v.bindings.note, "nothing to undo") {
-		t.Fatalf("a second u: note %q", v.bindings.note)
+	if cmd := v.updateKey(keyPress("u")); cmd != nil || !strings.Contains(v.status().text, "nothing to undo") {
+		t.Fatalf("a second u: note %q", v.status().text)
 	}
 }
 
@@ -205,7 +205,7 @@ func TestKeyBindingsFailedUndoIsNotPending(t *testing.T) {
 	v.updateKey(namedKey("enter"))
 	v.updateKey(synthKey("f6"))
 	v.update(keysSaved(v, map[string]string{"refresh": "f6"}))
-	if v.undo == nil || !strings.Contains(v.bindings.note, "u puts it back") {
-		t.Fatalf("the next change is not undoable: note %q", v.bindings.note)
+	if v.undo == nil || !strings.Contains(v.status().text, "u puts it back") {
+		t.Fatalf("the next change is not undoable: note %q", v.status().text)
 	}
 }

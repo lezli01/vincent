@@ -3021,8 +3021,8 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		"u": func(t *testing.T) {
 			v := settingsFixture(t)
 			v.updateKey(registryKey(t, "u"))
-			if v.note != "nothing to undo" {
-				t.Fatalf("u with nothing changed said %q", v.note)
+			if v.status().text != "nothing to undo" {
+				t.Fatalf("u with nothing changed said %q", v.status().text)
 			}
 		},
 		"down": func(t *testing.T) {
