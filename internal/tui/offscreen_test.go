@@ -52,3 +52,34 @@ func TestLaneKeyOnlyWhereItApplies(t *testing.T) {
 		t.Fatalf("L on a task with no lanes said %q", b.actions.status)
 	}
 }
+
+// #1151: the root asks the shell, not the board, for the home screen's live
+// rows, so the #1072 filter has to hold through the root — the footer and
+// the palette — and not only when the board method is called directly.
+func TestLaneKeyOnlyWhereItAppliesThroughTheRoot(t *testing.T) {
+	fanOut := task(2, stateAwaitingChildren)
+	fanOut.Children = &apiclient.ChildrenRollup{Total: 2}
+	m := attentionRoot(t, task(1, stateRunning), fanOut)
+	b := m.views[viewHome].(*shell).board
+	offered := func() bool {
+		m.openPalette()
+		defer func() { m.palette = nil }()
+		for _, e := range m.palette.entries {
+			if e.key == "L" {
+				return true
+			}
+		}
+		return false
+	}
+	b.selectedID = 1
+	if offered() {
+		t.Error("the palette offers L on a task with no lanes")
+	}
+	if strings.Contains(ansi.Strip(m.footerLine()), "L lanes") {
+		t.Error("the footer hints L on a task with no lanes")
+	}
+	b.selectedID = 2
+	if !offered() {
+		t.Error("the palette does not offer L on a fan-out")
+	}
+}
