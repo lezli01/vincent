@@ -84,14 +84,19 @@ func (t taskActions) offersDiagnose() bool {
 	return (t.state == stateBlocked || t.state == stateAborted) && t.offersChat()
 }
 
-// diagnosisChat is the newest closed diagnosis chat on the task for the
-// card's step and reason, and false when there is none. A chat still open
-// is not one yet: its answer may still be coming, and it holds the task.
-func diagnosisChat(chats []apiclient.Chat, c failureCard) (apiclient.Chat, bool) {
+// diagnosisChats are the closed diagnosis chats on the task for the card's
+// step and reason, newest first. A chat still open is not one yet: its
+// answer may still be coming, and it holds the task.
+//
+// They are candidates, not answers (#1153): a chat whose first turn was
+// refused, failed or was cancelled is closed with nothing to show, and the
+// newest of them must not hide an older chat that did answer.
+// findDiagnosis walks them.
+func diagnosisChats(chats []apiclient.Chat, c failureCard) []apiclient.Chat {
 	if c.reason == "" {
-		return apiclient.Chat{}, false
+		return nil
 	}
-	var best apiclient.Chat
+	var out []apiclient.Chat
 	for _, ch := range chats {
 		if ch.State != string(chatstate.Closed) {
 			continue
@@ -100,11 +105,43 @@ func diagnosisChat(chats []apiclient.Chat, c failureCard) (apiclient.Chat, bool)
 		if !ok || step != c.cardStepNum() || reason != c.reason {
 			continue
 		}
-		if ch.ID > best.ID {
-			best = ch
+		out = append(out, ch)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID > out[j].ID })
+	return out
+}
+
+// diagnoseCandidateReads bounds findDiagnosis: past a few answerless chats
+// in a row an older answer is stale anyway, and every read is a request.
+const diagnoseCandidateReads = 5
+
+// findDiagnosis reads candidates newest first and returns the first with an
+// answer, and its answer's opening (#1153). err is a read that failed before
+// any answer was found; the walk stops there rather than skip past a chat
+// it could not read, which may be the one that answered.
+func findDiagnosis(cands []apiclient.Chat, turns func(id int64) ([]apiclient.ChatTurn, error),
+) (ch apiclient.Chat, answer []string, err error) {
+	for i, cand := range cands {
+		if i == diagnoseCandidateReads {
+			break
+		}
+		ts, err := turns(cand.ID)
+		if err != nil {
+			return apiclient.Chat{}, nil, err
+		}
+		if a := firstAnswer(ts, diagnoseOpeningLines); len(a) > 0 {
+			return cand, a, nil
 		}
 	}
-	return best, best.ID != 0
+	return apiclient.Chat{}, nil, nil
+}
+
+// chatTurnsOf is findDiagnosis's read through the client.
+func chatTurnsOf(ctx context.Context, client *apiclient.Client) func(int64) ([]apiclient.ChatTurn, error) {
+	return func(id int64) ([]apiclient.ChatTurn, error) {
+		_, turns, err := client.GetChat(ctx, id)
+		return turns, err
+	}
 }
 
 // firstAnswer is the opening of a chat's first answer: its first non-empty
@@ -247,15 +284,14 @@ func diagnoseRun(client *apiclient.Client, id int64, bar *actionBar) tea.Cmd {
 		if chats, err := client.ListChats(ctx, apiclient.ListChatsOptions{
 			TaskID: id, Archived: apiclient.ArchivedAll,
 		}); err == nil {
-			if ch, ok := diagnosisChat(chats, c); ok {
-				if _, turns, err := client.GetChat(ctx, ch.ID); err == nil {
-					earlier, answer = ch, firstAnswer(turns, diagnoseOpeningLines)
-				}
+			if ch, a, err := findDiagnosis(diagnosisChats(chats, c), chatTurnsOf(ctx, client)); err == nil {
+				earlier, answer = ch, a
 			}
 		}
+		message := diagnoseMessage(task, c, ev, earlier, answer)
 		chat, err := client.OpenTaskChat(context.Background(), id, apiclient.OpenTaskChatRequest{
 			Title:   diagnoseTitle(c.cardStepNum(), c.cardStepName(), c.reason),
-			Message: diagnoseMessage(task, c, ev, earlier, answer),
+			Message: message,
 		})
 		if err != nil {
 			if chatID, locked := apiclient.TaskLockedByChat(err); locked {
@@ -263,12 +299,45 @@ func diagnoseRun(client *apiclient.Client, id int64, bar *actionBar) tea.Cmd {
 			}
 			return taskChatOpenedMsg{taskID: id, err: err}
 		}
+		if chat.FirstTurn == nil {
+			return diagnoseRefused(client, id, chat, message)
+		}
 		return taskChatOpenedMsg{taskID: id, chatID: chat.ID}
 	}
 }
 
-// taskDiagnosis is the card's one read of a diagnosis chat: the chat and
-// its first answer's opening, keyed by the chat.
+// diagnoseRefused settles a diagnosis whose chat the daemon created but
+// whose question it did not send — the chat cap reached, say (#1153). The
+// create is not undone by the daemon (task 161 decision 1), and an empty
+// chat titled as a diagnosis would hold the task locked while asking
+// nothing. So `Q` closes it, through the same close the chat workspace
+// offers, and the bar says why the question was not asked. A close that
+// fails falls back to what `chat with…` does with a refused send: the chat
+// opens with the question back in its composer and the reason as its note,
+// so the human can send it or close it.
+func diagnoseRefused(client *apiclient.Client, taskID int64, chat *apiclient.Chat, message string) taskChatOpenedMsg {
+	why := "the first message was not sent"
+	if len(chat.Warnings) > 0 {
+		why = strings.Join(chat.Warnings, "; ")
+	}
+	// The bar is one line: what happened leads, and the daemon's reason —
+	// already said to be about the first message — follows.
+	reason := strings.TrimPrefix(why, "the first message was not sent: ")
+	ctx, cancel := context.WithTimeout(context.Background(), actionTimeout)
+	defer cancel()
+	if _, err := client.CloseChat(ctx, chat.ID); err != nil {
+		return taskChatOpenedMsg{
+			taskID: taskID, chatID: chat.ID, draft: message,
+			note: why + " — closing the chat failed (" + actionErrString(err) + "); send the question again or close it",
+		}
+	}
+	return taskChatOpenedMsg{taskID: taskID, err: fmt.Errorf(
+		"not asked, chat #%d closed so task #%d stays unlocked — %s", chat.ID, taskID, reason)}
+}
+
+// taskDiagnosis is the card's one read of a diagnosis: keyed by the newest
+// candidate chat (chatID), and holding the chat the answer was found in —
+// that one, or an older one when the newer ones have none (#1153).
 type taskDiagnosis struct {
 	chatID   int64
 	fetching bool
@@ -279,42 +348,43 @@ type taskDiagnosis struct {
 
 type taskDiagnosisMsg struct {
 	taskID int64
+	key    int64 // the newest candidate the read was keyed by
 	chat   apiclient.Chat
 	answer []string
 	err    error
 }
 
-// syncDiagnosis fetches the diagnosis chat the card would show, once per
-// chat: when the chat list names one for the card's step and reason that is
-// not the one already read. It runs after every message, as
-// syncFailureEvidence does.
+// syncDiagnosis fetches the diagnosis the card would show, once per newest
+// candidate: when the chat list's newest diagnosis chat for the card's step
+// and reason is not the one already read from. It runs after every message,
+// as syncFailureEvidence does.
 func (t *taskView) syncDiagnosis() tea.Cmd {
 	if !t.showsFailureCard() {
 		return nil
 	}
-	ch, ok := diagnosisChat(t.chats, t.failureCard())
-	if !ok || t.diagnosis.chatID == ch.ID {
+	cands := diagnosisChats(t.chats, t.failureCard())
+	if len(cands) == 0 || t.diagnosis.chatID == cands[0].ID {
 		return nil
 	}
-	client, taskID := t.detail.client, t.detail.taskID
-	t.diagnosis = taskDiagnosis{chatID: ch.ID, fetching: client != nil, chat: ch}
+	client, taskID, key := t.detail.client, t.detail.taskID, cands[0].ID
+	t.diagnosis = taskDiagnosis{chatID: key, fetching: client != nil}
 	if client == nil {
 		return nil
 	}
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), loadTimeout)
 		defer cancel()
-		_, turns, err := client.GetChat(ctx, ch.ID)
-		return taskDiagnosisMsg{taskID: taskID, chat: ch, answer: firstAnswer(turns, diagnoseOpeningLines), err: err}
+		ch, answer, err := findDiagnosis(cands, chatTurnsOf(ctx, client))
+		return taskDiagnosisMsg{taskID: taskID, key: key, chat: ch, answer: answer, err: err}
 	}
 }
 
 func (t *taskView) applyDiagnosis(msg taskDiagnosisMsg) {
-	if msg.taskID != t.detail.taskID || msg.chat.ID != t.diagnosis.chatID {
+	if msg.taskID != t.detail.taskID || msg.key != t.diagnosis.chatID {
 		return
 	}
 	t.diagnosis.fetching = false
-	t.diagnosis.answer, t.diagnosis.err = msg.answer, msg.err
+	t.diagnosis.chat, t.diagnosis.answer, t.diagnosis.err = msg.chat, msg.answer, msg.err
 }
 
 // diagnosisLines are the card's diagnosis section: the chat it came from,
@@ -322,9 +392,9 @@ func (t *taskView) applyDiagnosis(msg taskDiagnosisMsg) {
 // same reason, and its answer's opening lines. Empty when there is none to
 // show.
 func (t *taskView) diagnosisLines(c failureCard, width int) []string {
-	d := t.diagnosis
-	ch, ok := diagnosisChat(t.chats, c)
-	if !ok || d.chatID != ch.ID || d.fetching || d.err != nil || len(d.answer) == 0 {
+	d, ch := t.diagnosis, t.diagnosis.chat
+	cands := diagnosisChats(t.chats, c)
+	if len(cands) == 0 || d.chatID != cands[0].ID || d.fetching || d.err != nil || len(d.answer) == 0 {
 		return nil
 	}
 	title := "Diagnosis"

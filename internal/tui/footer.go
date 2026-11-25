@@ -702,9 +702,11 @@ func footerRestSegs(bar *actionBar, target taskActions, attention attentionTally
 		// one thing that explains why (task 119).
 		// `Q` beside it on a stopped task (#1087), and only while no chat
 		// holds the task: then the key reopens that chat, which `T` says.
+		// Named diagnose, as the card, the question and the keymap name it
+		// (#1153): one name everywhere.
 		if target.offersDiagnose() && target.openChatID == 0 && opKey(keymap.Diagnose) != "" {
 			segs = append(segs, footerSeg{
-				text: styleKey.Render(opKey(keymap.Diagnose)) + " ask why", key: opKey(keymap.Diagnose), counts: true, droppable: true,
+				text: styleKey.Render(opKey(keymap.Diagnose)) + " diagnose", key: opKey(keymap.Diagnose), counts: true, droppable: true,
 			})
 		}
 		if target.offersChat() && opKey(keymap.Chat) != "" {

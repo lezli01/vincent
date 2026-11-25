@@ -541,7 +541,8 @@ var bindings = []binding{
 	// #1087: `T` on a stopped task with the question already asked. Gated on
 	// actionDiagnose, which taskActions.offers answers: a blocked or aborted
 	// task that offers `chat`, or holds one open, which the key reopens.
-	{op: keymap.Diagnose, key: "Q", label: "ask why it stopped — starts an agent in this task's worktree with the failure as its first message; the task stays locked until the chat is closed", scope: scopeTaskAction, action: actionDiagnose, priority: 10},
+	// The label leads with the name the card and the footer use (#1153).
+	{op: keymap.Diagnose, key: "Q", label: "diagnose — ask an agent why it stopped; starts it in this task's worktree with the failure as its first message; the task stays locked until the chat is closed", scope: scopeTaskAction, action: actionDiagnose, priority: 10},
 	// Task 161 decision 7: `T` with a choice first. Offered exactly where
 	// `chat` is, so it carries the same action.
 	{op: keymap.ChatWith, key: "alt+t", label: "chat with… — choose the agent, model and effort, and type a first message, before the chat opens; with a chat already open, reopen it", scope: scopeTaskAction, action: apiclient.ActionChat, priority: 11},
