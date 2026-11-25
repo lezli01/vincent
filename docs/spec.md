@@ -12611,6 +12611,14 @@ GET    /v1/tasks?project_id=&state=&archived=&archived_before=&archived_since=&l
                                         attempt (§17) — so a board renders without an N+1.
                                         These are list-only; GET /v1/tasks/{id} serves the
                                         same numbers per attempt in steps[].
+                                        *Amended 2026-11-25 (issue #1155).* List rows also
+                                        carry `agents`: every distinct adapter the task's
+                                        attempts ran on, in the order each first ran, and
+                                        omitted when none has. A task's agent is resolved per
+                                        step (§8.6), so no task column says it; one batched
+                                        query for the page reads it off step_runs, the way
+                                        status_message is, and a board's filter matches it
+                                        and agent_override without fetching step rows.
                                         ?archived= defaults to false: archived tasks are
                                         excluded unless asked for (?archived=true → only
                                         archived, ?archived=all → both). state=archived

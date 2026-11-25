@@ -2728,6 +2728,10 @@ Five details worth knowing:
   List rows also carry `github_pull`, the same pull request link the detail
   has (null for a task no pull request matched), which is what the board's
   `⇡#123` marker reads.
+  List rows also carry `agents`, every distinct agent the task's attempts ran
+  on in the order each first ran (`["claude","codex"]`), and omit it when no
+  agent attempt has run; it is what the board's `/` filter matches an agent
+  against, together with `agent_override`, which every task shape carries.
 
 Every task shape carries `parent_task_id`, `parent_step_index`, `lane_round`,
 `lane_id` and `lane_order`, all null for a root task. `parent_step_index` is the

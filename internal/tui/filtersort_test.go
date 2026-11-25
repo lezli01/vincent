@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -26,6 +27,48 @@ func TestTaskFilterMatchesWhatTheCardPrints(t *testing.T) {
 	}
 }
 
+// #1155: the task filter matches the agents the task's attempts ran on and
+// its agent override. No card prints them, but which agent worked on a task
+// is what someone looking for "the codex one" types.
+func TestTaskFilterMatchesAgents(t *testing.T) {
+	codex := "codex"
+	tasks := []apiclient.Task{
+		{ID: 1, Title: "one", Agents: []string{"claude", "cursor"}},
+		{ID: 2, Title: "two", AgentOverride: &codex},
+		{ID: 3, Title: "three"},
+	}
+	for q, want := range map[string]int64{"cursor": 1, "claude": 1, "codex": 2} {
+		if got := filterTasks(tasks, q); len(got) != 1 || got[0].ID != want {
+			t.Errorf("filter %q matched %v, want only #%d", q, got, want)
+		}
+	}
+}
+
+// #1155: the task board's time orders and the card's age read the same
+// time. The card prints how long ago the task last changed, so the order is
+// by that time and is named for it — the rule the issues board follows.
+func TestTaskSortMatchesCardAge(t *testing.T) {
+	now := time.Date(2026, 11, 25, 12, 0, 0, 0, time.UTC)
+	tasks := []apiclient.Task{
+		{ID: 1, State: stateRunning, CreatedAt: now.Add(-time.Hour), UpdatedAt: now.Add(-48 * time.Hour)},
+		{ID: 2, State: stateRunning, CreatedAt: now.Add(-72 * time.Hour), UpdatedAt: now.Add(-time.Minute)},
+	}
+	if want := []string{"", "updated", "updated_oldest", "title"}; !slices.Equal(boardSorts, want) {
+		t.Fatalf("task orders = %v, want %v", boardSorts, want)
+	}
+	sortBoardTasks(tasks, "updated")
+	if tasks[0].ID != 2 {
+		t.Errorf("recently updated first put #%d first", tasks[0].ID)
+	}
+	sortBoardTasks(tasks, "updated_oldest")
+	if tasks[0].ID != 1 {
+		t.Errorf("least recently updated first put #%d first", tasks[0].ID)
+	}
+	if got := boardSortLabel("updated_oldest"); got != "least recently updated first" {
+		t.Errorf("label = %q", got)
+	}
+}
+
 // #1075: the issue filter matches the source reference, author and
 // priority, and `#N` is the id alone.
 func TestIssueFilterMatchesSourceAuthorPriority(t *testing.T) {
@@ -48,12 +91,12 @@ func TestIssueFilterMatchesSourceAuthorPriority(t *testing.T) {
 func TestSortOrders(t *testing.T) {
 	now := time.Date(2026, 11, 23, 12, 0, 0, 0, time.UTC)
 	tasks := []apiclient.Task{
-		{ID: 1, Title: "b", State: stateRunning, CreatedAt: now.Add(-2 * time.Hour)},
-		{ID: 2, Title: "a", State: stateRunning, CreatedAt: now},
+		{ID: 1, Title: "b", State: stateRunning, UpdatedAt: now.Add(-2 * time.Hour)},
+		{ID: 2, Title: "a", State: stateRunning, UpdatedAt: now},
 	}
-	sortBoardTasks(tasks, "newest")
+	sortBoardTasks(tasks, "updated")
 	if tasks[0].ID != 2 {
-		t.Errorf("newest first put #%d first", tasks[0].ID)
+		t.Errorf("recently updated first put #%d first", tasks[0].ID)
 	}
 	sortBoardTasks(tasks, "title")
 	if tasks[0].Title != "a" {
@@ -78,15 +121,15 @@ func TestActiveSortIsNamed(t *testing.T) {
 	if got := s.panelTitle(panelTasks); got != "Tasks" {
 		t.Errorf("unsorted title = %q, want %q", got, "Tasks")
 	}
-	s.board.sortOrder = "newest"
+	s.board.sortOrder = "updated"
 	s.board.filter.SetValue("x")
-	if got := s.panelTitle(panelTasks); got != "Tasks — /x — newest first" {
+	if got := s.panelTitle(panelTasks); got != "Tasks — /x — recently updated first" {
 		t.Errorf("title = %q, want the filter then the sort", got)
 	}
 	if got := s.tasksTitle(len("Tasks — /x") + 3); got != "Tasks — /x" {
 		t.Errorf("tight title = %q, want the sort dropped whole", got)
 	}
-	if got := ansi.Strip(s.board.cardSummary()); !strings.Contains(got, "newest first") {
+	if got := ansi.Strip(s.board.cardSummary()); !strings.Contains(got, "recently updated first") {
 		t.Errorf("card edge %q does not name the sort", got)
 	}
 

@@ -183,7 +183,8 @@ func startedBefore(a, b apiclient.Task) bool {
 }
 
 // filterTasks keeps tasks matching a case-insensitive substring of the id,
-// title or state, or of the vincent issue the task was started from — its
+// title, state, workflow, step, branch, pull request or agents (#1155), or
+// of the vincent issue the task was started from — its
 // `#<id>`, title and imported short ref (task 148 decision 9), so filtering
 // for an issue keeps its whole group whatever the board is grouped by. The
 // project name is not matched: the board shows one
@@ -200,6 +201,13 @@ func filterTasks(tasks []apiclient.Task, query string) []apiclient.Task {
 		// What the card prints is what can be typed (#1075): its workflow,
 		// the step it is on, its branch and its pull request's number.
 		fields := []string{strconv.FormatInt(t.ID, 10), t.Title, t.State, stateWords(t.State), t.Workflow, t.StepName, t.BranchName}
+		// The agents its attempts ran on and its override (#1155): no card
+		// prints them, but the agent that worked on a task is what someone
+		// looking for one types. The list row carries both.
+		fields = append(fields, t.Agents...)
+		if t.AgentOverride != nil {
+			fields = append(fields, *t.AgentOverride)
+		}
 		if p := t.GitHubPull; p != nil {
 			fields = append(fields, "#"+strconv.Itoa(p.Number), "pr "+strconv.Itoa(p.Number))
 		}
@@ -544,8 +552,14 @@ func withStepPips(s string, t apiclient.Task, width int) string {
 }
 
 // boardSorts are the orders `z` cycles the task board through (#1075): the
-// band order the board was built on, then newest, oldest and by title.
-var boardSorts = []string{"", "newest", "oldest", "title"}
+// band order the board was built on, then recently updated, least recently
+// updated and by title.
+//
+// The time orders are by the update, not the creation (#1155): the card's
+// age is how long ago the task last changed (taskCard), and an order by a
+// time the board never prints read as shuffled beside it — the rule the
+// issues board's order follows (issueSorts).
+var boardSorts = []string{"", "updated", "updated_oldest", "title"}
 
 // sortBoardTasks orders tasks for display: the band sort, then the board's
 // chosen order on top of it. The band sort stays the tie-breaker, so equal
@@ -553,10 +567,10 @@ var boardSorts = []string{"", "newest", "oldest", "title"}
 func sortBoardTasks(tasks []apiclient.Task, order string) {
 	sortTasks(tasks)
 	switch order {
-	case "newest":
-		sort.SliceStable(tasks, func(i, j int) bool { return tasks[i].CreatedAt.After(tasks[j].CreatedAt) })
-	case "oldest":
-		sort.SliceStable(tasks, func(i, j int) bool { return tasks[i].CreatedAt.Before(tasks[j].CreatedAt) })
+	case "updated":
+		sort.SliceStable(tasks, func(i, j int) bool { return tasks[i].UpdatedAt.After(tasks[j].UpdatedAt) })
+	case "updated_oldest":
+		sort.SliceStable(tasks, func(i, j int) bool { return tasks[i].UpdatedAt.Before(tasks[j].UpdatedAt) })
 	case "title":
 		sort.SliceStable(tasks, func(i, j int) bool {
 			return strings.ToLower(tasks[i].Title) < strings.ToLower(tasks[j].Title)
@@ -569,10 +583,10 @@ func sortBoardTasks(tasks []apiclient.Task, order string) {
 // board's edge, so a sort stays visible while it is in force (#1155).
 func boardSortLabel(order string) string {
 	switch order {
-	case "newest":
-		return "newest first"
-	case "oldest":
-		return "oldest first"
+	case "updated":
+		return "recently updated first"
+	case "updated_oldest":
+		return "least recently updated first"
 	case "title":
 		return "by title"
 	}
