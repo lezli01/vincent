@@ -1073,15 +1073,18 @@ var bindings = []binding{
 	{op: keymap.Add, key: "a", label: "register a repository", scope: scopePanel, context: ctxProjects, hint: "a add", priority: 1, term: termAdd},
 	// Enter selects rather than edits (task 132 decision 42): the overview
 	// is how a project is reached as well as managed, so `e` alone edits.
-	// `e` keeps no row of its own: the vocabulary gives `e` to $EDITOR, so
-	// it is named here and recorded in keymap.fixed, as the daemon view's is.
-	{key: "enter", label: "select the highlighted project and go back to the view you came from — on a needs-you row, open that task (e edits the project)", scope: scopePanel, context: ctxProjects, hint: "enter select", priority: 2},
-	{key: "tab", label: "move between the project table and the needs-you list", scope: scopePanel, context: ctxProjects, hint: "tab needs you", priority: 3},
+	// `e` is a fixed key here, recorded in keymap.fixed, since the
+	// vocabulary gives `e` to $EDITOR and this opens the project form
+	// instead. It has a row of its own since #1152, so the footer can name
+	// it; before, only enter's label mentioned it.
+	{key: "enter", label: "select the highlighted project and go back to the view you came from — on a needs-you row, open that task", scope: scopePanel, context: ctxProjects, hint: "enter select", priority: 2},
+	{key: "e", label: "edit the highlighted project in the project form", scope: scopePanel, context: ctxProjects, hint: "e edit", priority: 3},
+	{key: "tab", label: "move between the project table and the needs-you list", scope: scopePanel, context: ctxProjects, hint: "tab needs you", priority: 4},
 	// `D` rather than `d` (task 093): this destroys a persisted record after a
 	// confirmation, which is what `D` means on both archived boards. `d` is
 	// left meaning "drop a row from an unsaved draft" and nothing else.
-	{op: keymap.Delete, key: "D", label: "remove the project (asks first; its task rows go with it)", scope: scopePanel, context: ctxProjects, hint: "D remove", priority: 4, term: termDelete},
-	{op: keymap.Filter, key: "/", label: "filter by name or path", scope: scopePanel, context: ctxProjects, hint: "/ filter", priority: 5, term: termFilter},
+	{op: keymap.Delete, key: "D", label: "remove the project (asks first; its task rows go with it)", scope: scopePanel, context: ctxProjects, hint: "D remove", priority: 5, term: termDelete},
+	{op: keymap.Filter, key: "/", label: "filter by name or path", scope: scopePanel, context: ctxProjects, hint: "/ filter", priority: 6, term: termFilter},
 
 	// The project form (#803): it owns the keyboard while it is open.
 	{key: "down", label: "move between the fields (↑/↓ or tab)", scope: scopePanel, context: ctxProjectForm, hint: "↑/↓ fields", priority: 1},
@@ -1423,14 +1426,14 @@ var bindings = []binding{
 	{key: "enter", label: "open the selected trigger in the form (i also opens it)", scope: scopePanel, context: ctxTriggers, hint: "enter edit", priority: 2},
 	{key: "space", label: "enable or disable the selected trigger — enabling asks first", scope: scopePanel, context: ctxTriggers, hint: "space on/off", priority: 3},
 	{op: keymap.Add, key: "a", label: "create a trigger from a starter", scope: scopePanel, context: ctxTriggers, hint: "a add", priority: 4, term: termAdd},
-	{op: keymap.Editor, key: "e", label: "open the trigger's file in $EDITOR", scope: scopePanel, context: ctxTriggers, priority: 5, term: termEditor},
-	{op: keymap.Delete, key: "D", label: "delete the trigger's file — its ledger is kept (asks first)", scope: scopePanel, context: ctxTriggers, priority: 6, term: termDelete},
+	{op: keymap.Editor, key: "e", label: "open the trigger's file in $EDITOR", scope: scopePanel, context: ctxTriggers, hint: "e $EDITOR", priority: 5, term: termEditor},
+	{op: keymap.Delete, key: "D", label: "delete the trigger's file — its ledger is kept (asks first)", scope: scopePanel, context: ctxTriggers, hint: "D delete", priority: 6, term: termDelete},
 	{key: "T", label: "dry-run a sample event through the trigger's filter; fires nothing", scope: scopePanel, context: ctxTriggers, hint: "T test", priority: 7},
 	{key: "X", label: "poll the source once and judge what it returns; fires nothing", scope: scopePanel, context: ctxTriggers, hint: "X poll", priority: 8},
 	{key: "tab", label: "move between the trigger list and its delivery ledger", scope: scopePanel, context: ctxTriggers, hint: "tab ledger", priority: 9},
-	{key: "B", label: "open triggers.enabled, the global switch, on the Settings screen", scope: scopePanel, context: ctxTriggers, priority: 10},
+	{key: "B", label: "open triggers.enabled, the global switch, on the Settings screen", scope: scopePanel, context: ctxTriggers, hint: "B global switch", priority: 10},
 	{op: keymap.Refresh, key: "R", label: "re-read the triggers and the ledger", scope: scopePanel, context: ctxTriggers, hint: "R refresh", priority: 11, term: termRefresh},
-	{op: keymap.Filter, key: "/", label: "filter by id, source or action", scope: scopePanel, context: ctxTriggers, priority: 12, term: termFilter},
+	{op: keymap.Filter, key: "/", label: "filter by id, source or action", scope: scopePanel, context: ctxTriggers, hint: "/ filter", priority: 12, term: termFilter},
 
 	{key: "down", label: "move through the deliveries (↑/↓)", scope: scopePanel, context: ctxTriggerLedger, priority: 1},
 	{key: "enter", label: "open the task the delivery created or acted on", scope: scopePanel, context: ctxTriggerLedger, hint: "enter open task", priority: 2},

@@ -548,6 +548,97 @@ var footerActionOps = []struct {
 	{apiclient.ActionArchive, keymap.Archive, ""},
 }
 
+// footerStateLead is which of a task's actions lead its footer segments in
+// each state (#1152): the ones that move a task in that state on — the
+// answer it waits on, the verdict at a gate, the recovery keys of a blocked
+// task, a finished task's next step. The rest follow in footerActionOps'
+// §6 order. Lead is position, and position is what the width keeps:
+// footerAdmitActions gives places up from the end, so a narrow line sheds
+// the other actions first. It reorders the task's own segments only; the
+// surface's hints keep their registry priority (task 094: priority means
+// priority), and they are budgeted after these anyway.
+var footerStateLead = map[string][]string{
+	stateAwaitingInput: {apiclient.ActionAnswer},
+	stateAwaitingGate:  {apiclient.ActionApprove, apiclient.ActionReject},
+	stateBlocked:       {apiclient.ActionRetry, apiclient.ActionRepair},
+	stateDone:          {apiclient.ActionFollowUp, apiclient.ActionArchive},
+	stateAborted:       {apiclient.ActionFollowUp, apiclient.ActionArchive},
+	statePaused:        {apiclient.ActionResume},
+}
+
+// footerAnswerKey is the key the footer's answer segment names, or "" when
+// there is none: the workspace's enter, or — where the answer is a screen
+// away — the board's open key (#1152). Never under a bulk selection: a
+// question belongs to one task.
+func footerAnswerKey(t taskActions) string {
+	if t.bulk() || !t.has(apiclient.ActionAnswer) {
+		return ""
+	}
+	if t.answerOpens {
+		return opKey(keymap.OpenRow)
+	}
+	return answerBinding.key
+}
+
+// footerTaskActionSegs is the task's §6 action segments, its state's lead
+// first (footerStateLead) and the rest in footerActionOps order.
+func footerTaskActionSegs(target taskActions) []footerSeg {
+	type staged struct {
+		action string
+		seg    footerSeg
+	}
+	var all []staged
+	if key := footerAnswerKey(target); key != "" {
+		label := "answer"
+		if target.answerOpens {
+			label = "open to answer"
+		}
+		// Never droppable: it is the one way on for a task waiting on a
+		// question, and a short line sheds the other actions instead.
+		all = append(all, staged{apiclient.ActionAnswer, footerSeg{
+			text: styleAsk.Render(key + " " + label), key: key, counts: true,
+		}})
+	}
+	for _, o := range footerActionOps {
+		if !target.has(o.action) || (o.label != "" && target.bulk()) {
+			continue
+		}
+		if o.op == keymap.EditRetry && !target.editRetry {
+			continue // nothing to edit here, or no editor (#1059)
+		}
+		key := opKey(o.op)
+		if key == "" {
+			// Unbound on a lenient load (task 128): no key to show.
+			continue
+		}
+		label := o.label
+		if label == "" {
+			label = actionLabel(target, o.action)
+		}
+		all = append(all, staged{o.action, footerSeg{
+			text: styleKey.Render(key) + " " + label, key: key, counts: true, droppable: true,
+		}})
+	}
+	// Under a selection the state is only the cursor row's, and the marked
+	// tasks may be in any: §6 order alone.
+	lead := footerStateLead[target.state]
+	if target.bulk() {
+		lead = nil
+	}
+	rank := func(action string) int {
+		if i := slices.Index(lead, action); i >= 0 {
+			return i
+		}
+		return len(lead)
+	}
+	sort.SliceStable(all, func(i, j int) bool { return rank(all[i].action) < rank(all[j].action) })
+	out := make([]footerSeg, len(all))
+	for i, s := range all {
+		out[i] = s.seg
+	}
+	return out
+}
+
 // footerAdmitActions drops droppable segments from the end — `!` first, then
 // `T`, then the task actions in reverse order — until the segments right of
 // the hints fit avail with every hint withheld, the widest `+N` the line can
@@ -604,29 +695,7 @@ func footerRestSegs(bar *actionBar, target taskActions, attention attentionTally
 		})
 	}
 	if bar != nil && (target.id != 0 || target.bulk()) {
-		for _, o := range footerActionOps {
-			if !target.has(o.action) || (o.label != "" && target.bulk()) {
-				continue
-			}
-			if o.op == keymap.EditRetry && !target.editRetry {
-				continue // nothing to edit here, or no editor (#1059)
-			}
-			key := opKey(o.op)
-			if key == "" {
-				// Unbound on a lenient load (task 128): no key to show.
-				continue
-			}
-			label := o.label
-			if label == "" {
-				label = actionLabel(target, o.action)
-			}
-			segs = append(segs, footerSeg{
-				text: styleKey.Render(key) + " " + label, key: key, counts: true, droppable: true,
-			})
-		}
-		if target.has(apiclient.ActionAnswer) {
-			segs = append(segs, footerSeg{text: styleAsk.Render("enter answer"), key: "enter", counts: true})
-		}
+		segs = append(segs, footerTaskActionSegs(target)...)
 		// `T` has no actionOrder row because it posts to no §6 endpoint that
 		// hands back the task, and it is on the line anyway: a locked task
 		// offers `c cancel` or nothing, and the chat holding the lock is the

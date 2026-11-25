@@ -107,6 +107,10 @@ type taskActions struct {
 	// workspace's, or the board's detail panes when they show the selected
 	// task. A target with no such detail leaves it false.
 	editRetry bool
+	// answerOpens marks a target whose answer is a screen away (#1152): on
+	// the board, enter opens the workspace and the answer form is the next
+	// press, so the footer names the open rather than an immediate answer.
+	answerOpens bool
 }
 
 // offersChat reports whether `T` does anything for this target: the daemon

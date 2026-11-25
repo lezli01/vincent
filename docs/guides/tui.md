@@ -4121,11 +4121,15 @@ only read or move the cursor: on the task board that is `enter open`, `n new`,
 keys. With tasks selected, `esc clear (N)` leads the action keys. It then tells you what is left: a dim **`+N`** after the action keys counts the
 keys this surface has that the line is not showing — the ones past the main six,
 the ones that did not fit, the ones with no short form, and, on a narrow terminal,
-the task actions that did not fit. When a task offers more
-actions than the line holds, the ones listed first stay — on a `blocked` task
-that is `r retry`, `E edit+retry` and `R repair` — and the rest give their place
-up from the end: the `!` attention count, then `T chat`, then archive, cancel
-and skip. The `!` attention count is also left off while `!` would not
+the task actions that did not fit. The selected task's state decides which of
+its actions come first: the answer on a task waiting on a question, approve and
+reject at a gate, `r retry`, `E edit+retry` and `R repair` on a `blocked` task,
+follow up and archive on a finished one, resume on a paused one. When a task
+offers more actions than the line holds, those first ones stay and the rest
+give their place up from the end: the `!` attention count, then `T chat`, then
+the task's other actions, last first. On the board, a task waiting on a
+question offers `enter open to answer` — `enter` opens its workspace, where the
+answer form is — in place of `enter open`. The `!` attention count is also left off while `!` would not
 jump: while a text field has the keyboard, and while the palette or another
 popup is open. Click it, or press `:`, and
 the palette lists them. No `+N` means nothing is left over. The popups and

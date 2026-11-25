@@ -2992,7 +2992,10 @@ func (m *root) footerLine() string {
 			// Answer is opened from the task workspace. On the board, enter
 			// crosses that screen boundary; advertising it as an immediate
 			// answer would describe the second press rather than this one.
-			target.actions = withoutAction(target.actions, apiclient.ActionAnswer)
+			// It is still the key a waiting task most needs, so it leads the
+			// task's segments as the open it is (#1152), rather than being
+			// dropped and leaving `enter open` to lose the width contest.
+			target.answerOpens = true
 		}
 	} else if t, ok := m.views[m.active].(*taskView); ok {
 		bar = t.detail.actions
@@ -3008,6 +3011,12 @@ func (m *root) footerLine() string {
 		rows = fb.footerBindings(rows)
 	}
 	rows = mainTabRows(rows, m.nextTabName())
+	if footerAnswerKey(target) != "" && target.answerOpens {
+		// The answer segment is the board's enter (#1152): one key, named
+		// once, counted once — the way the workspace's `enter answer`
+		// stands in for its tabs' own enter rows (#1062).
+		rows = slices.DeleteFunc(slices.Clone(rows), func(b binding) bool { return b.op == keymap.OpenRow })
+	}
 	retry := m.phase == phaseFailed || m.phase == phaseReconnecting
 	pill := m.footerPill()
 	pw := ansi.StringWidth(pill)
@@ -3018,16 +3027,6 @@ func (m *root) footerLine() string {
 	}
 	m.footerHits = hits
 	return pill + line
-}
-
-func withoutAction(actions []string, drop string) []string {
-	out := make([]string, 0, len(actions))
-	for _, action := range actions {
-		if action != drop {
-			out = append(out, action)
-		}
-	}
-	return out
 }
 
 // bodyHeight is the space left for the active view: total minus header,
