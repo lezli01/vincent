@@ -1964,8 +1964,10 @@ Sleep 2s
   # rather than a new task — the base branch and the branch, marked
   # `(from the chat)` because they name a worktree that already exists — so
   # the tape walks down to them.
+  # Wider than COLS_PX: at that width the Branch box cuts both rows' values,
+  # and the `(from the chat)` marks the caption is about with them.
   owns api chat 'rate limit' tui-chat-handoff
-  tape tui-chat-handoff 1050 api '
+  TAPE_WIDTH=$((COLS_PX * 3 / 2)) tape tui-chat-handoff 1050 api '
 Type ":"
 Sleep 1s
 Type "chats"
@@ -2100,8 +2102,10 @@ Sleep 2s
   # Steps, on the blocked task: a command step and an agent step
   # that succeeded, then both failed attempts of the step it is blocked on,
   # each with vincent'"'"'s failure reason and the step'"'"'s result summary.
+  # Narrowed below taskRailMinW, as tui-loop is, for the Steps tab: at
+  # COLS_PX the workspace shows its rail and the Output tab instead.
   owns release-tooling task 'signed checksums' tui-task-steps
-  tape tui-task-steps 1250 release-tooling '
+  TAPE_WIDTH=$((COLS_PX * 9 / 10)) tape tui-task-steps 1250 release-tooling '
 Tab
 Sleep 2s
 Type "/"
@@ -2112,7 +2116,9 @@ Enter
 Sleep 1s
 Enter
 Sleep 4s
-Sleep 1s
+# the narrow workspace opens on Overview; Steps is the next tab
+Tab
+Sleep 2s
 Screenshot "'"$OUT"'/tui-task-steps.png"
 Sleep 2s
 '
@@ -2240,8 +2246,9 @@ Sleep 2s
   # ends with the popup open, and quitting the TUI discards the draft.
 
   # Repair (`R`), on the blocked task, with a prompt written and kept —
-  # `ctrl+s` inside the field keeps the text; only a second one would start
-  # the repair.
+  # `esc` inside the field keeps the text and leaves it; `ctrl+s` would keep
+  # it and start the repair (#1172), which would move every tape after this
+  # one.
   owns release-tooling task 'signed checksums' tui-repair
   tape tui-repair 1250 release-tooling '
 Tab
@@ -2260,13 +2267,14 @@ Enter
 Sleep 1s
 Type "The verify step exits 1. Find out why the checksum comparison fails and fix it."
 Sleep 1s
-Ctrl+S
+Escape
 Sleep 2s
 Screenshot "'"$OUT"'/tui-repair.png"
 Sleep 2s
 '
 
-  # Follow-up (`F`), on the finished task, with a prompt written and kept.
+  # Follow-up (`F`), on the finished task, with a prompt written and kept
+  # by `esc`, for the reason the repair tape gives.
   owns web task 'design tokens' tui-follow-up
   tape tui-follow-up 1250 web '
 Tab
@@ -2289,7 +2297,7 @@ Enter
 Sleep 1s
 Type "Rebase the branch onto main and re-run the token snapshot tests."
 Sleep 1s
-Ctrl+S
+Escape
 Sleep 2s
 Screenshot "'"$OUT"'/tui-follow-up.png"
 Sleep 2s
@@ -2408,8 +2416,13 @@ Sleep 2s
   # on the header line, and the passes folded shut with the one it stopped on
   # open. `up` stops on the folded pass above it and `right` opens that one
   # too, so the picture has a pass that succeeded beside the one that did not.
+  # The folded timeline is the Steps tab, which only a terminal narrower than
+  # taskRailMinW (130 columns) has — at COLS_PX the workspace draws its rail
+  # of steps beside the tabs instead (task 150.6), and `up`/`right` there move
+  # nothing the caption is about. Nine tenths of COLS_PX is about 124
+  # columns. tui-task-steps-lanes is narrowed for the same reason.
   owns platform-infra task 'tenant_id' tui-loop
-  tape tui-loop 1400 platform-infra '
+  TAPE_WIDTH=$((COLS_PX * 9 / 10)) tape tui-loop 1400 platform-infra '
 Tab
 Sleep 2s
 Type "/"
@@ -2420,7 +2433,9 @@ Enter
 Sleep 1s
 Enter
 Sleep 4s
-Sleep 1s
+# the narrow workspace opens on Overview; Steps is the next tab
+Tab
+Sleep 2s
 Up 1
 Sleep 1s
 Right
@@ -2683,6 +2698,11 @@ Enter
 Sleep 1s
 Enter
 Sleep 5s
+# The chat keeps its draft (task 164), and tui-chat-skills, which runs just
+# before this tape, leaves `/re` in it: clear the line, or `@internal` lands
+# after it and opens no picker.
+Ctrl+U
+Sleep 1s
 Type "@internal"
 Sleep 3s
 Down
@@ -3088,7 +3108,7 @@ Sleep 2s
   # gate — and `G` lands the cursor on the last stop, which is that gated
   # lane, since the parent is parked on the fan_out and has no later rows.
   owns api task 'v2 storage' tui-task-steps-lanes
-  tape tui-task-steps-lanes 1250 api '
+  TAPE_WIDTH=$((COLS_PX * 9 / 10)) tape tui-task-steps-lanes 1250 api '
 Tab
 Sleep 2s
 Type "/"
@@ -3099,7 +3119,9 @@ Enter
 Sleep 1s
 Enter
 Sleep 4s
-Sleep 1s
+# the narrow workspace opens on Overview; Steps is the next tab
+Tab
+Sleep 2s
 Type "O"
 Sleep 1s
 Type "G"

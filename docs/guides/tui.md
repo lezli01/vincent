@@ -3486,8 +3486,8 @@ sorts into the board's done band, and it cannot be sent to, archived or handed
 off again. Only an idle chat can be handed off, and a worktree in the middle of
 a merge or rebase is refused with the operation named.
 
-![The handoff form on its Git & priority step, with the base branch and the
-branch both marked `(from the chat)`](../assets/tui-chat-handoff.png)
+![The handoff form, its Branch box holding the base branch and the branch,
+both marked `(from the chat)`](../assets/tui-chat-handoff.png)
 
 A chat [opened on a task](#talking-to-an-agent-about-a-task) is the other way
 round: its header reads `on task #N`, the worktree is already that task's, and

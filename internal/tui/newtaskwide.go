@@ -471,8 +471,17 @@ func (n *newTask) wideRows(rows []ntRow, width int) (out []string, focused bool)
 		here := row == n.cursor && n.mode != ntConfirming
 		focused = focused || here
 		value, _, _ := strings.Cut(n.wideValue(row), "\n")
-		line := formRowMark(here) + styleDim.Render(padRight(ntLabels[row], ntWideLabelW)) + value
-		out = append(out, ansi.Truncate(line, width, "…"))
+		lead := formRowMark(here) + styleDim.Render(padRight(ntLabels[row], ntWideLabelW))
+		if n.inherited(row) {
+			// The hand-off's rows say where their value came from, as the
+			// narrow form's do (task 074). The mark outlasts the value: a long
+			// branch name is cut before it rather than taking it off the row.
+			mark := "  " + styleDim.Render("(from the chat)")
+			room := max(width-ansi.StringWidth(lead)-ansi.StringWidth(mark), 1)
+			out = append(out, ansi.Truncate(lead+ansi.Truncate(value, room, "…")+mark, width, "…"))
+		} else {
+			out = append(out, ansi.Truncate(lead+value, width, "…"))
+		}
 		if msg, bad := n.rowErr[row]; bad {
 			out = append(out, styled(wrapText("⚠ "+msg, max(width-2, 1), wrapOpts{prefix: "  ", indent: 2}), styleBad)...)
 		}
