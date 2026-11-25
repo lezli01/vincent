@@ -1711,7 +1711,9 @@ search, `n` new task, `p` projects, `w` workflows, `d` daemon, `s` settings,
 `r` pull requests, `a` archived tasks, `A` archived chats, `T` triggers — and
 the letter goes there; `↑`/`↓` and `enter` work too, and `esc` closes it. The
 header's right edge names the key (`` ` screens ``) until a narrow terminal
-needs the room. The command palette (`:`) lists the same screens among
+needs the room — and only where the key opens it: over a text field, such as
+a chat's composer or a filter, `` ` `` is a character typed, so the header
+leaves it out. The command palette (`:`) lists the same screens among
 everything else, and new task keeps its direct key.
 
 ### New task — `n`
@@ -4055,10 +4057,13 @@ something that cannot run.
 
 Typing finds rows the way you remember them, not only as they are spelled.
 Where some row contains what you typed, those rows are the answer; otherwise
-the words may come in any order, each may be the start of a word or its
-letters in order, and a word of four letters or more may be one typo off —
-`tasks archived` finds archived tasks and `dameon` the daemon — with the best
-matches first. Once you type, the project's **tasks**, **chats** and
+the words may come in any order, each may be the start of a word, a word of
+four letters or more may be one typo off, and a word of five letters or more
+may be just its letters in order — `tasks archived` finds archived tasks,
+`dameon` the daemon and `wrkflw` the workflows — with the best matches first:
+a word that starts with what you typed before one that holds it mid-word, and
+scattered letters last. A short query such as `key` or `pr` is never
+answered by rows that merely contain its letters somewhere. Once you type, the project's **tasks**, **chats** and
 **issues** are listed too, by number and title (`#13`, `issue #4 MOB-7`), and
 running one opens it.
 
