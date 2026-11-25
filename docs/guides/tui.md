@@ -1317,7 +1317,7 @@ line names what the diff is of, and for the whole task what it is against.
 | `pgup`/`pgdn`, `f`/`b`, `u` | Scroll by lines inside what is expanded |
 | `alt+↑`/`alt+↓` | Scroll one line, whatever file the cursor is on |
 | `shift+←`/`shift+→` | Pan sideways to the end of a line wider than the pane — diff lines are never wrapped |
-| `/` | Search the diff: every file opens, `n`/`N` walk the matches, `esc` ends the search |
+| `/` | Search the diff: every file opens, `n`/`N` walk the matches, `esc` ends the search. The line under the pane names the key `filter` is bound to, so it reads right after a rebinding |
 | `ctrl+r` | Read the diff again |
 | `d` | Switch between the whole task's diff and the selected attempt's |
 | `]` / `[` | Move to the next / previous hunk, opening the file it is in. On this tab they are not the tab keys: `tab`/`shift+tab` still switch tabs |
@@ -2839,6 +2839,7 @@ in one that cannot would ring on every reply you are reading. For a signal with 
 | `alt+w` | [Export the selected chat](#exporting-a-chat) as Markdown, HTML or JSON |
 | `alt+.` / `alt+,`, `]` / `[` | Open the next / previous chat after the one under the cursor, in this board's order, wrapping |
 | `alt+1` … `alt+9` | Open the project's Nth chat in this board's order; nothing past the last |
+| `↑`/`↓` or `k`/`j` | Move through the chats |
 | `home`/`end`, `pgup`/`pgdown` | Jump to the first or last chat, or move a page |
 
 The mouse wheel moves the cursor one chat per tick, as it does on the task
@@ -3209,12 +3210,13 @@ files are not. It is grouped by file and starts folded, like the task's.
 | `ctrl+r` | Read the diff again — the key the task's Diff tab uses |
 | `/` | Search the diff, every file opened: `enter` lands on the first match, `n` / `N` walk the matches, `esc` ends the search (a second `esc` goes back to the conversation); leaving the diff ends it |
 | `ctrl+y` | Copy the selected hunk (the one `]`/`[` stand on) or the file's whole diff, as plain text |
-| `↑`/`↓` | Move between files |
-| `enter` or `space` | Expand or collapse the file under the cursor (`→`/`←` too) |
+| `↑`/`↓` or `j`/`k` | Move between files |
+| `enter` or `space` | Expand or collapse the file under the cursor (`→`/`←` and `l`/`h` too) |
 | `O` / `C` | Expand / collapse every file |
-| `pgup`/`pgdn`, `ctrl+u`/`ctrl+d` | Page the diff |
+| `pgup`/`pgdn` or `f`/`b`; `ctrl+d`/`ctrl+u` or `d`/`u` | Page the diff; half a page |
+| `alt+↑`/`alt+↓` | Scroll one line, whatever file the cursor is on |
 | `shift+←`/`shift+→` | Pan long lines |
-| `esc` | Back to the conversation and the composer |
+| `esc` or `alt+d` | Back to the conversation and the composer — `alt+d` is whatever key `chat_diff` is bound to |
 
 **Scopes.** *Since the base* is everything on the chat's branch and in its
 working tree past the merge-base with the chat's base — for a chat on a task,
@@ -3630,8 +3632,18 @@ there is nothing to withhold and no flag saying so.
 | `enter` | Open the row's workspace, read-only |
 | `/` | Filter, exactly as on the live board |
 | `R` | Reload the board |
-| `home`/`end`, `pgup`/`pgdown` | Jump to the first or last row, or move a page |
+| `↑`/`↓` or `k`/`j` | Move through the archive |
+| `home`/`end`, `pgup`/`pgdown` | Jump to the first or last row, or move a page — on the narrow tasks list `ctrl+d`/`ctrl+u` move half a page, and `G` jumps to the last row on either |
 | `space` / `V` | Select rows for the delete — archived tasks only; an archived chat is deleted one row at a time |
+| `z` | Cycle the order — by state, newest, oldest, title — archived tasks only |
+| `ctrl+y` | Copy the selected task's id, branch, worktree path or pull request — archived tasks only |
+| `g` | Archived tasks: on the narrow list, cycle the grouping; on the wide cards, jump to the first card |
+| `←`/`→` | Archived tasks: on the wide cards, move across a row; on the narrow list, close or open the group under the cursor |
+| `f` | Archived tasks, wide cards: fold or open the issue group under the cursor |
+| `C` / `O` | Archived tasks: fold / open every group |
+
+`H`, the live board's needs-you filter, does nothing here: an archived task
+never needs a human.
 
 The mouse wheel moves the cursor one row per tick on both lists. It never turns
 the page — that is a fetch, and stays on `<` and `>` — and it stands still while
@@ -4244,7 +4256,8 @@ straight away. `backspace` puts the row back on its default, and the note says
 what it was (`was ctrl+e · u puts it back`): `u` puts the last change back,
 a rebinding or a reset, with the cursor on its row — from the list of settings
 too, which opens this screen to make it. It is Settings' one undo, and is not
-itself undoable. `t` opens every
+itself undoable. `↑`/`↓` (or `k`/`j`) and `pgup`/`pgdown` move through the
+list, and `g`/`home` and `G`/`end` jump to its first and last operation. `t` opens every
 binding as one line of `operation=key` pairs (for pasting a whole keymap), and
 `esc` goes back. `ctrl+c`, `ctrl+p` and `f1` stay with the TUI while it waits
 for a key, so they cannot be bound from there.

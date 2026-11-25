@@ -322,6 +322,13 @@ func newBoard() *board {
 		group:       defaultGrouping(),
 		configGroup: defaultGrouping(),
 	}
+	// The table's page keys are the ones the registry names (#1165). Its own
+	// f/b and d/u paged the narrow archive unannounced, where `f` is the fold
+	// key on the wide one; `g` was taken from it the same way (task 009).
+	b.tbl.KeyMap.PageDown.SetKeys("pgdown")
+	b.tbl.KeyMap.PageUp.SetKeys("pgup")
+	b.tbl.KeyMap.HalfPageDown.SetKeys("ctrl+d")
+	b.tbl.KeyMap.HalfPageUp.SetKeys("ctrl+u")
 	b.applyStyles()
 	b.reload = b.rescope
 	return b
@@ -1023,8 +1030,11 @@ func (b *board) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	case opKey(keymap.AttentionFilter):
 		// The cursor is not touched, for `g`'s reason: selectedID names the
 		// task under it, and the next render puts the cursor back on it when
-		// it is still listed.
-		b.attentionOnly = !b.attentionOnly
+		// it is still listed. Not on the archive (#1165): an archived task
+		// never needs a human, so the filter could only empty the board.
+		if !b.archived {
+			b.attentionOnly = !b.attentionOnly
+		}
 		return b, nil
 	case "g":
 		// Cycles the grouping for the session (§15, task 009); the config

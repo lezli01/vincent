@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"cmp"
 	"fmt"
 	"strings"
 
@@ -80,15 +81,26 @@ func (f *paneFind) highlight(lines []string) []string {
 
 // bar is the line under the pane: the find line while typing, the count and
 // the keys once committed.
+//
+// The search is opened by the filter operation, which a user may move (task
+// 118), so the bar prints the key in force rather than a literal `/`
+// (#1165): the prompt is the key that opened it, and "again" is offered
+// only while that key is bound.
 func (f *paneFind) bar(width int, note string) string {
+	key := opKey(keymap.Filter)
+	prompt := cmp.Or(key, "/")
 	if f.typing {
-		return lineField(styleKey.Render("/"), &f.buf, "  enter search · esc cancel", width)
+		return lineField(styleKey.Render(prompt), &f.buf, "  enter search · esc cancel", width)
 	}
 	count := "no match"
 	if len(f.hits) > 0 {
 		count = fmt.Sprintf("match %d/%d", f.cur+1, len(f.hits))
 	}
-	text := fmt.Sprintf("/%s  %s · n next · N previous · / again · esc ends the search", f.query, count)
+	again := ""
+	if key != "" {
+		again = key + " again · "
+	}
+	text := fmt.Sprintf("%s%s  %s · n next · N previous · %sesc ends the search", prompt, f.query, count, again)
 	if note != "" {
 		text += " · " + note
 	}

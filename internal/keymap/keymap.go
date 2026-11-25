@@ -334,7 +334,7 @@ var catalog = []Info{
 	// Typing for the same reason: it is pressed from the composer (task 169
 	// decision 3).
 	{Op: ChatDiff, Default: "alt+d", Meaning: "show the chat's diff in place of the conversation, to review it hunk by hunk", Kind: KindTerm, Surfaces: []Surface{
-		"chat",
+		"chat", "chat diff",
 	}, Typing: true},
 	// Typing too: it is pressed from the composer, and pressed again from the
 	// conversation it goes back.
