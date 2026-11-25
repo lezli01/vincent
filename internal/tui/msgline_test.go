@@ -160,12 +160,13 @@ func TestStatusLineLeavesQuestionsAndBannersAlone(t *testing.T) {
 	}
 }
 
-// #1164: a long error keeps its start at 80 columns; the end is cut.
+// #1164: a long error keeps its start at 80 columns; the end is cut. Since
+// #1207 it is cut on the row above the footer rather than on the footer.
 func TestStatusErrorKeepsItsStartAt80(t *testing.T) {
 	m := phaseRoot(t, phaseConnected, 80, 24)
 	msg := "comment: the daemon refused the request because the issue is mirrored from GitHub and vincent never posts there"
 	m.status.result(msg, true)
-	got := rootFooter(m)
+	got := frameLines(m)[22]
 	if !strings.HasPrefix(got, " comment: the daemon refused") {
 		t.Errorf("the error lost its start: %q", got)
 	}
@@ -179,4 +180,106 @@ func TestStatusErrorKeepsItsStartAt80(t *testing.T) {
 func buildFooterStatusLine(h *statusHolder) string {
 	line, _ := buildFooterStatus(120, nil, nil, taskActions{}, attentionTally{}, false, false, h.shown())
 	return ansi.Strip(line)
+}
+
+// frameLines is the root's whole frame, stripped, one entry per row.
+func frameLines(m *root) []string { return strings.Split(ansi.Strip(content(m)), "\n") }
+
+// #1207: a result the footer would cut takes one row above it, whole, and
+// the frame still fills the terminal with the footer on its last row.
+func TestStatusLongResultTakesARowAboveTheFooter(t *testing.T) {
+	m := phaseRoot(t, phaseConnected, 80, 24)
+	msg := "comment: the daemon refused the request: the issue is mirrored from GitHub"
+	m.status.result(msg, true)
+	lines := frameLines(m)
+	if len(lines) != 24 {
+		t.Fatalf("the frame is %d rows, want 24", len(lines))
+	}
+	if got := lines[22]; got != " "+msg {
+		t.Errorf("the row above the footer is %q, want the whole error", got)
+	}
+	if strings.Contains(lines[23], "comment:") {
+		t.Errorf("the footer repeats the error: %q", lines[23])
+	}
+	if !strings.Contains(lines[23], "quit") {
+		t.Errorf("the footer is not the last row: %q", lines[23])
+	}
+	body := m.bodyHeight()
+	m.status.result("retry · now running", false)
+	if m.bodyHeight() != body+1 {
+		t.Errorf("the body did not get its row back: %d, was %d", m.bodyHeight(), body)
+	}
+	lines = frameLines(m)
+	if len(lines) != 24 || strings.Contains(strings.Join(lines, "\n"), "comment:") {
+		t.Fatalf("the row outlived its message:\n%s", strings.Join(lines, "\n"))
+	}
+	if !strings.Contains(lines[23], "retry · now running") {
+		t.Errorf("a short result does not lead the footer: %q", lines[23])
+	}
+	m.status.result(msg, true)
+	m.status.clear()
+	if len(frameLines(m)) != 24 || m.bodyHeight() != body+1 {
+		t.Error("the row outlived a cleared line")
+	}
+}
+
+// #1207: the row is one row — a result wider than the terminal is cut with
+// "…" at its end.
+func TestStatusRowIsCutBeyondOneRow(t *testing.T) {
+	m := phaseRoot(t, phaseConnected, 80, 24)
+	m.status.result("x "+strings.Repeat("long ", 40), false)
+	lines := frameLines(m)
+	if len(lines) != 24 {
+		t.Fatalf("the frame is %d rows, want 24", len(lines))
+	}
+	if w := ansi.StringWidth(lines[22]); w > 80 || !strings.HasSuffix(lines[22], "…") {
+		t.Errorf("the row is %d cells and %q", w, lines[22])
+	}
+}
+
+// #1207: a note stays on the footer row, cut there, and moves nothing.
+func TestStatusLongNoteStaysOneRow(t *testing.T) {
+	m := phaseRoot(t, phaseConnected, 80, 24)
+	body := m.bodyHeight()
+	m.status.note("approve: not available while the task is running its third step of a long workflow", true)
+	if m.bodyHeight() != body {
+		t.Errorf("a note took a row: body %d, was %d", m.bodyHeight(), body)
+	}
+	if _, ok := m.statusRow(); ok {
+		t.Error("a note took the status row")
+	}
+	lines := frameLines(m)
+	if !strings.HasPrefix(lines[23], " approve: not available") {
+		t.Errorf("the note does not lead the footer: %q", lines[23])
+	}
+}
+
+// #1207: with the row up, the footer is still the last row, and a click on
+// its hint still fires it; a click on the row itself does nothing.
+func TestStatusRowKeepsFooterClicks(t *testing.T) {
+	m := phaseRoot(t, phaseConnected, 120, 40)
+	m.status.result("archive: "+strings.Repeat("the worktree is dirty ", 6), true)
+	content(m)
+	if _, ok := m.statusRow(); !ok {
+		t.Fatal("the long result did not take the row")
+	}
+	var quit *footerHit
+	for i, h := range m.footerHits {
+		if h.key == "q" {
+			quit = &m.footerHits[i]
+		}
+	}
+	if quit == nil {
+		t.Fatalf("no q span in the footer hits: %+v", m.footerHits)
+	}
+	if _, cmd := m.Update(tea.MouseClickMsg{X: quit.x0, Y: 38, Button: tea.MouseLeft}); cmd != nil {
+		t.Errorf("a click on the status row did something: %T", cmd())
+	}
+	_, cmd := m.Update(tea.MouseClickMsg{X: quit.x0, Y: 39, Button: tea.MouseLeft})
+	if cmd == nil {
+		t.Fatal("clicking the quit hint produced no command")
+	}
+	if _, ok := cmd().(tea.QuitMsg); !ok {
+		t.Fatalf("clicking the quit hint produced %T, want tea.Quit", cmd())
+	}
 }

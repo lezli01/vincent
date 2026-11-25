@@ -620,6 +620,9 @@ func (m *root) updateMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	if _, ok := m.statusRow(); ok && msg.Y == m.height-2 {
+		return m, nil // the status row (#1207) is not the screen's
+	}
 	if m.connScreen() {
 		// The body is the connection screen, not the view behind it (#793,
 		// review F3).
@@ -2712,6 +2715,10 @@ func (m *root) View() tea.View {
 	}
 	b.WriteString(m.body())
 	b.WriteString("\n")
+	if row, ok := m.statusRow(); ok {
+		b.WriteString(row)
+		b.WriteString("\n")
+	}
 	b.WriteString(m.footerLine())
 	frame := b.String()
 	if popup, ok := m.popupRender(); ok {
@@ -3006,7 +3013,7 @@ func (m *root) footerLine() string {
 		// to retry, and the pinned palette, help and quit — never the rows of
 		// the view hidden behind it (#793).
 		retry := m.phase == phaseFailed || m.phase == phaseReconnecting
-		line, hits := buildFooterStatus(m.width, nil, nil, taskActions{}, attentionTally{}, retry, m.activeCapturesInput(), m.status.shown())
+		line, hits := buildFooterStatus(m.width, nil, nil, taskActions{}, attentionTally{}, retry, m.activeCapturesInput(), m.footerStatus())
 		m.footerHits = hits
 		return line
 	}
@@ -3029,8 +3036,8 @@ func (m *root) footerLine() string {
 	if s, ok := m.views[viewHome].(*shell); ok && !m.popupOpen() {
 		attention = s.board.attentionTally()
 	}
+	bar = m.activeBar()
 	if s, ok := m.views[m.active].(*shell); ok {
-		bar = s.bar
 		if m.phase == phaseConnected {
 			target = s.board.target()
 			// E reaches the board's detail panes (shell.go), so it is hinted
@@ -3046,7 +3053,6 @@ func (m *root) footerLine() string {
 			target.answerOpens = true
 		}
 	} else if t, ok := m.views[m.active].(*taskView); ok {
-		bar = t.detail.actions
 		if m.phase == phaseConnected {
 			target = popupFreeTarget(t)
 		}
@@ -3069,8 +3075,9 @@ func (m *root) footerLine() string {
 	pill := m.footerPill()
 	pw := ansi.StringWidth(pill)
 	// The status line leads (#1164): the root's, on every screen, whether
-	// or not the screen has an action bar.
-	line, hits := buildFooterStatus(m.width-pw, rows, bar, target, attention, retry, m.activeCapturesInput(), m.status.shown())
+	// or not the screen has an action bar — unless it is on its own row
+	// above (#1207).
+	line, hits := buildFooterStatus(m.width-pw, rows, bar, target, attention, retry, m.activeCapturesInput(), m.footerStatus())
 	for i := range hits {
 		hits[i].x0 += pw
 		hits[i].x1 += pw
@@ -3079,10 +3086,77 @@ func (m *root) footerLine() string {
 	return pill + line
 }
 
+// activeBar is the active screen's action bar, nil on a screen without one.
+func (m *root) activeBar() *actionBar {
+	switch v := m.views[m.active].(type) {
+	case *shell:
+		return v.bar
+	case *taskView:
+		return v.detail.actions
+	}
+	return nil
+}
+
+// footerStatusRoom is how many cells the footer gives the status line when
+// it leads it, and whether the footer shows the status at all: the help
+// overlay, a root popup, a view's question and the action bar's y/n each own
+// the key row, and the status waits under them (#1164). It mirrors the
+// branches of footerLine and the lead budget of buildFooterStatus.
+func (m *root) footerStatusRoom() (int, bool) {
+	if m.width <= 0 || m.help {
+		return 0, false
+	}
+	if _, ok := m.popupContext(); ok {
+		return 0, false
+	}
+	textField := m.activeCapturesInput()
+	if m.connScreen() {
+		return footerLeadRoom(m.width, textField), true
+	}
+	if p, ok := m.views[m.active].(prompter); ok && len(p.promptKeys()) > 0 {
+		return 0, false
+	}
+	if bar := m.activeBar(); bar != nil && bar.capturing() {
+		return 0, false
+	}
+	return footerLeadRoom(m.width-ansi.StringWidth(m.footerPill()), textField), true
+}
+
+// statusRow is the row a result or an error the footer would cut takes
+// above the footer while it is shown (#1207). One footer row cut a long
+// report from the right — the archived board's delete report lost its
+// `failed:` clause at 80 columns, which #790 had wrapped to keep — so news
+// the human has not read yet gets the terminal's whole width instead, cut
+// with "…" only beyond that. A note stays on the footer row and is cut
+// there: it explains the key just pressed and goes with the next one, so
+// moving the layout for it would shift the screen under every key press.
+// The row goes as soon as the message is replaced or cleared; the root
+// counts it in bodyHeight, so the body shrinks by one rather than being
+// overlapped, and the footer stays the last row, where clicks look for it.
+func (m *root) statusRow() (string, bool) {
+	room, ok := m.footerStatusRoom()
+	if !ok || !m.status.overflows(room) {
+		return "", false
+	}
+	return " " + m.status.styled(ansi.Truncate(m.status.text, max(m.width-1, 1), "…")), true
+}
+
+// footerStatus is the status as the footer leads with it: none while it has
+// its own row above (#1207).
+func (m *root) footerStatus() string {
+	if _, ok := m.statusRow(); ok {
+		return ""
+	}
+	return m.status.shown()
+}
+
 // bodyHeight is the space left for the active view: total minus header,
-// event line, and footer.
+// event line, footer, and the status row while one is up (#1207).
 func (m *root) bodyHeight() int {
 	chrome := m.chromeTop() + 1
+	if _, ok := m.statusRow(); ok {
+		chrome++
+	}
 	if m.height <= chrome {
 		return 0
 	}

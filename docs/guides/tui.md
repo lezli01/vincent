@@ -95,8 +95,12 @@ end of the footer is where vincent answers a key: what an action did
 explanation or a hint goes away with your next key, click, wheel turn or tab
 change; a result or an error stays until a newer message replaces it, even
 across screens, so you can read it after looking elsewhere. Only the newest
-message is shown. A long one is cut at the right edge, keeping its start, and
-the keys follow it while there is room. A question that waits for your answer
+message is shown, and the keys follow it while there is room. A result or an
+error too long for the footer gets one row of its own just above it, the
+terminal's whole width, so a long report — the archived board's delete report
+with its `failed:` part, say — reads in full; the row goes when the message is
+replaced. A long explanation or hint stays on the footer and is cut at the
+right edge, keeping its start. A question that waits for your answer
 is not a message: it takes the footer until you answer it.
 
 ### Main tabs
