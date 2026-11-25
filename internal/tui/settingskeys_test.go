@@ -70,6 +70,16 @@ func init() {
 				t.Fatal("esc did not go back to Settings")
 			}
 		},
+		// #1165.
+		"g": func(t *testing.T) {
+			v := bindingsFixture(t)
+			v.updateKey(synthKey("down"))
+			v.updateKey(synthKey("down"))
+			v.updateKey(registryKey(t, "g"))
+			if v.bindings.cursor != 0 {
+				t.Fatalf("g left the cursor on %d", v.bindings.cursor)
+			}
+		},
 		"t": func(t *testing.T) {
 			v := bindingsFixture(t)
 			v.updateKey(registryKey(t, "t"))

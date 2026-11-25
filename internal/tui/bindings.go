@@ -557,7 +557,7 @@ var bindings = []binding{
 	// One hint for the four arrows (#1073): moving is what every board
 	// reader already knows, so it takes one of the six slots, not two, and
 	// `n new` gets the other. The board's columns are called columns.
-	{key: "down", label: "move up and down the column (↑/↓)", scope: scopePanel, context: ctxTasks, hint: "↑↓←→ move", priority: 5},
+	{key: "down", label: "move up and down the column (↑/↓ or j/k)", scope: scopePanel, context: ctxTasks, hint: "↑↓←→ move", priority: 5},
 	{op: keymap.OpenRow, key: "enter", label: "open the selected task in its full-screen workspace", scope: scopePanel, context: ctxTasks, hint: "enter open", priority: 1, term: termOpenRow},
 	{op: keymap.New, key: "n", label: "new task — for the project you are looking at", scope: scopePanel, context: ctxTasks, hint: "n new", priority: 2, echo: true, noPalette: true},
 	{op: keymap.Filter, key: "/", label: "filter by id, title, state, issue, workflow, step, branch or pull request number", scope: scopePanel, context: ctxTasks, hint: "/ filter", priority: 3, term: termFilter},
@@ -753,6 +753,21 @@ var bindings = []binding{
 	{op: keymap.Filter, key: "/", label: "filter by id, title, state, issue, workflow, step, branch or pull request number", scope: scopePanel, context: ctxArchived, priority: 5, term: termFilter},
 	{key: "space", label: "select this task for the bulk delete (V selects every row the filter is showing)", scope: scopePanel, context: ctxArchived, priority: 6},
 	{op: keymap.Refresh, key: "R", label: "reload the board", scope: scopePanel, context: ctxArchived, priority: 7, term: termRefresh},
+	// The board's own keys, which the archived mode answers unchanged and
+	// the registry had listed under ctxTasks only (#1165): `?`, the palette
+	// and the footer describe the focused context, so on this screen they
+	// never named them. The narrow list is a table and the wide one cards
+	// (§15 view 10), and `g` and ←/→ are the two keys whose meaning differs
+	// between them; their labels say both.
+	{key: "down", label: "move through the archive (↑/↓ or j/k)", scope: scopePanel, context: ctxArchived, priority: 8},
+	{key: "pgdown", label: "move a page (pgup/pgdown; ctrl+d/ctrl+u half a page on the narrow list), or to the first or last task (home/end, G)", scope: scopePanel, context: ctxArchived, priority: 9},
+	{key: "g", label: "on the narrow list, cycle the grouping; on the wide cards, jump to the first card (G/end to the last)", scope: scopePanel, context: ctxArchived, priority: 10},
+	{key: "right", label: "on the wide cards, move across a row (←/→); on the narrow list, open the group under the cursor (← closes it)", scope: scopePanel, context: ctxArchived, priority: 11},
+	{key: "f", label: "on the wide cards, fold or open the issue group under the cursor", scope: scopePanel, context: ctxArchived, priority: 12},
+	{key: "C", label: "fold every group", scope: scopePanel, context: ctxArchived, priority: 13},
+	{key: "O", label: "open every group", scope: scopePanel, context: ctxArchived, priority: 14},
+	{key: boardSortKey, label: "cycle the order: by state, newest, oldest, title", scope: scopePanel, context: ctxArchived, hint: "z sort", priority: 15},
+	{key: copyPickKey, label: "copy the selected task's id, branch, worktree path or pull request", scope: scopePanel, context: ctxArchived, hint: "ctrl+y copy", priority: 16},
 
 	// The connection screen. `r` is retry-connecting, a fixed key (task 118
 	// decision 8); the footer draws it from its retry segment, so the row is
@@ -770,6 +785,10 @@ var bindings = []binding{
 	{op: keymap.Refresh, key: "R", label: "reload the board", scope: scopePanel, context: ctxArchivedChats, priority: 6, term: termRefresh},
 	{op: keymap.ExportChat, key: "alt+w", label: chatExportLabel, scope: scopePanel, context: ctxArchivedChats, priority: 7},
 	{op: keymap.Rename, key: "r", label: "rename the chat (the branch keeps its name)", scope: scopePanel, context: ctxArchivedChats, priority: 8, term: termRename},
+	// The list keys both chats boards answer (#804 AR-7), unregistered on
+	// either until #1165.
+	{key: "down", label: "move through the archive (↑/↓ or j/k)", scope: scopePanel, context: ctxArchivedChats, priority: 9},
+	{key: "pgdown", label: "move a page (pgup/pgdown), or to the first or last chat (home/end)", scope: scopePanel, context: ctxArchivedChats, priority: 10},
 
 	// Chats board. Its tab row exists only while chats is one of tui.tabs:
 	// mainTabRows drops it otherwise.
@@ -805,6 +824,9 @@ var bindings = []binding{
 	{op: keymap.Refresh, key: "R", label: "read both sides again", scope: scopePanel, context: ctxCompare, hint: "R reload", priority: 5, term: termRefresh},
 	{key: "esc", label: "go back to where the comparison was opened from", scope: scopePanel, context: ctxCompare, hint: "esc back", priority: 6, noPalette: true},
 	{op: keymap.ExportChat, key: "alt+w", label: chatExportLabel, scope: scopePanel, context: ctxChats, priority: 7},
+	// The list keys (#804 AR-7), unregistered until #1165.
+	{key: "down", label: "move through the chats (↑/↓ or j/k)", scope: scopePanel, context: ctxChats, priority: 21},
+	{key: "pgdown", label: "move a page (pgup/pgdown), or to the first or last chat (home/end)", scope: scopePanel, context: ctxChats, priority: 22},
 	// Task 161 decision 6: the prompt is prefilled with the title, and the
 	// branch keeps the slug it was cut with.
 	{op: keymap.Rename, key: "r", label: "rename the chat (the branch keeps its name)", scope: scopePanel, context: ctxChats, hint: "r rename", priority: 8, term: termRename},
@@ -933,13 +955,18 @@ var bindings = []binding{
 	{key: diffReloadKey, label: "read the diff again", scope: scopePanel, context: ctxChatDiff, hint: "ctrl+r reload", priority: 5},
 	{op: keymap.Filter, key: "/", label: "search the diff, every file opened — n and N then walk the matches, esc ends the search", scope: scopePanel, context: ctxChatDiff, hint: "/ search", priority: 13, term: termFilter},
 	{key: copyPickKey, label: "copy the selected hunk or the file's diff", scope: scopePanel, context: ctxChatDiff, hint: "ctrl+y copy", priority: 14},
-	{key: "down", label: "move between the files (↑/↓); the pane scrolls to keep the file in view", scope: scopePanel, context: ctxChatDiff, hint: "↑/↓ files", priority: 6},
-	{key: "enter", label: "expand or collapse the file under the cursor (space and →/← too)", scope: scopePanel, context: ctxChatDiff, hint: "enter fold", priority: 7},
+	{key: "down", label: "move between the files (↑/↓ or j/k); the pane scrolls to keep the file in view", scope: scopePanel, context: ctxChatDiff, hint: "↑/↓ files", priority: 6},
+	{key: "enter", label: "expand or collapse the file under the cursor (space, →/← and l/h too)", scope: scopePanel, context: ctxChatDiff, hint: "enter fold", priority: 7},
 	{key: "O", label: "expand every file", scope: scopePanel, context: ctxChatDiff, hint: "O/C fold all", priority: 8},
 	{key: "C", label: "collapse every file", scope: scopePanel, context: ctxChatDiff, priority: 9, aliased: true},
-	{key: "pgdown", label: "page the diff (pgup/pgdown, ctrl+d/ctrl+u)", scope: scopePanel, context: ctxChatDiff, priority: 10},
+	{key: "pgdown", label: "page the diff (pgup/pgdown or f/b; half a page with ctrl+d/ctrl+u or d/u)", scope: scopePanel, context: ctxChatDiff, priority: 10},
 	{key: "shift+right", label: "pan long lines (shift+←/→)", scope: scopePanel, context: ctxChatDiff, priority: 11},
 	{key: "esc", label: "go back to the conversation and the composer, the draft untouched", scope: scopePanel, context: ctxChatDiff, hint: "esc back", priority: 12},
+	// The task Diff's line scroll, on the same pane type (#1163), and the
+	// key that opened the pane, which closes it too — both answered here
+	// without a row until #1165.
+	{key: "alt+down", label: "scroll the diff one line (alt+↑/alt+↓); ↑/↓ move between files", scope: scopePanel, context: ctxChatDiff, priority: 15},
+	{op: keymap.ChatDiff, key: "alt+d", label: "go back to the conversation, as esc does — the key that opened the diff closes it", scope: scopePanel, context: ctxChatDiff, priority: 16},
 	{key: "down", label: "move the line cursor (j/k and ↑/↓)", scope: scopePanel, context: ctxChatConversation, hint: "j/k move", priority: 1},
 	{op: keymap.Conversation, key: "alt+o", label: "give the keyboard back to the composer (esc and i too)", scope: scopePanel, context: ctxChatConversation, priority: 12},
 	{key: "enter", label: "expand or fold the tool call or shell output under the cursor — it draws as at verbose, the level stays", scope: scopePanel, context: ctxChatConversation, hint: "enter expand", priority: 2},
@@ -1315,10 +1342,12 @@ var bindings = []binding{
 	// own key line, so these are here to keep ? complete.
 	// The key-bindings screen (#1079) prints its own key line; these keep ?
 	// and the footer honest.
-	{key: "down", label: "move through the operations (↑/↓, pgup/pgdown, home/end)", scope: scopePanel, context: ctxKeyBindings, hint: "↑↓ move", priority: 1, noPalette: true},
+	{key: "down", label: "move through the operations (↑/↓ or j/k, pgup/pgdown)", scope: scopePanel, context: ctxKeyBindings, hint: "↑↓ move", priority: 1, noPalette: true},
 	{key: "enter", label: "set the operation's key by pressing it — a clash is named before anything is saved", scope: scopePanel, context: ctxKeyBindings, hint: "enter set", priority: 2, noPalette: true},
 	{key: "backspace", label: "put the operation back on its default key", scope: scopePanel, context: ctxKeyBindings, hint: "backspace default", priority: 3, noPalette: true},
 	{key: "u", label: "undo the last change: put the operation's key back, a reset included", scope: scopePanel, context: ctxKeyBindings, hint: "u undo", priority: 6, noPalette: true},
+	// #1165: the jumps were answered and named nowhere.
+	{key: "g", label: "jump to the first operation (g/home; G/end to the last)", scope: scopePanel, context: ctxKeyBindings, priority: 7, noPalette: true},
 	{op: keymap.FreeText, key: "t", label: "type every binding as one line of operation=key pairs, to paste a whole keymap", scope: scopePanel, context: ctxKeyBindings, priority: 5, noPalette: true, term: termFreeText},
 	{key: "esc", label: "back to Settings", scope: scopePanel, context: ctxKeyBindings, hint: "esc back", priority: 4, noPalette: true},
 	{key: "left", label: "choose a value, for a key with a fixed vocabulary (←/→)", scope: scopePanel, context: ctxConfigEdit, noPalette: true},

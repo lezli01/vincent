@@ -230,3 +230,19 @@ func TestSearchDoesNotFollowIntoTheNextTask(t *testing.T) {
 		t.Fatal("the Diff search followed into the next task")
 	}
 }
+
+// #1165: the find bar names the filter key in force, not a literal `/` — the
+// search is opened by an operation a user may move.
+func TestPaneFindBarNamesTheReboundKey(t *testing.T) {
+	withKeymap(t, map[string]string{"filter": "f17"})
+	var f paneFind
+	f.open()
+	if got := ansi.Strip(f.bar(120, "")); !strings.HasPrefix(got, "f17") {
+		t.Fatalf("the typing bar does not lead with the key in force: %q", got)
+	}
+	f.typing, f.query = false, "beta"
+	got := ansi.Strip(f.bar(120, ""))
+	if !strings.Contains(got, "f17 again") || strings.Contains(got, "/ again") {
+		t.Fatalf("the bar does not offer the key in force: %q", got)
+	}
+}
