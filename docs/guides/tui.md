@@ -943,7 +943,7 @@ output. It is the sentence that decides whether to open the transcript.
 | `←`/`→` or `h`/`l` | On Output, select which attempt's output to show |
 | `f` or `G` | Follow the live output again |
 | `g` or `home` | On Output, jump to the top (follow stops) |
-| `/` | On Output or Diff, search: type, `enter` lands on the first match and draws it reversed; `n` / `N` then walk the matches, wrapping, `/` searches again and `esc` ends the search and clears its highlight — while it runs `n` and `N` are the search's, and they mean new task and next failure again after. With a lane selected, Output searches that lane's output, the one on screen; opening another task starts without a search |
+| `/` | On Output or Diff, search: type, `enter` lands on the first match and draws it reversed; `n` / `N` then walk the matches, wrapping, `/` searches again and `esc` ends the search and clears its highlight — while it runs `n` and `N` are the search's, and they mean new task and next failure again after. With a lane selected, Output searches that lane's output, the one on screen; opening another task starts without a search. A confirmation waiting for `y`/`n` takes `n`, `N` and `esc` before the search does |
 | `v` | More or less detail: quiet → compact → normal → verbose (tool lines, then reasoning, the run's own metadata, then unrecognized lines) |
 | `ctrl+o` | Show the assistant's original Markdown instead of the rendered view |
 | `ctrl+y` | Copy the task's id, branch, worktree path, pull request (`owner/repo#N`) or its URL — the one the daemon's record of it carries, so a GitHub Enterprise pull request copies its own host's address; a pull request you unlinked offers neither — from any tab — and, on Output, the attempt's whole output as plain text, an assistant message, its plain text, or one of its code blocks; on Diff, the selected hunk (the one `]`/`[` stand on) or the file's whole diff |
@@ -3193,7 +3193,9 @@ files are not. It is grouped by file and starts folded, like the task's.
 | `x` | **Reject** the selected hunk: it asks first, then it is reverted in the chat's directory, and a note for the agent is put at the top of your draft |
 | `a` | **Accept** the selected hunk — a review mark and nothing else; on an accepted hunk it clears the mark |
 | `s` | Switch scope: the changes **since the base**, or **since the last turn** |
-| `r` | Read the diff again |
+| `ctrl+r` | Read the diff again — the key the task's Diff tab uses |
+| `/` | Search the diff, every file opened: `enter` lands on the first match, `n` / `N` walk the matches, `esc` ends the search (a second `esc` goes back to the conversation); leaving the diff ends it |
+| `ctrl+y` | Copy the selected hunk (the one `]`/`[` stand on) or the file's whole diff, as plain text |
 | `↑`/`↓` | Move between files |
 | `enter` or `space` | Expand or collapse the file under the cursor (`→`/`←` too) |
 | `O` / `C` | Expand / collapse every file |

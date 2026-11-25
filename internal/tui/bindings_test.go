@@ -3786,10 +3786,25 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatalf("s left the scope at %q", v.diffScope())
 			}
 		},
-		"r": func(t *testing.T) {
+		"ctrl+r": func(t *testing.T) {
 			v := chatDiffFixture(t)
-			if _, cmd := v.updateKey(registryKey(t, "r")); cmd == nil || !v.diff.fetching {
-				t.Fatal("r did not read the diff again")
+			if _, cmd := v.updateKey(registryKey(t, "ctrl+r")); cmd == nil || !v.diff.fetching {
+				t.Fatal("ctrl+r did not read the diff again")
+			}
+		},
+		"/": func(t *testing.T) {
+			v := chatDiffFixture(t)
+			v.updateKey(registryKey(t, "/"))
+			if !v.diff.pane.find.typing {
+				t.Fatal("/ on the chat diff did not open the search")
+			}
+		},
+		"ctrl+y": func(t *testing.T) {
+			v := chatDiffFixture(t)
+			v.updateKey(registryKey(t, "]"))
+			_, cmd := v.updateKey(registryKey(t, "ctrl+y"))
+			if msg, ok := drain(cmd).(openCopyPickerMsg); !ok || len(msg.items) == 0 || msg.items[0].label != "this hunk" {
+				t.Fatalf("ctrl+y on the chat diff produced %#v", msg)
 			}
 		},
 		"down": func(t *testing.T) {

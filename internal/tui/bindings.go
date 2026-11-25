@@ -263,7 +263,8 @@ const (
 	// context because while it is open it owns the keyboard, and its keys are
 	// nothing like the log pane's underneath it.
 	ctxConfigEdit bindingContext = "config editor"
-	// ctxPaneFind is a search running on a task's Output or Diff (#1074).
+	// ctxPaneFind is a search running on a task's Output or Diff (#1074), or
+	// on the chat diff (#1163).
 	ctxPaneFind bindingContext = "find in pane"
 	// ctxKeyBindings is Settings' key-bindings screen (#1079).
 	ctxKeyBindings bindingContext = "key bindings"
@@ -698,7 +699,8 @@ var bindings = []binding{
 	{op: keymap.Filter, key: "/", label: "search the diff, every file opened — n and N then walk the matches, esc ends the search", scope: scopePanel, context: ctxDiff, hint: "/ search", priority: 12, term: termFilter},
 	{key: "alt+down", label: "scroll the diff one line (alt+↑/alt+↓); ↑/↓ move between files", scope: scopePanel, context: ctxDiff, priority: 13},
 	{key: diffReloadKey, label: "read the diff again — a step ending reads it again too", scope: scopePanel, context: ctxDiff, hint: "ctrl+r reload", priority: 14},
-	// The search layer's own keys (#1074), over Output or Diff.
+	// The search layer's own keys (#1074), over Output, Diff or the chat
+	// diff (#1163).
 	{key: "n", label: "the next match, wrapping", scope: scopePanel, context: ctxPaneFind, hint: "n next", priority: 1, noPalette: true},
 	{key: "N", label: "the previous match, wrapping", scope: scopePanel, context: ctxPaneFind, hint: "N previous", priority: 2, noPalette: true},
 	{op: keymap.Filter, key: "/", label: "search again", scope: scopePanel, context: ctxPaneFind, hint: "/ again", priority: 3, noPalette: true, term: termFilter},
@@ -927,7 +929,10 @@ var bindings = []binding{
 	{key: "x", label: "reject the selected hunk (asks first): it is reverted in the chat's directory and a note for the agent opens your draft", scope: scopePanel, context: ctxChatDiff, hint: "x reject", priority: 2},
 	{key: "a", label: "accept the selected hunk — a review mark only; on an accepted hunk it clears the mark", scope: scopePanel, context: ctxChatDiff, hint: "a accept", priority: 3},
 	{key: "s", label: "switch between the changes since the base and since the last turn", scope: scopePanel, context: ctxChatDiff, hint: "s scope", priority: 4},
-	{key: "r", label: "read the diff again", scope: scopePanel, context: ctxChatDiff, hint: "r reload", priority: 5},
+	// #1163: the task Diff's keys — ctrl+r reloads, / searches, ctrl+y copies.
+	{key: diffReloadKey, label: "read the diff again", scope: scopePanel, context: ctxChatDiff, hint: "ctrl+r reload", priority: 5},
+	{op: keymap.Filter, key: "/", label: "search the diff, every file opened — n and N then walk the matches, esc ends the search", scope: scopePanel, context: ctxChatDiff, hint: "/ search", priority: 13, term: termFilter},
+	{key: copyPickKey, label: "copy the selected hunk or the file's diff", scope: scopePanel, context: ctxChatDiff, hint: "ctrl+y copy", priority: 14},
 	{key: "down", label: "move between the files (↑/↓); the pane scrolls to keep the file in view", scope: scopePanel, context: ctxChatDiff, hint: "↑/↓ files", priority: 6},
 	{key: "enter", label: "expand or collapse the file under the cursor (space and →/← too)", scope: scopePanel, context: ctxChatDiff, hint: "enter fold", priority: 7},
 	{key: "O", label: "expand every file", scope: scopePanel, context: ctxChatDiff, hint: "O/C fold all", priority: 8},
