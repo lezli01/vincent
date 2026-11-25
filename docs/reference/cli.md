@@ -81,7 +81,7 @@ Opens the TUI, starting a daemon in the background if none is reachable.
 and only then an all-digit value as a project id, so a project named `3` is
 reached by `--project 3`. A value that names no registered project is not an
 error: the TUI falls through to the [next rule](../guides/tui.md#the-startup-project)
-and says so on the line under the header.
+and says so on the [status line](../guides/tui.md#layout).
 
 ### What only the TUI does
 

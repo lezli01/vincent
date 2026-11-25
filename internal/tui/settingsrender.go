@@ -161,8 +161,7 @@ func (v *settingsView) settingsPane(w, h int) []string {
 		title = ic("⌕ Results")
 	}
 	right := ""
-	switch {
-	case v.form != nil && v.form.confirming:
+	if v.form != nil && v.form.confirming {
 		right = formPill(false, attentionBadge+" confirm")
 	}
 	s := v.settingsStack(max(w-4, 1))

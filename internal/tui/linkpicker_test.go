@@ -295,7 +295,7 @@ func yielded[T tea.Msg](t *testing.T, cmd tea.Cmd) T {
 }
 
 // taskOutputRoot is the task workspace on its Output tab, showing linkDoc.
-func taskOutputRoot(t *testing.T) (*root, *taskView) {
+func taskOutputRoot(t *testing.T) *root {
 	t.Helper()
 	m := newRoot(testCtx(t), fakeConnector(), ackedDir(t))
 	m.phase = phaseConnected
@@ -305,14 +305,13 @@ func taskOutputRoot(t *testing.T) (*root, *taskView) {
 	loadDetail(d, []apiclient.StepRun{attempt(1, 0, 1, "implement", "running", true)})
 	d.records = []apiclient.TranscriptRecord{{Type: "agent.output", Text: linkDoc}}
 	m.switchTo(viewTask)
-	tv := m.views[viewTask].(*taskView)
-	tv.setTab(taskTabOutput)
-	return m, tv
+	m.views[viewTask].(*taskView).setTab(taskTabOutput)
+	return m
 }
 
 // TestLinkPickerThroughTheTaskRoot is the same path in the task workspace,
-// and the half decision 5 is about: the notices land in the pane's status,
-// never in the pull-request note.
+// and the half decision 5 is about: the notices land on the status line
+// (#1164).
 func TestLinkPickerThroughTheTaskRoot(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
@@ -325,7 +324,7 @@ func TestLinkPickerThroughTheTaskRoot(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			opened := withFakeOpener(t, tc.openErr)
-			m, _ := taskOutputRoot(t)
+			m := taskOutputRoot(t)
 			d := detailOf(m)
 
 			_, cmd := m.Update(tea.KeyPressMsg{Code: 'l', Mod: tea.ModCtrl})
@@ -346,7 +345,7 @@ func TestLinkPickerThroughTheTaskRoot(t *testing.T) {
 
 	t.Run("copies", func(t *testing.T) {
 		wrote := stubClipboard(t, nil)
-		m, _ := taskOutputRoot(t)
+		m := taskOutputRoot(t)
 		_, cmd := m.Update(tea.KeyPressMsg{Code: 'l', Mod: tea.ModCtrl})
 		m.Update(yielded[openLinkPickerMsg](t, cmd))
 		_, cmd = m.Update(tea.KeyPressMsg{Code: 'y', Mod: tea.ModCtrl})
@@ -566,7 +565,7 @@ func TestPaletteRunsTheLinkPicker(t *testing.T) {
 	}
 	chat := connectedChatRoot(t)
 	chat.views[viewChat].(*chatView).turnRecords[1] = []apiclient.TranscriptRecord{{Type: "agent.output", Text: linkDoc}}
-	task, _ := taskOutputRoot(t)
+	task := taskOutputRoot(t)
 
 	for name, m := range map[string]*root{"chat": chat, "task": task} {
 		t.Run(name, func(t *testing.T) {
