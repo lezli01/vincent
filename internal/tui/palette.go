@@ -310,6 +310,9 @@ const paletteReserve = 2
 // focused entry's whole label — a row cuts a long label with "…", and the
 // reserve is where it is read in full.
 func (p *palette) render(w, h int) string {
+	if p.jump {
+		return p.renderJump(w, h)
+	}
 	inner := max(w-2, 10)
 	lines := make([]string, 0, h)
 	p.input.SetWidth(max(inner-1, 1))
@@ -373,6 +376,50 @@ func (p *palette) render(w, h int) string {
 	return frame("commands", strings.Join(lines, "\n"), w, h, true)
 }
 
+// renderJump draws the screens menu (#1166). It is not the palette with its
+// search line emptied: at 80x24 that had read "go to press a screen's
+// letter" with the cursor over the placeholder, put two screens under
+// "▼ 2 more" while the focused-label reserve held two rows, one of them
+// empty, and carried the palette's own title. So: its own title, one line
+// of instruction where the prompt was, no section header (the title is the
+// section), the reserve only where every screen still fits beside it, and
+// the box as tall as what it holds, never taller than the shared popup box.
+func (p *palette) renderJump(w, h int) string {
+	inner := max(w-2, 10)
+	lines := []string{styleDim.Render(" press a screen's letter — or ↑/↓ and enter")}
+	m := p.entries
+	if len(m) == 0 {
+		return frame("screens", strings.Join(lines, "\n"), w, min(h, len(lines)+2), true)
+	}
+	cursor := min(p.cursor, len(m)-1)
+	rows := make([]string, 0, len(m))
+	entryRow := make([]int, 0, len(m))
+	for i, e := range m {
+		mark, style := "  ", styleDim
+		if i == cursor {
+			mark, style = styleFocus.Render("› "), styleTitle
+		}
+		entryRow = append(entryRow, len(rows))
+		rows = append(rows, mark+paletteRow(e, style, inner-2))
+	}
+	list := h - 2 - len(lines)
+	reserve := list >= len(rows)+paletteReserve+1
+	if reserve {
+		list -= paletteReserve + 1
+	}
+	shown, page := popupWindow(rows, entryRow, cursor, list)
+	p.page = page
+	p.listTop = 1 + len(lines)
+	lines = append(lines, shown...)
+	if reserve {
+		lines = append(lines, styleDim.Render(strings.Repeat("─", inner)))
+		for _, l := range wrapText(m[cursor].label, inner-1, wrapOpts{prefix: " ", indent: 1, maxLines: paletteReserve}) {
+			lines = append(lines, styleTitle.Render(l))
+		}
+	}
+	return frame("screens", strings.Join(lines, "\n"), w, min(h, len(lines)+2), true)
+}
+
 // paletteRow is one entry after the cursor mark: the label, then its key at
 // the right edge. The budget is measured in cells (task 135.10 decision 4):
 // the key is never cut, and when it leaves the label no room the label
@@ -418,8 +465,14 @@ var screenLetters = map[viewID]string{
 	viewArchivedChats: "A", viewTriggers: "T",
 }
 
+// keyBindingsLetter is the key-bindings screen's letter in the screens menu
+// (#1166). It is not a viewID — the screen is Settings opened on tui.keys —
+// so it has no place in screenLetters.
+const keyBindingsLetter = "k"
+
 // newGoToMenu is the screens menu: the palette's screen rows, each on its
-// letter.
+// letter — the key-bindings row too (#1166), which the palette lists among
+// its screens since #1158, on k.
 func newGoToMenu(github bool) *palette {
 	var entries []paletteEntry
 	for _, b := range withoutGitHub(registry(), github) {
@@ -430,10 +483,13 @@ func newGoToMenu(github bool) *palette {
 			group: "screens", label: b.label, nav: true, navTarget: b.navTarget,
 			global: true, letter: screenLetters[b.navTarget],
 		})
+		if b.navTarget == viewSettings {
+			kb := keyBindingsPaletteEntry()
+			kb.letter = keyBindingsLetter
+			entries = append(entries, kb)
+		}
 	}
 	p := newPalette(entries)
 	p.jump = true
-	p.input.SetPlaceholder("press a screen's letter — or ↑/↓ and enter")
-	p.input.SetPrompt("go to ")
 	return p
 }

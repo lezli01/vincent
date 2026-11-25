@@ -153,14 +153,14 @@ func TestChatSearchAgainstTheRealAPI(t *testing.T) {
 	m.openPalette()
 	found := false
 	for _, e := range m.palette.entries {
-		if e.nav && e.navTarget == viewChatSearch && strings.HasPrefix(e.label, "Search all chats") {
+		if e.nav && e.navTarget == viewChatSearch && strings.HasPrefix(e.label, "search all chats") {
 			found = true
 		}
 	}
 	if !found {
-		t.Fatal("the palette offers no Search all chats entry")
+		t.Fatal("the palette offers no search all chats entry")
 	}
-	typeRunes(m, p, "Search all chats")
+	typeRunes(m, p, "search all chats")
 	_, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	p.push(cmd)
 	p.until(5*time.Second, "the palette to open the search", func() bool { return m.active == viewChatSearch })
