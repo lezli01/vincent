@@ -1063,3 +1063,11 @@ func overlay(bg, fg string, x, y int) string {
 	}
 	return strings.Join(bgLines, "\n")
 }
+
+// setStatusHolder hands the root's status line to the one action bar both
+// sub-models drive (#1164), so the task workspace, which shares the bar,
+// posts there too.
+func (s *shell) setStatusHolder(h *statusHolder) { s.bar.setStatusHolder(h) }
+
+// status is the line the bar posts to.
+func (s *shell) status() *statusHolder { return s.bar.status() }

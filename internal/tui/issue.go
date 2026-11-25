@@ -290,9 +290,6 @@ func (v *issueView) update(msg tea.Msg) (panel, tea.Cmd) {
 			v.note = ""
 		}
 		return v, nil
-	case linkOpenedMsg:
-		v.setNote(msg.notice())
-		return v, nil
 	case noteMsg:
 		return v, v.updateNote(msg.note)
 	case tea.KeyPressMsg:

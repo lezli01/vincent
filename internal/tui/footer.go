@@ -24,7 +24,8 @@ import (
 // when the human is most lost.
 //
 // A confirmation or a status — `cancel #42? … (y/n)`, a failed retry — is
-// the exception (task 135.10 decision 2): it leads the line and is cut from
+// the exception (task 135.10 decision 2; the status is the TUI's one status
+// line since #1164, msgline.go): it leads the line and is cut from
 // the right, since its start is what it says, and the hints follow it while
 // there is room, dropped into `+N` when there is not. The line stays one row.
 //
@@ -87,6 +88,17 @@ type attentionTally struct {
 func (t attentionTally) total() int { return t.here + t.elsewhere }
 
 func buildFooter(width int, panelRows []binding, bar *actionBar, target taskActions, attention attentionTally, retry, textField bool) (string, []footerHit) {
+	status := ""
+	if bar != nil {
+		status = bar.status().shown()
+	}
+	return buildFooterStatus(width, panelRows, bar, target, attention, retry, textField, status)
+}
+
+// buildFooterStatus is buildFooter with the status line given rather than
+// read from the bar: the root passes its own (#1164), which every screen
+// shows, bar or no bar. status is styled already; "" shows none.
+func buildFooterStatus(width int, panelRows []binding, bar *actionBar, target taskActions, attention attentionTally, retry, textField bool, status string) (string, []footerHit) {
 	pinnedSegs := footerPinnedSegs(textField)
 	var pinned strings.Builder
 	for _, s := range pinnedSegs {
@@ -102,7 +114,7 @@ func buildFooter(width int, panelRows []binding, bar *actionBar, target taskActi
 		rest = []footerSeg{{text: strings.TrimPrefix(bar.render(target), " ")}}
 	} else {
 		hints = footerHintSegs(panelRows)
-		rest = footerRestSegs(bar, target, attention, retry, textField)
+		rest = footerRestSegs(bar, target, attention, retry, textField, status)
 	}
 
 	if width > 0 {
@@ -127,7 +139,7 @@ func buildFooter(width int, panelRows []binding, bar *actionBar, target taskActi
 		return footerLead(rest[0].text, avail, width, pinned.String(), pinnedSegs)
 	}
 	lead := ""
-	if n := len(rest); n > 0 && bar != nil && bar.status != "" && rest[n-1].key == "" && !rest[n-1].counts {
+	if n := len(rest); n > 0 && status != "" && rest[n-1].key == "" && !rest[n-1].counts {
 		lead, rest = rest[n-1].text, rest[:n-1]
 	}
 	leadW := 0
@@ -685,7 +697,7 @@ func footerAdmitActions(rest []footerSeg, countable, avail int) []footerSeg {
 // footerRestSegs is everything to the right of the hints: the task's valid
 // actions, the answer/attention/retry extras, and the action bar's last
 // status.
-func footerRestSegs(bar *actionBar, target taskActions, attention attentionTally, retry, textField bool) []footerSeg {
+func footerRestSegs(bar *actionBar, target taskActions, attention attentionTally, retry, textField bool, status string) []footerSeg {
 	segs := make([]footerSeg, 0, 8)
 	if target.bulk() {
 		// The way out of a selection leads it (#1073): esc clears it, and
@@ -736,13 +748,10 @@ func footerRestSegs(bar *actionBar, target taskActions, attention attentionTally
 		// speaks for it.
 		segs = append(segs, footerSeg{text: styleKey.Render("r") + " retry", key: "r", global: true})
 	}
-	if bar != nil && bar.status != "" {
-		style := styleDim
-		if bar.statusBad {
-			style = styleBad
-		}
-		// Unclickable text, and nothing the palette can reach: never counted.
-		segs = append(segs, footerSeg{text: style.Render(bar.status)})
+	if status != "" {
+		// The status line (#1164). Unclickable text, and nothing the palette
+		// can reach: never counted.
+		segs = append(segs, footerSeg{text: status})
 	}
 	return segs
 }

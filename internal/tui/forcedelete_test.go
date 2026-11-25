@@ -67,14 +67,14 @@ func TestForceDeleteReportsWhatWasLeftBehind(t *testing.T) {
 		taskID: 7, action: actionForceDelete,
 		warnings: []string{"task 7: worktree /x was kept", "task 8: other"},
 	})
-	if !strings.Contains(bar.status, "#7 force-deleted") || !strings.Contains(bar.status, "left behind") ||
-		!strings.Contains(bar.status, "1 more") || !bar.statusBad {
-		t.Errorf("status = %q (bad %v), want the delete and what it left", bar.status, bar.statusBad)
+	if !strings.Contains(bar.status().text, "#7 force-deleted") || !strings.Contains(bar.status().text, "left behind") ||
+		!strings.Contains(bar.status().text, "1 more") || !bar.status().bad {
+		t.Errorf("status = %q (bad %v), want the delete and what it left", bar.status().text, bar.status().bad)
 	}
 	bar = actionBar{}
 	bar.applyResult(actionResultMsg{taskID: 7, action: actionForceDelete})
-	if bar.status != "#7 force-deleted" || bar.statusBad {
-		t.Errorf("clean status = %q (bad %v)", bar.status, bar.statusBad)
+	if bar.status().text != "#7 force-deleted" || bar.status().bad {
+		t.Errorf("clean status = %q (bad %v)", bar.status().text, bar.status().bad)
 	}
 }
 

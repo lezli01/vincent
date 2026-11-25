@@ -993,8 +993,6 @@ func (t *taskView) setTab(tab taskViewTab) tea.Cmd {
 		return nil
 	}
 	t.tab = tab
-	// A key's "not available" note was said on the tab being left (#1138).
-	t.detail.actions.dropNote()
 	if tab == taskTabDiff {
 		t.detail.tab = tabDiff
 		t.detail.diff.openTask(t.detail.taskID)
@@ -2654,10 +2652,6 @@ func treeCost(own, children *float64) *float64 {
 	}
 	return &sum
 }
-
-// notesClipboard marks the workspace as saying a copy's outcome itself, on
-// its action bar (detail.update), so the root's status line stands down.
-func (t *taskView) notesClipboard() {}
 
 // syncDiffScope keeps a Diff scoped to one attempt on the attempt selected
 // (task 168.6): moving the selection — the rail, ←/→ — while the Diff is on

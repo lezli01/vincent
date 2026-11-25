@@ -185,8 +185,8 @@ func TestOptionGlyphOnTheBoard(t *testing.T) {
 		t.Fatalf("fixture: board context %q captures input or does not bind alt+t", m.activeContext())
 	}
 	m.Update(key("†"))
-	if !strings.Contains(m.selNotice, "Option+t typed †") {
-		t.Fatalf("† on the board said %q", m.selNotice)
+	if !strings.Contains(m.status.text, "Option+t typed †") {
+		t.Fatalf("† on the board said %q", m.status.text)
 	}
 }
 

@@ -174,11 +174,11 @@ func TestStartupChainWaitsAndRunsOnce(t *testing.T) {
 	if m.sel.id != 1 || m.selWhy != whyFirstName {
 		t.Fatalf("sel = %+v by %q, want api by first name", m.sel, m.selWhy)
 	}
-	if !strings.Contains(m.selNotice, "tui.default_project `ghost` is not registered") {
-		t.Errorf("notice = %q", m.selNotice)
+	if !strings.Contains(m.status.text, "tui.default_project `ghost` is not registered") {
+		t.Errorf("notice = %q", m.status.text)
 	}
-	if line, ok := m.statusLine(); !ok || !strings.Contains(line, "ghost") {
-		t.Errorf("status line = %q, %v", line, ok)
+	if line := rootFooter(m); !strings.Contains(line, "ghost") {
+		t.Errorf("status line = %q", line)
 	}
 	if st := readTUIState(m.dataDir).SelectedProject; st == nil || st.ID != 1 || st.Name != "api" {
 		t.Errorf("the startup pick was not persisted: %+v", st)
@@ -192,8 +192,8 @@ func TestStartupChainWaitsAndRunsOnce(t *testing.T) {
 	}
 	// The notice is read by the next key.
 	m.Update(keyPress("j"))
-	if m.selNotice != "" {
-		t.Errorf("notice survived a key: %q", m.selNotice)
+	if m.status.text != "" {
+		t.Errorf("notice survived a key: %q", m.status.text)
 	}
 }
 

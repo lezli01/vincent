@@ -130,8 +130,8 @@ func TestEditRetryEmptyFileAborts(t *testing.T) {
 	if len(rec.calls) != 0 {
 		t.Fatalf("an emptied file still retried: %v", rec.calls)
 	}
-	if !strings.Contains(d.actions.status, "empty") {
-		t.Errorf("status = %q, want it to explain the abort", d.actions.status)
+	if !strings.Contains(d.actions.status().text, "empty") {
+		t.Errorf("status = %q, want it to explain the abort", d.actions.status().text)
 	}
 }
 
@@ -145,8 +145,8 @@ func TestEditRetryReportsAFailedEditor(t *testing.T) {
 	if len(rec.calls) != 0 {
 		t.Fatalf("a failed editor still retried: %v", rec.calls)
 	}
-	if !d.actions.statusBad {
-		t.Errorf("status = %q, want an error", d.actions.status)
+	if !d.actions.status().bad {
+		t.Errorf("status = %q, want an error", d.actions.status().text)
 	}
 }
 
@@ -184,8 +184,8 @@ func TestEditRetryUnavailableOnAGate(t *testing.T) {
 	if len(rec.calls) != 0 {
 		t.Fatalf("a gate was edit+retried: %v", rec.calls)
 	}
-	if !strings.Contains(d.actions.status, "no prompt or command to edit") {
-		t.Errorf("status = %q, want the key to say why it did nothing", d.actions.status)
+	if !strings.Contains(d.actions.status().text, "no prompt or command to edit") {
+		t.Errorf("status = %q, want the key to say why it did nothing", d.actions.status().text)
 	}
 	if strings.Contains(strings.Join(d.detailHints(), " "), "edit+retry") {
 		t.Error("the bar offers edit+retry on a step with nothing to edit")

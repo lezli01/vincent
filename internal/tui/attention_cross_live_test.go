@@ -79,8 +79,8 @@ func TestAttentionKeyCrossesProjects(t *testing.T) {
 	if h.m.sel.id != h.first.ID || selected() != second {
 		t.Fatalf("first !: selection %d, task %d; want %d's %d", h.m.sel.id, selected(), h.first.ID, second)
 	}
-	if h.m.selNotice != "" {
-		t.Fatalf("a press inside the selection raised %q", h.m.selNotice)
+	if h.m.status.text != "" {
+		t.Fatalf("a press inside the selection raised %q", h.m.status.text)
 	}
 
 	h.key("!")
@@ -88,8 +88,8 @@ func TestAttentionKeyCrossesProjects(t *testing.T) {
 		t.Fatalf("second !: selection %d, task %d, view %v; want mid %d, %d, the workspace",
 			h.m.sel.id, selected(), h.m.active, mid, m1.ID)
 	}
-	if want := fmt.Sprintf("! — switched to `mid` (task #%d needs you)", m1.ID); h.m.selNotice != want {
-		t.Fatalf("notice = %q, want %q", h.m.selNotice, want)
+	if want := fmt.Sprintf("! — switched to `mid` (task #%d needs you)", m1.ID); h.m.status.text != want {
+		t.Fatalf("notice = %q, want %q", h.m.status.text, want)
 	}
 	if got := content(h.m); !strings.Contains(got, "(! 3 elsewhere)") {
 		t.Fatalf("the badge did not follow the selection:\n%s", got)
@@ -145,7 +145,7 @@ func TestAttentionKeyAsksOverADraft(t *testing.T) {
 		t.Fatalf("y: selection %d, view %v, task %d; want zeta's %d in the workspace",
 			h.m.sel.id, h.m.active, h.m.selectedTask, task.ID)
 	}
-	if want := fmt.Sprintf("! — switched to `zeta` (task #%d needs you)", task.ID); h.m.selNotice != want {
-		t.Fatalf("notice = %q, want %q", h.m.selNotice, want)
+	if want := fmt.Sprintf("! — switched to `zeta` (task #%d needs you)", task.ID); h.m.status.text != want {
+		t.Fatalf("notice = %q, want %q", h.m.status.text, want)
 	}
 }

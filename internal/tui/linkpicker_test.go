@@ -338,8 +338,8 @@ func TestLinkPickerThroughTheTaskRoot(t *testing.T) {
 			if len(*opened) != 1 || (*opened)[0] != "https://example.test/spec" {
 				t.Fatalf("the opener got %v", *opened)
 			}
-			if d.actions.status != tc.want || d.actions.statusBad != tc.bad {
-				t.Fatalf("the pane said %q (bad=%v), want %q", d.actions.status, d.actions.statusBad, tc.want)
+			if d.actions.status().text != tc.want || d.actions.status().bad != tc.bad {
+				t.Fatalf("the pane said %q (bad=%v), want %q", d.actions.status().text, d.actions.status().bad, tc.want)
 			}
 			if tv.pullNote != "" || tv.pullNoteBad {
 				t.Fatalf("the pull-request note spoke for a link: %q", tv.pullNote)
@@ -357,7 +357,7 @@ func TestLinkPickerThroughTheTaskRoot(t *testing.T) {
 		if len(*wrote) != 1 || (*wrote)[0] != "https://example.test/spec" {
 			t.Fatalf("the clipboard got %v", *wrote)
 		}
-		if got := detailOf(m).actions.status; got != "link [1] copied" {
+		if got := detailOf(m).actions.status().text; got != "link [1] copied" {
 			t.Fatalf("the pane said %q", got)
 		}
 	})

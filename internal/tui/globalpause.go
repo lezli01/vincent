@@ -108,7 +108,7 @@ func (m *root) updateGlobalPause(msg globalPauseMsg) tea.Cmd {
 	}
 	if msg.err != nil {
 		if msg.acted != "" {
-			m.selNotice, m.selNoticeWarn = msg.acted+" failed: "+errString(msg.err), true
+			m.status.result(msg.acted+" failed: "+errString(msg.err), true)
 		}
 		// A failed read keeps the last answer: a blip is not a lifted pause.
 		return nil
@@ -116,13 +116,13 @@ func (m *root) updateGlobalPause(msg globalPauseMsg) tea.Cmd {
 	g.pause, g.ok = msg.pause, true
 	switch msg.acted {
 	case pauseActedPause:
-		m.selNotice, m.selNoticeWarn = "all work paused — "+opKey(keymap.PauseAll)+" continues it", false
+		m.status.result("all work paused — "+opKey(keymap.PauseAll)+" continues it", false)
 	case pauseActedContinue:
 		n := 0
 		if msg.pause.Resumed != nil {
 			n = *msg.pause.Resumed
 		}
-		m.selNotice, m.selNoticeWarn = fmt.Sprintf("work continues — resumed %s", countNoun(n, "task")), false
+		m.status.result(fmt.Sprintf("work continues — resumed %s", countNoun(n, "task")), false)
 	}
 	return m.broadcast(globalPauseStateMsg{pause: g.pause, ok: true})
 }

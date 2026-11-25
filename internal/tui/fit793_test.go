@@ -302,7 +302,7 @@ func TestStatusLineFitsWithLongProjectNames(t *testing.T) {
 		}
 
 		m.pending = nil
-		m.selNotice = strings.Repeat("startup project notice ", 7)
+		m.status.note(strings.Repeat("startup project notice ", 7), false)
 		line, _ = m.statusLine()
 		if lw := ansi.StringWidth(line); lw > w {
 			t.Errorf("at %d columns the startup notice is %d cells", w, lw)

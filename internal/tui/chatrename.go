@@ -132,7 +132,7 @@ func (m *root) applyRenamed(msg chatRenamedMsg) {
 		return
 	}
 	m.rename = nil
-	m.selNotice, m.selNoticeWarn = "chat renamed: "+oneLine(msg.chat.Title), false
+	m.status.result("chat renamed: "+oneLine(msg.chat.Title), false)
 }
 
 // paletteExtraser is a surface with key-less palette rows of its own beyond

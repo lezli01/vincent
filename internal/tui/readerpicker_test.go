@@ -433,8 +433,8 @@ func TestClipboardSeam(t *testing.T) {
 func TestCopyResultBecomesANotice(t *testing.T) {
 	d := newTestDetail(t)
 	d.update(clipboardResultMsg{label: "markdown"})
-	if d.actions.status != "markdown copied" || d.actions.statusBad {
-		t.Fatalf("the task workspace said %q (bad=%v)", d.actions.status, d.actions.statusBad)
+	if d.actions.status().text != "markdown copied" || d.actions.status().bad {
+		t.Fatalf("the task workspace said %q (bad=%v)", d.actions.status().text, d.actions.status().bad)
 	}
 
 	v := chatViewFixture()

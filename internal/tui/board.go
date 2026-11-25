@@ -580,18 +580,8 @@ func (b *board) scheduleRefresh() tea.Cmd {
 }
 
 func (b *board) update(msg tea.Msg) (panel, tea.Cmd) {
-	switch msg.(type) {
-	case tea.KeyPressMsg, tea.MouseClickMsg, tea.MouseWheelMsg:
-		// A key's "not available" note is about the row it was pressed on:
-		// a cursor the human moves off it takes the note away (#1138). Only
-		// input is watched, so a refresh that reorders rows says nothing.
-		before := b.cursorMark()
-		defer func() {
-			if b.cursorMark() != before {
-				b.actions.dropNote()
-			}
-		}()
-	}
+	// A key's "not available" note is dropped by the root on the next key
+	// or click (#1164), which is what moves the cursor off its row (#1138).
 	p, cmd := b.route(msg)
 	if b.archived {
 		return p, tea.Batch(cmd, b.previewCmd())
@@ -1459,25 +1449,6 @@ func (b *board) selected() (int64, bool) {
 		}
 	}
 	return 0, false
-}
-
-// boardCursorMark is where the cursor is, precisely enough to tell that it
-// moved: the task under it, the table row (two folded headers are both "no
-// task") and the card board's folded group.
-type boardCursorMark struct {
-	id       int64
-	row      int
-	header   taskStop
-	onHeader bool
-}
-
-func (b *board) cursorMark() boardCursorMark {
-	id, _ := b.selected()
-	m := boardCursorMark{id: id, row: b.tbl.Cursor()}
-	if b.cardHeader != nil {
-		m.header, m.onHeader = *b.cardHeader, true
-	}
-	return m
 }
 
 // rememberSelection records the id under the cursor so a refresh that

@@ -43,8 +43,8 @@ func TestDeletedSelectionFallsToTheFirstByName(t *testing.T) {
 	if got := h.m.headerLine(); !strings.Contains(got, headerProjectGlyph+" zeta") {
 		t.Errorf("header %q does not show the replacement", got)
 	}
-	if want := "project `board` was deleted — showing `zeta` (first by name)"; h.m.selNotice != want {
-		t.Errorf("notice = %q, want %q", h.m.selNotice, want)
+	if want := "project `board` was deleted — showing `zeta` (first by name)"; h.m.status.text != want {
+		t.Errorf("notice = %q, want %q", h.m.status.text, want)
 	}
 	h.p.until(10*time.Second, "the replacement to reach tui.json", func() bool { return h.persisted() == h.second.ID })
 }
@@ -63,8 +63,8 @@ func TestDeletedSelectionPrefersTheDefaultProject(t *testing.T) {
 	h.p.until(10*time.Second, "the config answer to land", func() bool { return h.m.defaultProject == "yak" })
 	deleteOver(t, h.m, h.projectID)
 	h.p.until(10*time.Second, "the default project to be selected", func() bool { return h.m.sel.id == yak.ID })
-	if want := "project `board` was deleted — showing `yak` (default project)"; h.m.selNotice != want {
-		t.Errorf("notice = %q, want %q", h.m.selNotice, want)
+	if want := "project `board` was deleted — showing `yak` (default project)"; h.m.status.text != want {
+		t.Errorf("notice = %q, want %q", h.m.status.text, want)
 	}
 }
 
@@ -78,8 +78,8 @@ func TestDeletingTheLastProjectEmptiesEveryScopedView(t *testing.T) {
 	if got := h.m.headerLine(); !strings.Contains(got, headerProjectGlyph+" no project") {
 		t.Errorf("header %q does not say no project", got)
 	}
-	if want := "project `board` was deleted — no projects remain"; h.m.selNotice != want {
-		t.Errorf("notice = %q, want %q", h.m.selNotice, want)
+	if want := "project `board` was deleted — no projects remain"; h.m.status.text != want {
+		t.Errorf("notice = %q, want %q", h.m.status.text, want)
 	}
 	if h.m.active != viewHome {
 		t.Errorf("active view = %v, want the board left in place", h.m.active)
@@ -139,8 +139,8 @@ func TestPendingSwitchTargetDeletedWhileAsking(t *testing.T) {
 
 	deleteOver(t, h.m, h.second.ID)
 	h.p.until(10*time.Second, "the question to be dropped", func() bool { return h.m.pending == nil })
-	if want := "project `zeta` was deleted — staying on `board`"; h.m.selNotice != want {
-		t.Errorf("notice = %q, want %q", h.m.selNotice, want)
+	if want := "project `zeta` was deleted — staying on `board`"; h.m.status.text != want {
+		t.Errorf("notice = %q, want %q", h.m.status.text, want)
 	}
 	h.key("y")
 	if h.m.sel.id != h.first.ID || h.m.active != viewNewTask || !nt.touched {

@@ -87,7 +87,7 @@ func taskChatCmd(client *apiclient.Client, t taskActions, bar *actionBar) tea.Cm
 // worktree is the one a human will actually meet.
 func (a *actionBar) applyChat(msg taskChatOpenedMsg) {
 	if msg.err == nil {
-		a.status, a.statusBad = "", false
+		a.status().clear()
 		return
 	}
 	a.setStatus("chat: "+actionErrString(msg.err), true)

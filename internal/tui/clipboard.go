@@ -65,6 +65,10 @@ func readClipboardCmd() tea.Cmd {
 // openURL is.
 var clipboardWrite = clipboard.WriteAll
 
+// errNothingToCopy is a copy of empty text: a hint, which the status line
+// shows as a note (#1164), rather than a failure.
+var errNothingToCopy = errors.New("nothing to copy")
+
 // clipboardResultMsg reports what became of a copy. label names what was
 // copied ("markdown", "code block") so the notice can say it.
 type clipboardResultMsg struct {
@@ -111,7 +115,7 @@ func writeClipboardCmd(label, text string) tea.Cmd {
 	return func() tea.Msg {
 		clean := sanitizeText(text)
 		if clean == "" {
-			return clipboardResultMsg{label: label, err: errors.New("nothing to copy")}
+			return clipboardResultMsg{label: label, err: errNothingToCopy}
 		}
 		if err := clipboardWrite(clean); err != nil {
 			return clipboardResultMsg{label: label, osc: clean, err: err}

@@ -3,6 +3,7 @@ package tui
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strconv"
@@ -185,13 +186,15 @@ type root struct {
 	// rather than broadcast. selWhy is the rule that chose it.
 	sel    projectSel
 	selWhy string
-	// startup is the task 132.3 resolution chain's state (startproject.go),
-	// and selNotice the one line it raises (decision 30): a pick by the
-	// working directory, or a rule that fell through. Cleared by the next
-	// key, like keysNotice; selNoticeWarn renders it as a warning.
-	startup       startupState
-	selNotice     string
-	selNoticeWarn bool
+	// startup is the task 132.3 resolution chain's state (startproject.go).
+	// The line it raises (decision 30) — a pick by the working directory, or
+	// a rule that fell through — is a note on the status line.
+	startup startupState
+	// status is the TUI's one status line (#1164, msgline.go): every view
+	// posts to it, the footer leads with it, and Update applies its one
+	// clearing rule — a note goes on the next key, click, wheel or tab
+	// change, a result stays until a newer message replaces it.
+	status *statusHolder
 
 	// option is the macOS Option watch's state between key presses (#1140).
 	option optionWatch
@@ -260,6 +263,12 @@ func newRoot(ctx context.Context, cn connector, dataDir string) *root {
 		notice:  firstRunNotice{active: !noticeAcknowledged(dataDir)},
 		focused: true,
 		bell:    newBellState(),
+		status:  newStatusHolder(),
+	}
+	for i := range m.views {
+		if sa, ok := m.views[i].(statusAware); ok {
+			sa.setStatusHolder(m.status)
+		}
 	}
 	m.setTabs(defaultTabs())
 	m.setDataDir(dataDir)
@@ -442,8 +451,12 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.PasteMsg:
 		return m, m.updatePaste(msg.Content)
 	case tea.MouseClickMsg:
+		// A click moves a cursor or presses a key, so it drops a note the
+		// way a key does (#1164).
+		m.status.dropNote()
 		return m.updateMouseClick(msg)
 	case tea.MouseWheelMsg:
+		m.status.dropNote()
 		if m.notice.active || m.popupOpen() {
 			return m, nil
 		}
@@ -487,8 +500,9 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.fetchProjectPicker()
 	case linkOpenedMsg:
-		// Like a copy's outcome, to the surface the human pressed the key on
-		// and nowhere else (task 112 decision 5).
+		// Like a copy's outcome, on the status line (#1164), and to the
+		// surface the human pressed the key on (task 112 decision 5).
+		m.status.result(msg.notice())
 		return m, m.deliver(m.active, msg)
 	case clipboardResultMsg:
 		return m, m.updateClipboardResult(msg)
@@ -621,10 +635,11 @@ func (m *root) routeKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.notice.active {
 		return m.updateNoticeKey(msg)
 	}
-	// The keymap and startup-project notices are read by the time a key is
-	// pressed; the key itself still does what it does.
+	// The keymap notice and a status note are read by the time a key is
+	// pressed (#1164); the key itself still does what it does, and may post
+	// a note of its own.
 	m.keysNotice = ""
-	m.selNotice = ""
+	m.status.dropNote()
 	// A switch waiting on its draft confirmation owns every key but ctrl+c
 	// (task 132 decision 36): it is the question on screen.
 	if m.pending != nil && msg.String() != "ctrl+c" {
@@ -872,9 +887,10 @@ func (m *root) globalKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		// changes nothing visible, and native selection is the reason to
 		// press it.
 		k := opKey(keymap.Mouse)
-		m.selNotice, m.selNoticeWarn = "mouse on — "+k+" turns it off for native selection", false
-		if !m.mouseOn {
-			m.selNotice = "mouse off — native selection works; " + k + " turns it back on"
+		if m.mouseOn {
+			m.status.result("mouse on — "+k+" turns it off for native selection", false)
+		} else {
+			m.status.result("mouse off — native selection works; "+k+" turns it back on", false)
 		}
 		return nil, true
 	case opKey(keymap.PauseAll):
@@ -1788,7 +1804,7 @@ func (m *root) applyFollow(p apiclient.Project, open tea.Msg, notice string) tea
 	if notice == "" {
 		notice = followedNotice(p.Name)
 	}
-	m.selNotice, m.selNoticeWarn = notice, false
+	m.status.result(notice, false)
 	return tea.Batch(cmd, m.routeOpen(open))
 }
 
@@ -1987,8 +2003,7 @@ func (m *root) revalidatePending() {
 		}
 	}
 	m.pending = nil
-	m.selNotice = fmt.Sprintf("project `%s` was deleted — staying on `%s`", p.project.Name, m.sel.name)
-	m.selNoticeWarn = true
+	m.status.result(fmt.Sprintf("project `%s` was deleted — staying on `%s`", p.project.Name, m.sel.name), true)
 }
 
 // applyDeletedSwitch is selectionDeleted past its guard. A zero p is "no
@@ -1996,7 +2011,7 @@ func (m *root) revalidatePending() {
 // one, so a detail view falls back to its list and a form is re-aimed.
 func (m *root) applyDeletedSwitch(p apiclient.Project, why, notice string) tea.Cmd {
 	cmd := m.applySwitch(p, why)
-	m.selNotice, m.selNoticeWarn = notice, true
+	m.status.result(notice, true)
 	return cmd
 }
 
@@ -2210,6 +2225,8 @@ func (m *root) switchNow(id viewID) tea.Cmd {
 	if id == m.active {
 		return nil
 	}
+	// A tab change drops a note (#1164): it was about the screen left.
+	m.status.dropNote()
 	prev := m.active
 	m.active = id
 	m.landing = false
@@ -2551,8 +2568,9 @@ func (m *root) noticeKeys(warnings []string) {
 
 // statusLine is the line under the header, when there is one: the full-auto
 // notice's failed acknowledgment, else a pending switch's confirmation, else
-// the one-time keymap notice, else the startup-project notice — which a
-// follow's `switched to` line reuses.
+// the one-time keymap notice, else the global pause banner. These are
+// questions and banners, not messages: what the TUI has to say goes on the
+// one status line in the footer (#1164, msgline.go).
 //
 // The line is budgeted to the terminal's width (#793): one that overflows is
 // cut with "…" rather than left for the renderer to clip unmarked. Two cuts
@@ -2578,12 +2596,6 @@ func (m *root) statusLine() (string, bool) {
 			head = ansi.Truncate(head, max(m.width-cols(m.keysMore), 0), "…")
 		}
 		return styleWarn.Render(fitStatus(head+m.keysMore, m.width)), true
-	}
-	if m.selNotice != "" {
-		if m.selNoticeWarn {
-			return styleWarn.Render(fitStatus(" ⚠ "+m.selNotice, m.width)), true
-		}
-		return styleDim.Render(fitStatus(" "+m.selNotice, m.width)), true
 	}
 	if m.globalPause.shown() && m.phase == phaseConnected {
 		return styleWarn.Render(fitStatus(m.globalPause.statusLine(), m.width)), true
@@ -2986,7 +2998,7 @@ func (m *root) footerLine() string {
 		// to retry, and the pinned palette, help and quit — never the rows of
 		// the view hidden behind it (#793).
 		retry := m.phase == phaseFailed || m.phase == phaseReconnecting
-		line, hits := buildFooter(m.width, nil, nil, taskActions{}, attentionTally{}, retry, m.activeCapturesInput())
+		line, hits := buildFooterStatus(m.width, nil, nil, taskActions{}, attentionTally{}, retry, m.activeCapturesInput(), m.status.shown())
 		m.footerHits = hits
 		return line
 	}
@@ -3048,7 +3060,9 @@ func (m *root) footerLine() string {
 	retry := m.phase == phaseFailed || m.phase == phaseReconnecting
 	pill := m.footerPill()
 	pw := ansi.StringWidth(pill)
-	line, hits := buildFooter(m.width-pw, rows, bar, target, attention, retry, m.activeCapturesInput())
+	// The status line leads (#1164): the root's, on every screen, whether
+	// or not the screen has an action bar.
+	line, hits := buildFooterStatus(m.width-pw, rows, bar, target, attention, retry, m.activeCapturesInput(), m.status.shown())
 	for i := range hits {
 		hits[i].x0 += pw
 		hits[i].x1 += pw
@@ -3114,25 +3128,17 @@ func (m *root) popupRender() (func(w, h int) string, bool) {
 	}
 }
 
-// clipboardNoter is a view that says a copy's outcome itself: the task
-// workspace on its action bar, a chat on its note line. The root's status
-// line stands down for it, so a copy is reported once.
-type clipboardNoter interface {
-	notesClipboard()
-}
-
-// updateClipboardResult turns a copy's outcome into the active surface's own
-// notice (§15). It goes to the active view rather than being broadcast: the
-// human pressed the key on one screen and is looking at it.
-//
-// A view with no notice of its own — the issue screen, whose link picker
-// copies too — gets the root's status line instead (task 135.10 decision 6),
-// decided by clipboardNoter rather than a list of view ids, so a view that
-// learns to say it takes over without the root changing. Before it, such a
-// copy succeeded or failed with nothing on screen.
+// updateClipboardResult says a copy's outcome on the status line (§15,
+// #1164) — a key press a human made never fails silently — and hands the
+// message to the active view, the surface the key was pressed on, for
+// anything else it does with it. "nothing to copy" is a hint, so a note;
+// every other outcome is a result.
 func (m *root) updateClipboardResult(msg clipboardResultMsg) tea.Cmd {
-	if _, ok := m.views[m.active].(clipboardNoter); !ok {
-		m.selNotice, m.selNoticeWarn = msg.notice()
+	text, bad := msg.notice()
+	if errors.Is(msg.err, errNothingToCopy) {
+		m.status.note(text, false)
+	} else {
+		m.status.result(text, bad)
 	}
 	cmds := []tea.Cmd{m.deliver(m.active, msg)}
 	if msg.osc != "" {

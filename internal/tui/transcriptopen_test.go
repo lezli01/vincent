@@ -72,8 +72,8 @@ func TestOpenTranscriptHandsTheWholeFileToTheEditor(t *testing.T) {
 	if len(opened) != 1 || opened[0] != path {
 		t.Fatalf("editor opened %v, want exactly [%s]", opened, path)
 	}
-	if d.actions.status != "" {
-		t.Errorf("a successful open left a status: %q", d.actions.status)
+	if d.actions.status().text != "" {
+		t.Errorf("a successful open left a status: %q", d.actions.status().text)
 	}
 }
 
@@ -108,9 +108,9 @@ func TestOpenTranscriptNamesAPrunedFile(t *testing.T) {
 	if len(opened) != 0 {
 		t.Fatalf("editor was launched anyway: %v", opened)
 	}
-	if !strings.Contains(d.actions.status, "pruned") || !d.actions.statusBad {
+	if !strings.Contains(d.actions.status().text, "pruned") || !d.actions.status().bad {
 		t.Errorf("status = %q (bad=%v), want it to say the file was pruned",
-			d.actions.status, d.actions.statusBad)
+			d.actions.status().text, d.actions.status().bad)
 	}
 }
 
@@ -131,8 +131,8 @@ func TestOpenTranscriptOnAStepThatWroteNone(t *testing.T) {
 	if cmd := d.updateKey(registryKey(t, "e")); cmd != nil {
 		t.Fatal("e produced a command for a step with no transcript")
 	}
-	if !strings.Contains(d.actions.status, "no transcript") {
-		t.Errorf("status = %q, want it to say the step wrote none", d.actions.status)
+	if !strings.Contains(d.actions.status().text, "no transcript") {
+		t.Errorf("status = %q, want it to say the step wrote none", d.actions.status().text)
 	}
 }
 
@@ -155,9 +155,9 @@ func TestOpenTranscriptReportsAFailedViewer(t *testing.T) {
 		t.Fatal("e produced no command")
 	}
 	d.update(runCmd(t, cmd, 10*time.Second))
-	if !strings.Contains(d.actions.status, "transcript viewer") || !d.actions.statusBad {
+	if !strings.Contains(d.actions.status().text, "transcript viewer") || !d.actions.status().bad {
 		t.Errorf("status = %q (bad=%v), want the failed viewer named",
-			d.actions.status, d.actions.statusBad)
+			d.actions.status().text, d.actions.status().bad)
 	}
 }
 

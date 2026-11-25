@@ -319,8 +319,8 @@ func TestClosedIssueSeedWarns(t *testing.T) {
 	h.sendKey(tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
 	tv := h.m.views[viewTask].(*taskView)
 	h.p.until(20*time.Second, "the create's warning", func() bool {
-		return strings.Contains(tv.detail.actions.status, "created with warnings") &&
-			strings.Contains(tv.detail.actions.status, "closed")
+		return strings.Contains(tv.detail.actions.status().text, "created with warnings") &&
+			strings.Contains(tv.detail.actions.status().text, "closed")
 	})
 }
 

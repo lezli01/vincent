@@ -481,11 +481,6 @@ func (v *chatView) updateVimKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	return tea.Batch(cmd, v.draftEdited(before), v.syncInline()), true
 }
 
-// noteOption says the macOS Option note on the chat's note line, where #1061
-// first said it; the root decides when (#1140). The character was typed all
-// the same: it may be meant.
-func (v *chatView) noteOption(note string) { v.note, v.noteBad = note, false }
-
 func (v *chatView) bindingContext() bindingContext {
 	switch {
 	case v.form != nil:
@@ -701,12 +696,6 @@ func (v *chatView) updateMsg(msg tea.Msg) (panel, tea.Cmd) {
 		return v, nil
 	case chatSwitchListMsg:
 		return v, v.applySwitchList(msg)
-	case clipboardResultMsg:
-		v.note, v.noteBad = msg.notice()
-		return v, nil
-	case linkOpenedMsg:
-		v.note, v.noteBad = msg.notice()
-		return v, nil
 	case chatTranscriptMsg:
 		v.applyTranscript(msg)
 		return v, nil
@@ -2602,10 +2591,6 @@ func (v *chatView) resolveDoc(seq int64) (string, bool) {
 	}
 	return "", false
 }
-
-// notesClipboard marks the chat as saying a copy's outcome itself, on its
-// note line, so the root's status line stands down.
-func (v *chatView) notesClipboard() {}
 
 // ended is whether the chat is terminal: closed, archived or handed off. It
 // takes no more turns, so it has no composer (#1054).

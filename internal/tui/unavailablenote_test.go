@@ -7,59 +7,54 @@ import (
 	"github.com/lezli01/vincent/internal/keymap"
 )
 
-// #1138: the "not available" note is about the card the key was pressed on.
-// Moving the cursor to another card takes it away; a real action result the
-// human has not read yet stays.
+// #1138, #1164: the "not available" note is about the card the key was
+// pressed on. The next key — the one that moves the cursor off it — takes it
+// away; a real action result the human has not read yet stays.
 func TestBoardCursorMoveClearsTheUnavailableNote(t *testing.T) {
-	moveOff := func(t *testing.T, b *board) {
-		t.Helper()
-		from, _ := b.cardSelected()
-		for _, k := range []string{"down", "up", "right", "left"} {
-			b.update(registryKey(t, k))
-			if id, _ := b.cardSelected(); id != from {
-				return
-			}
-		}
-		t.Fatal("no key moved the cursor off the card")
-	}
-
+	m := phaseRoot(t, phaseConnected, 120, 30)
+	s := m.views[viewHome].(*shell)
 	b := taskBoardFixture()
-	b.actions = &actionBar{}
+	b.actions = s.bar
+	s.board = b
 	placeCursorOn(t, b, 21) // running: approve is not on offer
-	b.update(registryKey(t, opKey(keymap.Approve)))
-	if !strings.Contains(b.actions.status, "approve: not available while running") {
-		t.Fatalf("a on a running task said %q", b.actions.status)
+	m.Update(registryKey(t, opKey(keymap.Approve)))
+	if !strings.Contains(m.status.text, "approve: not available while running") {
+		t.Fatalf("a on a running task said %q", m.status.text)
 	}
-	moveOff(t, b)
-	if b.actions.status != "" {
-		t.Errorf("the note outlived the cursor move: %q", b.actions.status)
+	m.Update(registryKey(t, "down"))
+	if m.status.text != "" {
+		t.Errorf("the note outlived the cursor move: %q", m.status.text)
 	}
 
 	b.actions.setStatus("cancel · now cancelled", false)
-	moveOff(t, b)
-	if b.actions.status != "cancel · now cancelled" {
-		t.Errorf("a cursor move wiped an action's result: %q", b.actions.status)
+	m.Update(registryKey(t, "down"))
+	if m.status.text != "cancel · now cancelled" {
+		t.Errorf("a cursor move wiped an action's result: %q", m.status.text)
 	}
 }
 
-// #1138: in the workspace the note goes when the tab changes, and an
+// #1138, #1164: in the workspace the note goes when the tab changes, and an
 // action's result does not.
 func TestWorkspaceTabChangeClearsTheUnavailableNote(t *testing.T) {
+	m := phaseRoot(t, phaseConnected, 100, 30)
 	v := newTaskView(taskDetailFixture(t)) // running
 	v.width, v.height = 100, 30
-	v.update(registryKey(t, opKey(keymap.Approve)))
-	if !strings.Contains(v.detail.actions.status, "approve: not available while running") {
-		t.Fatalf("a on a running task said %q", v.detail.actions.status)
+	v.detail.actions.setStatusHolder(m.status)
+	m.views[viewTask] = v
+	m.active = viewTask
+	m.Update(registryKey(t, opKey(keymap.Approve)))
+	if !strings.Contains(m.status.text, "approve: not available while running") {
+		t.Fatalf("a on a running task said %q", m.status.text)
 	}
-	v.update(registryKey(t, "tab"))
-	if v.detail.actions.status != "" {
-		t.Errorf("the note outlived the tab change: %q", v.detail.actions.status)
+	m.Update(registryKey(t, "tab"))
+	if m.status.text != "" {
+		t.Errorf("the note outlived the tab change: %q", m.status.text)
 	}
 
 	v.detail.actions.setStatus("pause · now paused", false)
-	v.update(registryKey(t, "tab"))
-	if v.detail.actions.status != "pause · now paused" {
-		t.Errorf("a tab change wiped an action's result: %q", v.detail.actions.status)
+	m.Update(registryKey(t, "tab"))
+	if m.status.text != "pause · now paused" {
+		t.Errorf("a tab change wiped an action's result: %q", m.status.text)
 	}
 }
 
@@ -85,8 +80,8 @@ func TestWorkspaceTaskKeysNotOfferedSayWhy(t *testing.T) {
 			if msg := drain(cmd); msg != nil {
 				t.Fatalf("the key produced %#v", msg)
 			}
-			if v.detail.actions.status != tc.want {
-				t.Errorf("status = %q, want %q", v.detail.actions.status, tc.want)
+			if v.detail.actions.status().text != tc.want {
+				t.Errorf("status = %q, want %q", v.detail.actions.status().text, tc.want)
 			}
 		})
 	}
