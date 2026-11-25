@@ -103,9 +103,6 @@ func (p *projectsView) wideNotices(width int) []string {
 	if p.loadErr != nil {
 		out = append(out, styleBad.Render(ansi.Truncate(" ⚠ refresh failed: "+errString(p.loadErr), width, "…")))
 	}
-	if p.err != "" {
-		out = append(out, styleBad.Render(ansi.Truncate(" ⚠ "+p.err, width, "…")))
-	}
 	if p.confirm != nil {
 		out = append(out, styleWarn.Render(" "+p.confirm.text+" ")+styleKey.Render("y")+styleDim.Render("/")+styleKey.Render("n"))
 	}
