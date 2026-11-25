@@ -961,14 +961,14 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			v := compareFixture()
 			v.updateKey(registryKey(t, "["))
 			if v.confirm != 0 {
-				t.Fatalf("[ did not ask to keep the left side (confirm %d, note %q)", v.confirm, v.note)
+				t.Fatalf("[ did not ask to keep the left side (confirm %d, note %q)", v.confirm, v.status().text)
 			}
 		},
 		"]": func(t *testing.T) {
 			v := compareFixture()
 			v.updateKey(registryKey(t, "]"))
 			if v.confirm != 1 {
-				t.Fatalf("] did not ask to keep the right side (confirm %d, note %q)", v.confirm, v.note)
+				t.Fatalf("] did not ask to keep the right side (confirm %d, note %q)", v.confirm, v.status().text)
 			}
 		},
 		"R": func(t *testing.T) {
