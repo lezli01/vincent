@@ -313,3 +313,19 @@ func TestLoadYieldsTheTask12918Defaults(t *testing.T) {
 		}
 	}
 }
+
+// #1208: a config.yaml binding a next/previous pair to one key of its own
+// loads — the pair exception is not tied to the default key.
+func TestTUIKeysPairSharesAnyKey(t *testing.T) {
+	content := "tui:\n  keys: {next_chat: alt+n, next_item: alt+n, prev_chat: alt+shift+n, prev_item: alt+shift+n}\n"
+	cfg, err := Load(writeConfig(t, content))
+	if err != nil {
+		t.Fatalf("Load refused the pairs on alt+n and alt+shift+n: %v", err)
+	}
+	if cfg.TUI.Keys["next_item"] != "alt+n" || cfg.TUI.Keys["prev_chat"] != "alt+shift+n" {
+		t.Errorf("tui.keys = %v", cfg.TUI.Keys)
+	}
+	if _, err := Load(writeConfig(t, "tui:\n  keys: {next_chat: alt+n, next_item: alt+n, refresh: alt+n}\n")); err == nil {
+		t.Error("a third operation on the pair's key loaded")
+	}
+}

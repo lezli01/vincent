@@ -209,3 +209,19 @@ func TestKeyBindingsFailedUndoIsNotPending(t *testing.T) {
 		t.Fatalf("the next change is not undoable: note %q", v.status().text)
 	}
 }
+
+// #1208: binding next_item to the key next_chat was moved to is the pair
+// exception, not a clash, so the screen saves it.
+func TestKeyBindingsPairSharesAnyKey(t *testing.T) {
+	v := bindingsFixture(t)
+	v.update(keysSaved(v, map[string]string{"next_chat": "alt+n"}))
+	v.bindings.adopt(v.config)
+	bindingCursorOn(t, v, keymap.NextItem)
+	v.updateKey(namedKey("enter"))
+	if cmd := v.updateKey(synthKey("alt+n")); cmd == nil || !v.bindings.saving {
+		t.Fatalf("next_item on next_chat's alt+n was not saved: %q", v.status().text)
+	}
+	if got := v.bindings.sending["next_item"]; got != "alt+n" {
+		t.Fatalf("the save sends next_item=%q, want alt+n", got)
+	}
+}

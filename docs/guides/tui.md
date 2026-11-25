@@ -4394,7 +4394,11 @@ refusals below, which are again reported all at once:
   open at the same time. A handful of defaults share a key by a recorded
   decision (`R` is refresh and repair, `a` is add and approve, `s` is scope and
   skip), and those decisions cover the defaults only. Moving `refresh` to `r` is
-  refused, because `r` is retry.
+  refused, because `r` is retry. The one pair that travels is next and
+  previous: `next_chat` and `next_item` may share whatever key you give them,
+  and so may `prev_chat` and `prev_item` — a chat answers one and a task or an
+  issue the other — so `next_chat: alt+n` with `next_item: alt+n` is accepted.
+  Anything else on that key still clashes.
 - **A key a text field would type**, for `palette_alt` and `help_alt`. A
   printable key is one character, or `space`, with no `ctrl` or `alt`. Those
   two exist to work while a chat's composer, a filter or a form has the

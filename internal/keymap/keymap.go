@@ -507,13 +507,23 @@ func FixedKeys() []Fixed {
 // It is tied to the key, not to the operations: move one of the operations and
 // the exception no longer covers it, which is what makes the shipped defaults
 // the only keymap these were ever decided for.
+//
+// A pair exception (anyKey) is the one departure from that rule (#1208,
+// departing from tasks 118 and 128 for the next/previous pairs only): its ops
+// may share whatever key they are bound to, default or override, because the
+// reason they may share one is where they are answered — never on the same
+// surface — and that holds on any key. Only the ops are excepted from each
+// other: a third operation, or a fixed key, on that key still clashes. key
+// stays the pair's default, the key the decision was first made on.
 type exception struct {
 	key string
 	// ops may share key with each other.
 	ops []Op
 	// anyFixed lets ops share key with fixed meanings too.
 	anyFixed bool
-	why      string
+	// anyKey lets ops share any one key with each other, not only key.
+	anyKey bool
+	why    string
 }
 
 var exceptions = []exception{
@@ -531,8 +541,8 @@ var exceptions = []exception{
 	{key: "ctrl+s", ops: []Op{Steer}, anyFixed: true, why: "task 156 decision 5: ctrl+s is the forms' save or start, and steer is on the chat surface, which is no form and answers no other ctrl+s"},
 	{key: "S", ops: []Op{ChatSearch}, anyFixed: true, why: "task 158: S installs skills on the daemon screen and syncs on the issues list, and neither is the chats board"},
 	{key: "T", ops: []Op{Chat}, anyFixed: true, why: "task 119: T dry-runs a trigger on the triggers takeover, which offers no available_actions"},
-	{key: "alt+.", ops: []Op{NextChat, NextItem}, why: "#1077: next chat and next task or issue are one move, the next one, on surfaces that never meet: the chats and a chat, and the task workspace and an issue"},
-	{key: "alt+,", ops: []Op{PrevChat, PrevItem}, why: "#1077: the previous one, as alt+. is the next"},
+	{key: "alt+.", ops: []Op{NextChat, NextItem}, anyKey: true, why: "#1077: next chat and next task or issue are one move, the next one, on surfaces that never meet: the chats and a chat, and the task workspace and an issue; #1208: on any key the pair is bound to"},
+	{key: "alt+,", ops: []Op{PrevChat, PrevItem}, anyKey: true, why: "#1077: the previous one, as alt+. is the next; #1208: on any key the pair is bound to"},
 	{key: "shift+tab", ops: []Op{ChatMode}, anyFixed: true, why: "task 162 decision 9: shift+tab switches main tabs and moves between form rows, and the chat surface captures input, so neither reaches it — tab there is the skills list's (task 124 decision 69)"},
 }
 
@@ -805,9 +815,12 @@ func Check(k Keymap) error {
 }
 
 // excepted reports whether a recorded exception lets op share key with other.
+// A pair exception (anyKey, #1208) covers its ops on whatever key both are
+// bound to; the caller only asks when both are on key. It never sets
+// anyFixed, so a fixed key on another key is not shared (a test holds that).
 func excepted(key string, op Op, other use) bool {
 	for _, e := range exceptions {
-		if e.key != key || !hasOp(e.ops, op) {
+		if (e.key != key && !e.anyKey) || !hasOp(e.ops, op) {
 			continue
 		}
 		if other.op == "" && e.anyFixed {

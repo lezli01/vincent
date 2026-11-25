@@ -10440,7 +10440,10 @@ a fixed key (`group`, `fold`, `esc`, `tab`, `resume`, …), by name and with the
 reason; a string no key press produces, including `shift+` on a character; a
 key that already means anything else — an operation or a fixed key, on any
 surface — unless a recorded exception on that exact default key covers both
-meanings, which does not travel with an operation that moves; and a printable
+meanings, which does not travel with an operation that moves (*amended
+2026-11-25, issue #1208:* except the next/previous pairs, `next_chat` /
+`next_item` and `prev_chat` / `prev_item`, which may each share whatever key
+they are bound to, §15); and a printable
 key for `palette_alt`, `help_alt` or any operation answered where a text field
 owns the printable keys — *amended 2026-09-21 (task 125.9, issue #542):* unless
 that operation is answered there from a **list drawn over** the form's rows
@@ -20518,6 +20521,20 @@ inherit it, and `refresh` moved to `r` is refused because `r` is retry. The §6
 action letters still do not move **as defaults**; task 093 decision 2 governs
 the shipped keymap, and a user moving one is a user's choice held to the same
 clauses.
+
+*Amended 2026-11-25 (issue #1208).* **The next/previous pairs travel.** This
+departs from the rule above, and from tasks 118 and 128's exceptions being
+tied to their default keys, for two pairs only: `next_chat` / `next_item` may
+share **whatever key** they are bound to, and so may `prev_chat` /
+`prev_item` — the default `alt+.` / `alt+,`, or any override. The reason they
+may share one is where they are answered, a chat for one and a task or an
+issue for the other, never on the same surface, and that holds on any key.
+Before this, moving a pair onto a key of its own — `alt+n`, the default
+before #1157 — was refused, and a refused `tui.keys` fails the whole
+`config.yaml`. The pair is excepted only from each other: a third operation
+or a fixed key on that key still clashes, `next_chat` and `prev_item` on one
+key still clash, and a pair split across two keys is two ordinary bindings.
+Every other exception stays tied to its exact default key.
 
 *Amended 2026-09-28 (task 128, issue #590).* On **load** the checker is
 lenient about one thing: an override on a key a non-overridden operation's
