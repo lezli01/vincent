@@ -681,8 +681,8 @@ var bindings = []binding{
 	// rather than the tabs. The board's preview shares this context and keeps
 	// them as its Output/Diff toggle (detail.go), which the label says.
 	{key: "]", label: "move to the next hunk ([ the previous), opening the file it is in — tab and shift+tab still switch tabs; in the board's preview ] and [ switch back to Output", scope: scopePanel, context: ctxDiff, hint: "]/[ hunk", priority: 2},
-	{key: "down", label: "move between the files (↑/↓); the pane scrolls to keep the file in view", scope: scopePanel, context: ctxDiff, hint: "↑/↓ files", priority: 2},
-	{key: "enter", label: "expand or collapse the file under the cursor (space and →/← too)", scope: scopePanel, context: ctxDiff, hint: "enter fold", priority: 3},
+	{key: "down", label: "move between the files (↑/↓ or j/k); the pane scrolls to keep the file in view", scope: scopePanel, context: ctxDiff, hint: "↑/↓ files", priority: 2},
+	{key: "enter", label: "expand or collapse the file under the cursor (space, →/← and l/h too — l opens the selected fan-out lane instead when there is one)", scope: scopePanel, context: ctxDiff, hint: "enter fold", priority: 3},
 	{key: "O", label: "expand every file", scope: scopePanel, context: ctxDiff, hint: "O/C fold all", priority: 4},
 	{key: "C", label: "collapse every file — which is how the tab opens", scope: scopePanel, context: ctxDiff, priority: 5, aliased: true},
 	{op: keymap.Lane, key: "l", label: "open the selected fan-out lane's workspace", scope: scopePanel, context: ctxDiff, priority: 6, term: termLane},
@@ -692,7 +692,10 @@ var bindings = []binding{
 	{key: openIssueKey, label: "open the task's linked issue — esc comes back to this tab", scope: scopePanel, context: ctxDiff, hint: "i issue", priority: 8},
 	{key: "U", label: "open this lane's parent task", scope: scopePanel, context: ctxDiff, priority: 7},
 	{key: "d", label: "switch between the whole task's diff and what the attempt selected on the rail changed", scope: scopePanel, context: ctxDiff, hint: "d by attempt", priority: 9},
-	{key: "pgdown", label: "page the diff (pgup/pgdown, ctrl+d/ctrl+u)", scope: scopePanel, context: ctxDiff, priority: 10},
+	// #1212: the chat diff's paging keys (#1163), less its d/u half-page
+	// pair — d is this tab's scope switch, so the pane drops u with it
+	// (newTaskDiffPane) — and f pages here rather than following Output.
+	{key: "pgdown", label: "page the diff (pgup/pgdown or f/b; half a page with ctrl+d/ctrl+u)", scope: scopePanel, context: ctxDiff, priority: 10},
 	{key: "shift+right", label: "pan long lines (shift+←/→)", scope: scopePanel, context: ctxDiff, priority: 11},
 	{key: copyPickKey, label: "copy the selected hunk, the file's diff, or the task's id, branch, worktree path, pull request or its URL", scope: scopePanel, context: ctxDiff, hint: "ctrl+y copy", priority: 15},
 	// #1074: search the diff, scroll it by line, read it again.

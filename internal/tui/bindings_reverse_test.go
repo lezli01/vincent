@@ -1,11 +1,14 @@
 package tui
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+
+	"github.com/lezli01/vincent/internal/apiclient"
 )
 
 // The reverse of TestEveryPanelKeyIsHandled (#1165). That walk proves every
@@ -93,6 +96,15 @@ var reverseFixtures = []reverseFixture{
 			snap:  func() string { return v.render(100, 12) + "\x00" + shownResult(v.status()) },
 		}
 	}},
+	// #1212: the task Diff had no fixture, which is how its paging row and
+	// the guide came to name different keys.
+	{name: "task diff", ctx: ctxDiff, actions: true, build: func(t *testing.T) keySurface {
+		v := taskDiffFixture(t)
+		return keySurface{
+			press: func(msg tea.KeyPressMsg) tea.Cmd { return v.updateKey(msg) },
+			snap:  func() string { return v.render(100, taskDiffHeight) + "\x00" + shownResult(v.status()) },
+		}
+	}},
 	{name: "key bindings", ctx: ctxKeyBindings, build: func(t *testing.T) keySurface {
 		v := bindingsFixture(t)
 		// Off the top, so a jump to the first row shows as well as one to the last.
@@ -140,6 +152,15 @@ var keyAliases = map[bindingContext]map[string]string{
 		"f": "pgdown", "b": "pgdown", "d": "pgdown", "u": "pgdown",
 		"shift+left": "shift+right",
 		"alt+up":     "alt+down",
+	},
+	ctxDiff: {
+		"up": "down", "j": "down", "k": "down",
+		"[":     "]",
+		"space": "enter", "right": "enter", "left": "enter", "h": "enter",
+		"pgup": "pgdown", "ctrl+d": "pgdown", "ctrl+u": "pgdown", "f": "pgdown", "b": "pgdown",
+		"shift+left": "shift+right",
+		"alt+up":     "alt+down",
+		"shift+tab":  "tab",
 	},
 	ctxKeyBindings: {
 		"up": "down", "j": "down", "k": "down", "pgup": "down", "pgdown": "down",
@@ -358,3 +379,29 @@ func init() {
 		}
 	}
 }
+
+// taskDiffFixture is a finished task's workspace on the Diff tab with a
+// long file open and scrolled off its top, so a page or a line either way
+// shows.
+func taskDiffFixture(t *testing.T) *taskView {
+	t.Helper()
+	v := cardView(t, apiclient.TaskDetail{Task: apiclient.Task{ID: 4, State: stateDone, StepTotal: 1}})
+	v.setTab(taskTabDiff)
+	var long strings.Builder
+	long.WriteString("diff --git a/long.txt b/long.txt\n--- a/long.txt\n+++ b/long.txt\n@@ -0,0 +1,60 @@\n")
+	for i := range 60 {
+		fmt.Fprintf(&long, "+line %d\n", i)
+	}
+	v.detail.diff.apply(diffLoadedMsg{taskID: 4, text: long.String() + twoFileDiff})
+	v.render(100, taskDiffHeight)
+	v.updateKey(synthKey("enter"))
+	v.render(100, taskDiffHeight)
+	v.detail.diff.vp.ScrollDown(20)
+	if v.detail.diff.vp.YOffset() == 0 {
+		t.Fatal("the open file does not scroll (the fixture proves nothing about paging)")
+	}
+	return v
+}
+
+// taskDiffHeight is the height the task Diff fixture draws at.
+const taskDiffHeight = 20

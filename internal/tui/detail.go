@@ -279,7 +279,7 @@ func newDetail(ctx context.Context, level *levelHolder, raw *rawHolder, links *h
 		links:     links,
 		following: true,
 		actions:   &actionBar{},
-		diff:      newDiffPane(),
+		diff:      newTaskDiffPane(),
 		exec:      tea.ExecProcess,
 	}
 }
@@ -882,6 +882,14 @@ func (d *detail) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		return cmd
 	}
 
+	if d.tab == tabDiff && outputPaneKey(msg.String()) {
+		// The Output pane's own keys act on a pane the Diff tab is not
+		// showing (#1212): e opened a transcript, ctrl+l listed links and v
+		// and ctrl+o changed the Output tab out of sight. None of them is a
+		// Diff row, so on Diff they do nothing.
+		return nil
+	}
+
 	switch msg.String() {
 	case "]", "[", "d":
 		// The registry names `]` canonical with `[` and `d` as aliases, and
@@ -925,6 +933,14 @@ func (d *detail) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		}
 		return cmd
 	case "f":
+		if d.tab == tabDiff {
+			// On Diff, f pages down as b pages up — the chat diff's pair
+			// (#1212). Following is the Output pane's, which is not on screen.
+			if d.focus == focusOutput {
+				return d.diff.updateKey(msg)
+			}
+			return nil
+		}
 		d.setFollowing(true)
 		return nil
 	case "v":
@@ -1543,4 +1559,15 @@ func (d *detail) newestFanOutRun() (apiclient.StepRun, bool) {
 		}
 	}
 	return out, found
+}
+
+// outputPaneKey reports whether key is one of the Output pane's own keys
+// that detail answers ahead of the tabs — what it means acts on the Output
+// pane alone (#1212).
+func outputPaneKey(key string) bool {
+	switch key {
+	case opKey(keymap.Editor), "v", rawToggleKey, linkPickKey:
+		return true
+	}
+	return false
 }

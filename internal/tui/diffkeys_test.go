@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"cmp"
 	"strings"
 	"testing"
 
@@ -130,5 +131,26 @@ func TestTaskConfirmationOwnsAnswersOverSearch(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// #1212: the task Diff pages on the chat diff's keys less d/u — f/b a page,
+// ctrl+d/ctrl+u half of one — and u, whose partner d switches the scope
+// here, does nothing.
+func TestTaskDiffPagingKeys(t *testing.T) {
+	for key, moves := range map[string]int{"f": 1, "pgdown": 1, "ctrl+d": 1, "b": -1, "pgup": -1, "ctrl+u": -1, "u": 0} {
+		v := taskDiffFixture(t)
+		before := v.detail.diff.vp.YOffset()
+		v.updateKey(synthKey(key))
+		after := v.detail.diff.vp.YOffset()
+		if got := cmp.Compare(after, before); got != moves {
+			t.Errorf("%s moved the diff from line %d to %d", key, before, after)
+		}
+	}
+	v := taskDiffFixture(t)
+	v.detail.following = false
+	v.updateKey(synthKey("f"))
+	if v.detail.following {
+		t.Error("f on Diff turned following on for the Output tab out of sight")
 	}
 }
