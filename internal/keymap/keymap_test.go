@@ -394,7 +394,7 @@ func TestUpgradeYieldsProject(t *testing.T) {
 // operations on the chats board and the chat, every one a Typing hatch on an
 // alt key, so the composer never types them and ctrl+p stays the palette.
 func TestChatSwitchOps(t *testing.T) {
-	want := map[Op]string{NextChat: "alt+n", PrevChat: "alt+shift+n"}
+	want := map[Op]string{NextChat: "alt+.", PrevChat: "alt+,"}
 	for i, op := range ChatJumps {
 		want[op] = "alt+" + string(rune('1'+i))
 	}
@@ -442,5 +442,52 @@ func TestChatSwitchOps(t *testing.T) {
 	}
 	if km.Key(NextChat) != "ctrl+right" || km.Key(Chat1) != "f17" {
 		t.Errorf("rebound next_chat=%q chat_1=%q", km.Key(NextChat), km.Key(Chat1))
+	}
+}
+
+// #1157: no default sits on a macOS Option dead key, and the new keys parse
+// as the strings Bubble Tea prints.
+func TestDefaultsOffTheDeadKeys(t *testing.T) {
+	want := map[Op]string{
+		NextChat: "alt+.", PrevChat: "alt+,", NextItem: "alt+.", PrevItem: "alt+,",
+		Conversation: "alt+o", ExportChat: "alt+w",
+	}
+	km := Default()
+	for op, key := range want {
+		if got := km.Key(op); got != key {
+			t.Errorf("%s defaults to %q, want %q", op, got, key)
+		}
+		if got, err := ParseKey(key); err != nil || got != key {
+			t.Errorf("ParseKey(%q) = %q, %v", key, got, err)
+		}
+	}
+	dead := map[string]bool{"alt+e": true, "alt+i": true, "alt+n": true, "alt+u": true, "alt+`": true}
+	for _, info := range Catalog() {
+		if dead[info.Default] {
+			t.Errorf("%s defaults to %s, an Option dead key on macOS", info.Op, info.Default)
+		}
+	}
+}
+
+// #1157: overrides name operations, so a tui.keys written for the old
+// defaults keeps them.
+func TestOldDefaultsStillBind(t *testing.T) {
+	old := map[string]string{
+		"next_chat": "alt+n", "prev_chat": "alt+shift+n",
+		"conversation": "alt+i", "export_chat": "alt+e",
+	}
+	km, err := Build(old)
+	if err != nil {
+		t.Fatalf("the old defaults, as overrides, were refused: %v", err)
+	}
+	for op, key := range old {
+		if got := km.Key(Op(op)); got != key {
+			t.Errorf("%s is %q, want the override %q", op, got, key)
+		}
+	}
+	for _, o := range []map[string]string{{"next_item": "alt+n"}, {"prev_item": "alt+shift+n"}} {
+		if _, err := Build(o); err != nil {
+			t.Errorf("%v refused: %v", o, err)
+		}
 	}
 }

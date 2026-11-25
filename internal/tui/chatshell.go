@@ -470,6 +470,5 @@ func chatShellMark(r apiclient.ChatShellRun) string {
 
 // shellPromptLine is the prompt as drawn over the composer.
 func (v *chatView) shellPromptLine(width int) string {
-	return ansi.Truncate(styleKey.Render("$ ")+v.shell.buf.View()+
-		styleDim.Render("  enter run · esc cancel"), width, "…")
+	return lineField(styleKey.Render("$ "), &v.shell.buf, "  enter run · esc cancel", width)
 }

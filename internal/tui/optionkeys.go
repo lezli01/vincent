@@ -73,9 +73,20 @@ func init() {
 	} {
 		add(glyph, "Option+"+string(digit), "alt+"+string(digit))
 	}
-	// Option+Shift+letter (#1140): alt+shift+n, alt+shift+g. The four whose
-	// glyph is a spacing accent are with the dead keys below, behind the
-	// unshifted dead key that types the same accent.
+	// Option+punctuation (#1157): the step and chat switch keys moved off
+	// the dead key Option+n to alt+. and alt+, — Option+. types ≥ and
+	// Option+, types ≤, characters a stock macOS terminal sends at once, so
+	// the first press is detected rather than the second. The rest of the
+	// row is here for a user who binds one of them.
+	for glyph, punct := range map[rune]rune{
+		'≥': '.', '≤': ',', '…': ';', '÷': '/', '≠': '=', '–': '-',
+		'“': '[', '‘': ']', '«': '\\', 'æ': '\'',
+	} {
+		add(glyph, "Option+"+string(punct), "alt+"+string(punct))
+	}
+	// Option+Shift+letter (#1140): alt+shift+g, and any alt+shift+letter a
+	// user binds. The four whose glyph is a spacing accent are with the dead
+	// keys below, behind the unshifted dead key that types the same accent.
 	for glyph, letter := range map[rune]rune{
 		'Å': 'a', 'ı': 'b', 'Ç': 'c', 'Î': 'd', 'Ï': 'f', '˝': 'g', 'Ó': 'h',
 		'Ô': 'j', '': 'k', 'Ò': 'l', 'Â': 'm', 'Ø': 'o', '∏': 'p',
@@ -84,7 +95,10 @@ func init() {
 	} {
 		add(glyph, "Option+Shift+"+string(letter), "alt+shift+"+string(letter))
 	}
-	// The dead keys (#1140). Option+e, i, n and u type nothing when pressed:
+	// The dead keys (#1140). No default is bound to one since #1157 moved
+	// the export, the conversation key and the step keys off Option+e, i
+	// and n, but a user's tui.keys may still name one, so they stay.
+	// Option+e, i, n and u type nothing when pressed:
 	// the terminal holds the accent until the next key, and what arrives
 	// then is either the accent alone (the dead key pressed again, or space)
 	// or the accent composed onto a vowel. A dead key pressed once and left

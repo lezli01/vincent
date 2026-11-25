@@ -112,6 +112,11 @@ type taskView struct {
 	// task and navigates here, and the form needs the daemon's prefill, so
 	// the intent waits for the fetch rather than opening an empty form.
 	pullFormPending bool
+	// pullKept is a step that kept the Pull request tab before the next
+	// task's pull row said whether it has one (#1157): if it has none, the
+	// tab falls back to where a fresh open lands, pullFallback.
+	pullKept     bool
+	pullFallback taskViewTab
 	// createPR is the pull-request form, open only while a human has it up.
 	pull        apiclient.GitHubTaskPull
 	pullLoaded  bool
@@ -446,6 +451,21 @@ func (t *taskView) route(msg tea.Msg) (panel, tea.Cmd) {
 		openCmd := t.detail.open(msg.id, msg.state)
 		// After the open, so a tab that fetches on activation — Diff, the
 		// Workflow graph, the checks — fetches for this task.
+		// A step to the neighbouring task keeps the tab it was pressed on
+		// (#1157): stepping through the cards to read each one's diff should
+		// not need tab pressed after every step. Settled here, after the
+		// reset, so the strip is the next task's. The Pull request tab is not
+		// on it until the pull row lands; leaveAbsentPullTab falls back then.
+		t.pullKept = false
+		if msg.keep && !msg.openPR {
+			switch {
+			case msg.keepTab == taskTabPull:
+				t.pullKept, t.pullFallback = true, landing
+				landing = taskTabPull
+			case msg.keepTab == taskTabDetails, slices.Contains(t.tabs(), msg.keepTab):
+				landing = msg.keepTab
+			}
+		}
 		var tabCmd tea.Cmd
 		if landing == taskTabPull {
 			// Set rather than setTab: the tab is not on the strip until the

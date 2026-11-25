@@ -106,6 +106,11 @@ type (
 		back viewID
 		// projectID is the issue's project, for selectTaskMsg's reason.
 		projectID int64
+		// keepTab is the tab a step to the neighbouring issue was pressed
+		// on, with keep set (#1157): both of the strip's tabs are on every
+		// issue, so the next one always opens on it.
+		keepTab issueTab
+		keep    bool
 	}
 )
 

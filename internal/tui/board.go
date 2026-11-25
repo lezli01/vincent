@@ -141,6 +141,11 @@ type (
 		// whose forms need the task's steps and belong to the workspace
 		// (review finding 6). Empty for a plain open.
 		then keymap.Op
+		// keepTab is the workspace tab a step to the neighbouring task was
+		// pressed on (#1157), with keep set: the next task opens on it when
+		// its strip has it, and where a fresh open lands otherwise.
+		keepTab taskViewTab
+		keep    bool
 	}
 )
 

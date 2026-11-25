@@ -105,10 +105,10 @@ func registryKey(t *testing.T, key string) tea.KeyPressMsg {
 		// press: the hand-built alt+G one no decoder produces is how the
 		// follow key shipped dead (review F1).
 		msg = decodePress(t, "\x1bG")
-	case "alt+shift+n":
-		// prev_chat, decoded from what a terminal sends for alt+N for the
-		// reason alt+shift+g is.
-		msg = decodePress(t, "\x1bN")
+	case "alt+.", "alt+,":
+		// next and previous (#1157), decoded from what a terminal sends
+		// for Meta+. and Meta+, for the reason alt+shift+g is.
+		msg = decodePress(t, "\x1b"+strings.TrimPrefix(key, "alt+"))
 	case "shift+right":
 		msg = tea.KeyPressMsg{Code: tea.KeyRight, Mod: tea.ModShift}
 	default:
@@ -919,11 +919,11 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatal("R did not reload the board")
 			}
 		},
-		"alt+e": func(t *testing.T) {
+		"alt+w": func(t *testing.T) {
 			v := archivedChatsFixture()
-			_, cmd := v.updateKey(registryKey(t, "alt+e"))
+			_, cmd := v.updateKey(registryKey(t, "alt+w"))
 			if _, ok := drain(cmd).(openChatExportMsg); !ok {
-				t.Fatalf("alt+e produced %T, want openChatExportMsg", drain(cmd))
+				t.Fatalf("alt+w produced %T, want openChatExportMsg", drain(cmd))
 			}
 		},
 		"r": func(t *testing.T) {
@@ -1020,15 +1020,15 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatalf("S produced %#v, want the chat search", drain(cmd))
 			}
 		},
-		"alt+e": func(t *testing.T) {
+		"alt+w": func(t *testing.T) {
 			v := chatsFixture()
-			_, cmd := v.updateKey(registryKey(t, "alt+e"))
+			_, cmd := v.updateKey(registryKey(t, "alt+w"))
 			msg, ok := drain(cmd).(openChatExportMsg)
 			if !ok {
-				t.Fatalf("alt+e produced %T, want openChatExportMsg", drain(cmd))
+				t.Fatalf("alt+w produced %T, want openChatExportMsg", drain(cmd))
 			}
 			if c, _ := v.current(); msg.id != c.ID {
-				t.Fatalf("alt+e opened the export for chat %d, want the selected %d", msg.id, c.ID)
+				t.Fatalf("alt+w opened the export for chat %d, want the selected %d", msg.id, c.ID)
 			}
 		},
 		"enter": func(t *testing.T) {
@@ -1180,16 +1180,16 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatal("alt+c then y did not clear the queue")
 			}
 		},
-		"alt+e": func(t *testing.T) {
+		"alt+w": func(t *testing.T) {
 			v := chatViewFixture()
 			v.composer.SetValue("draft")
-			_, cmd := v.updateKey(registryKey(t, "alt+e"))
+			_, cmd := v.updateKey(registryKey(t, "alt+w"))
 			msg, ok := drain(cmd).(openChatExportMsg)
 			if !ok || msg.id != v.chat.ID {
-				t.Fatalf("alt+e produced %#v, want openChatExportMsg for chat %d", drain(cmd), v.chat.ID)
+				t.Fatalf("alt+w produced %#v, want openChatExportMsg for chat %d", drain(cmd), v.chat.ID)
 			}
 			if v.composer.Value() != "draft" {
-				t.Fatalf("alt+e reached the composer: %q", v.composer.Value())
+				t.Fatalf("alt+w reached the composer: %q", v.composer.Value())
 			}
 		},
 		"enter": func(t *testing.T) {

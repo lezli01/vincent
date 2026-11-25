@@ -920,7 +920,7 @@ output. It is the sentence that decides whether to open the transcript.
 | `d` | Open Diff from any tab; on Diff, switch between the whole task's diff and the selected attempt's |
 | `l` / `U` | Open a fan-out lane's workspace / this lane's parent task, from any tab — see [Walking a fan-out](#walking-a-fan-out) |
 | `N` | Jump to the task's next failure, from any tab — see [Jumping between failures](#jumping-between-failures) |
-| `alt+n` / `alt+shift+n` | Open the next or previous task in the board's order — the cards column by column, filters and sort included — wrapping, from any tab |
+| `alt+.` / `alt+,` | Open the next or previous task in the board's order — the cards column by column, filters and sort included — wrapping, from any tab, on the same tab when the next task has it |
 | `enter` | On Overview, the frame's link — the output of the attempt it is about, or a finished task's diff — or, with the cursor on a Linked row, that row |
 | `↑`/`↓` | On Overview, move along the Linked card's issue, pull request and chat rows |
 | `l` | On Overview, open the fan-out lane the failure card blames — or, on a parent waiting on its lanes, the first lane listed under *Lanes that need you* |
@@ -2327,7 +2327,7 @@ and the remote state](../assets/tui-issue-jira.png)
 | `.` | Mark the issue ready when it is idle in progress, or not ready when it is pending hand-off |
 | `,` | Return the issue from its handoff — asks `y`/`n` first |
 | `T` | [Chat on the issue](#a-chat-on-the-issue--t), in its main worktree — or reopen the chat already holding it |
-| `alt+n` / `alt+shift+n` | Open the next or previous issue in the issues board's order, wrapping |
+| `alt+.` / `alt+,` | Open the next or previous issue in the issues board's order, wrapping, on the same tab |
 | `alt+t` | As `T`, choosing the chat's agent, model and effort — and an optional first message — first |
 
 The page scrolls first: selecting a task never jumps it away from the
@@ -2817,8 +2817,8 @@ in one that cannot would ring on every reply you are reading. For a signal with 
 | `s` | Cycle the listing between live, ended (archived, handed-off or closed), and all |
 | `R` | Reload the board |
 | `S` | [Search every chat](#chat-search)'s title, prompts and answers, live and archived |
-| `alt+e` | [Export the selected chat](#exporting-a-chat) as Markdown, HTML or JSON |
-| `alt+n` / `alt+shift+n`, `]` / `[` | Open the next / previous chat after the one under the cursor, in this board's order, wrapping |
+| `alt+w` | [Export the selected chat](#exporting-a-chat) as Markdown, HTML or JSON |
+| `alt+.` / `alt+,`, `]` / `[` | Open the next / previous chat after the one under the cursor, in this board's order, wrapping |
 | `alt+1` … `alt+9` | Open the project's Nth chat in this board's order; nothing past the last |
 | `home`/`end`, `pgup`/`pgdown` | Jump to the first or last chat, or move a page |
 
@@ -3014,16 +3014,19 @@ Keys). Until then `ctrl+p` opens the palette, which reaches every command, and
 
 The TUI notices once per run and says so — on a chat's note line, elsewhere on
 the status line — on any screen with an `alt+` key: the board's and an issue's
-`alt+t`, the task and issue screens' `alt+n`, the chats board's `alt+e` and
+`alt+t`, the task and issue screens' `alt+.`, the chats board's `alt+w` and
 `alt+1` … `alt+9`, and the chat's own. It knows what the US layout's Option
-types for a letter (`∂`), a digit (`¡` for `alt+1`) and a shifted letter (`˜`,
-`˝`), and only a character whose chord the screen in front of you binds counts.
+types for a letter (`∂`), a digit (`¡` for `alt+1`), a punctuation key (`≥` for
+`alt+.`, `≤` for `alt+,`) and a shifted letter (`˝`), and only a character
+whose chord the screen in front of you binds counts.
 In a text field — the composer, a filter — such a character may be meant (`ß`,
 `å`, `ç` and `π` are ordinary text), so it is said only when your next key takes
 the character back with `backspace` or is another such character; typing on
 says nothing. The dead keys — Option+e, i, n and u — send nothing when pressed,
-so the first press cannot be noticed; what the next key releases (`´`, `ˆ`,
-`˜`, or an accented vowel such as `é`) can.
+so the first press cannot be noticed, which is why no default is bound to one;
+if [`tui.keys`](#rebinding-keys) puts a command on `alt+w`, `alt+o`, `alt+.` or
+`alt+u`, what the next key releases (`´`, `ˆ`, `˜`, or an accented vowel such as
+`é`) is noticed instead.
 
 Your own messages are easy to find in it. A prompt is drawn as a right-aligned
 card titled `You` — as wide as it needs to be, up to about two thirds of the
@@ -3050,7 +3053,7 @@ are out of view (`+N lines`). The conversation shrinks to pay for the rows.
 
 An ended chat — closed, archived or handed off — takes no more turns, so it has
 no composer: in its place a line says so and names what still works with it,
-`alt+e` export, `ctrl+y` copy, `ctrl+f` search and `alt+v` Markdown. A key
+`alt+w` export, `ctrl+y` copy, `ctrl+f` search and `alt+v` Markdown. A key
 typed there goes nowhere and says why, rather than filling a draft that could
 never be sent. The footer leaves out the composer's keys — stash, history,
 newline, editor, model and mode — and close and hand-off, and a composer key
@@ -3100,7 +3103,7 @@ periodic repaint.
 | `alt+g` | Jump to the start of the conversation |
 | `alt+shift+g` | Jump to the live end and follow it again — clears `↓ N new`. That is `alt+G` as you type it; the terminal reports it as `alt+shift+g` |
 | `ctrl+f` | Search the conversation: the conversation takes the keyboard with a search line open — see [Searching a chat](#searching-a-chat) |
-| `alt+i` | Move the keyboard into the conversation, with no search — see [Searching a chat](#searching-a-chat) |
+| `alt+o` | Move the keyboard into the conversation, with no search — see [Searching a chat](#searching-a-chat) |
 | `ctrl+g` | Write the message in `$EDITOR`. What you save comes back into the composer, unsent; an emptied or untouched file leaves the draft as it was. While `↑` has a queued message in the composer, this edits that message (rebindable as `compose_editor`) |
 | `alt+v` | Open the whole conversation as Markdown in `$EDITOR`, read-only — the file is deleted when the editor exits (rebindable as `chat_markdown`; also in the palette) |
 | `alt+d` | Show the chat's diff where the conversation is, to [review it hunk by hunk](#reviewing-a-chats-diff); `esc` comes back with the draft untouched (rebindable as `chat_diff`; also in the palette) |
@@ -3110,10 +3113,10 @@ periodic repaint.
 | `alt+a` | Reopen the agent's question after `esc` put it away — what you picked is kept |
 | `1` … `9` | While the agent's question card is up, pick option N of the question the cursor is in. A single single-choice question is answered at once; otherwise `enter` submits |
 | `alt+k` | Compact the agent's context: sends its compact command — `/compact` on claude — as the next message, after a `y`/`n` prompt. Only for an agent that has one, and only while the chat is idle |
-| `alt+e` | [Export this chat](#exporting-a-chat) as Markdown, HTML or JSON — the draft stays as it is |
+| `alt+w` | [Export this chat](#exporting-a-chat) as Markdown, HTML or JSON — the draft stays as it is |
 | `alt+p` | Pick the model and effort the chat's next turns run on; `•` marks the ones it runs on now. After the first turn, only on an agent that can change them on a resumed session (claude today) |
 | `shift+tab` | Toggle the permission mode: lowers to `restricted` at once, asks `y`/`n` before raising to `full-auto`, and says why when the agent can only run one |
-| `alt+n` / `alt+shift+n` | Open the project's next / previous chat, in the chats board's order (waiting on you, running, idle), wrapping — also over a pending question. The draft you leave is kept for when you come back. On macOS every `alt+` key here needs the terminal's "Option as Meta" setting; [`tui.keys`](#rebinding-keys) rebinds them |
+| `alt+.` / `alt+,` | Open the project's next / previous chat, in the chats board's order (waiting on you, running, idle), wrapping — also over a pending question. The draft you leave is kept for when you come back. On macOS every `alt+` key here needs the terminal's "Option as Meta" setting; [`tui.keys`](#rebinding-keys) rebinds them |
 | `alt+1` … `alt+9` | Open the project's Nth chat in that order; nothing past the last |
 | `ctrl+p` | Command palette — `:` is a character here |
 | `f1` | Help — `?` is a character here |
@@ -3295,9 +3298,11 @@ and text the current level hides — tool output, folded calls. Every match is
 highlighted, the current one more strongly, and the count — `3/17` — sits on
 the conversation pane's bottom edge. Landing on a match inside a folded tool
 call expands that one call; the level stays where it was. Your draft is
-untouched by all of this.
+untouched by all of this. The search line — like the shell prompt — edits like
+any field, and a query wider than the line scrolls with the cursor, a `…` at
+either edge saying it goes on.
 
-`alt+i` hands the keyboard to the conversation without a search — the way
+`alt+o` hands the keyboard to the conversation without a search — the way
 to expand a tool call, jump between your prompts or attach a shell card —
 and the footer names it while the composer has the keyboard. The search
 line and the [shell prompt](#shell-commands-images-and-vim-in-a-chat) edit
@@ -3318,7 +3323,7 @@ With the conversation holding the keyboard:
 | `g` / `G` | Jump to the start, or to the live end |
 | `pgup` / `pgdown`, `alt+↑` / `alt+↓` | Scroll |
 | `alt+shift+g` | Jump to the live end and follow it again |
-| `i` / `esc` / `alt+i` | Give the keyboard back to the composer |
+| `i` / `esc` / `alt+o` | Give the keyboard back to the composer |
 
 `esc` peels one layer at a time — the search line, then the conversation
 focus — and never leaves the chat from here. Folded tool calls show `▸` and an
@@ -3527,7 +3532,7 @@ held by a conversation nobody came back to.
 
 #### Exporting a chat
 
-`alt+e` — in a chat, on the chats board, or on the archived chats board —
+`alt+w` — in a chat, on the chats board, or on the archived chats board —
 opens a small form that writes the chat to a file: every turn's prompt, its
 tool calls one line each, the answer and its usage. The daemon renders the
 document, the same one `vincent chat export` prints, and the TUI writes it.
@@ -3600,7 +3605,7 @@ there is nothing to withhold and no flag saying so.
 | `D` | Delete permanently — asks first |
 | `r` | Rename the chat — archived chats only; the title is a label, so an ended chat can still be renamed |
 | `s` | Cycle the window: last 7 days → last 30 days → all time |
-| `alt+e` | [Export the selected chat](#exporting-a-chat) — an archived chat exports like any other |
+| `alt+w` | [Export the selected chat](#exporting-a-chat) — an archived chat exports like any other |
 | `<` / `>` | Turn the page (a hundred rows at a time) — offered only where there is a page that way |
 | `enter` | Open the row's workspace, read-only |
 | `/` | Filter, exactly as on the live board |
@@ -4265,19 +4270,19 @@ The first forty-seven are the operations screens share, the next twelve are the
 | `stash` | `alt+s` | Stash the chat's draft, or pop the stash into an empty composer. One slot: a new stash replaces the old one. See [Drafts, stash and prompt history](#drafts-stash-and-prompt-history) |
 | `prompt_history` | `alt+h` | Pick an earlier prompt from any chat of the project to insert into the composer |
 | `chat_search` | `S` | Search every chat, from the chats board |
-| `export_chat` | `alt+e` | Export a chat as Markdown, HTML or JSON — from the chat, the chats board or the archived chats board. See [Exporting a chat](#exporting-a-chat) |
+| `export_chat` | `alt+w` | Export a chat as Markdown, HTML or JSON — from the chat, the chats board or the archived chats board. See [Exporting a chat](#exporting-a-chat) |
 | `chat_model` | `alt+p` | Pick the chat's model and effort for its next turns |
 | `chat_mode` | `shift+tab` | Toggle the chat's permission mode; asks before raising it to full-auto |
 | `compose_editor` | `ctrl+g` | Write the chat message in `$EDITOR` |
 | `chat_markdown` | `alt+v` | Open the whole conversation as Markdown in `$EDITOR`, read-only |
 | `chat_diff` | `alt+d` | Show the chat's diff in place of the conversation, to review it hunk by hunk. See [Reviewing a chat's diff](#reviewing-a-chats-diff) |
-| `conversation` | `alt+i` | Move the keyboard from a chat's composer into its conversation, and back. See [Searching a chat](#searching-a-chat) |
+| `conversation` | `alt+o` | Move the keyboard from a chat's composer into its conversation, and back. See [Searching a chat](#searching-a-chat) |
 | `shell_command` | `alt+x` | Run a shell command in the chat's directory, drawn as a card in the conversation. See [Shell commands, images and vim in a chat](#shell-commands-images-and-vim-in-a-chat) |
 | `rewind` | `alt+z` | Open the chat's turn picker, to rewind its code, its conversation or both to before a turn, or to fork a new chat from one |
-| `next_chat` | `alt+n` | Open the project's next chat, in the chats board's order, wrapping — from the chats board or from a chat's composer |
-| `prev_chat` | `alt+shift+n` | Open the project's previous chat, wrapping |
-| `next_item` | `alt+n` | From inside a task, open the next task in the board's order; from inside an issue, the next issue |
-| `prev_item` | `alt+shift+n` | The previous task or issue, as `next_item` |
+| `next_chat` | `alt+.` | Open the project's next chat, in the chats board's order, wrapping — from the chats board or from a chat's composer |
+| `prev_chat` | `alt+,` | Open the project's previous chat, wrapping |
+| `next_item` | `alt+.` | From inside a task, open the next task in the board's order; from inside an issue, the next issue |
+| `prev_item` | `alt+,` | The previous task or issue, as `next_item` |
 | `chat_1` | `alt+1` | Open the project's chat number 1, in the chats board's order; nothing past the last |
 | `chat_2` | `alt+2` | Open the project's chat number 2, in the chats board's order; nothing past the last |
 | `chat_3` | `alt+3` | Open the project's chat number 3, in the chats board's order; nothing past the last |

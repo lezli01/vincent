@@ -68,9 +68,11 @@ const (
 	// (task 158 decision 4). S for "search": `/` filters the list in view.
 	ChatSearch Op = "chat_search"
 	// ExportChat opens the export form for the chat on screen, or the chats
-	// board's selected row (task 159). alt+e for "export": the chat composer
-	// owns every printable key, the textarea binds none of alt+e, and no
-	// surface answers it.
+	// board's selected row (task 159). alt+e for "export" until #1157:
+	// Option+e is a dead key on a stock macOS terminal, which sends nothing
+	// for it, so it is alt+w for "write" — the chat composer owns every
+	// printable key, the textarea binds none of alt+w, and no surface
+	// answers it.
 	ExportChat Op = "export_chat"
 	// Rename changes a chat's title (task 161 decision 6). `r` for rename:
 	// the chats boards have no retry, which is the task workspace's `r`.
@@ -100,6 +102,8 @@ const (
 	// Conversation moves the keyboard from a chat's composer into its
 	// conversation, and back (#1078): expanding a tool call, jumping between
 	// prompts or attaching a shell card had needed ctrl+f, esc, then j/k.
+	// alt+o for "over there" since #1157: alt+i's Option+i is a dead key on
+	// macOS, which then accents the next vowel typed.
 	Conversation Op = "conversation"
 	// Stash sets the composer's draft aside in the chat's one stash slot, or
 	// pops the stash back into an empty composer (task 164 decision 2).
@@ -114,9 +118,11 @@ const (
 	// a letter: they work from the chat composer, which types every letter.
 	// macOS terminals send alt+ only with Option set to act as Meta; the
 	// keys stay rebindable through tui.keys for a terminal that cannot.
-	// PrevChat is alt+shift+n, shift reversing alt+n: alt+p was already the
-	// chat's model picker (task 162 decision 9) when the two met on the
-	// merge train.
+	// They were alt+n and alt+shift+n until #1157: Option+n is a dead key on
+	// a stock macOS terminal, so neither the chord nor its character arrived
+	// on the first press. alt+. and alt+, are > and < without the shift, and
+	// the Option characters they type (≥, ≤) arrive at once, so #1140's note
+	// can say what to set.
 	NextChat Op = "next_chat"
 	PrevChat Op = "prev_chat"
 	// NextItem and PrevItem step to the neighbouring task from inside a
@@ -308,7 +314,7 @@ var catalog = []Info{
 		"chat",
 	}, Typing: true},
 	{Op: ChatSearch, Default: "S", Meaning: "search every chat", Kind: KindTerm, Surfaces: []Surface{"chats"}},
-	{Op: ExportChat, Default: "alt+e", Meaning: "export the chat as Markdown, HTML or JSON", Kind: KindTerm, Surfaces: []Surface{
+	{Op: ExportChat, Default: "alt+w", Meaning: "export the chat as Markdown, HTML or JSON", Kind: KindTerm, Surfaces: []Surface{
 		"chats", "archived chats", "chat",
 	}},
 	{Op: ChatModel, Default: "alt+p", Meaning: "pick the chat's model and effort for its next turns", Kind: KindTerm, Surfaces: []Surface{
@@ -332,7 +338,7 @@ var catalog = []Info{
 	}, Typing: true},
 	// Typing too: it is pressed from the composer, and pressed again from the
 	// conversation it goes back.
-	{Op: Conversation, Default: "alt+i", Meaning: "move the keyboard into the chat's conversation, or back to the composer", Kind: KindTerm, Surfaces: []Surface{
+	{Op: Conversation, Default: "alt+o", Meaning: "move the keyboard into the chat's conversation, or back to the composer", Kind: KindTerm, Surfaces: []Surface{
 		"chat", "chat conversation",
 	}, Typing: true},
 	// Typing for the same reason: the shell prompt is opened from the
@@ -348,12 +354,12 @@ var catalog = []Info{
 	// The chat switch (task 165). Typing: the open chat's composer has the
 	// keyboard, and these must work from it — including over a pending
 	// question's popup.
-	{Op: NextChat, Default: "alt+n", Meaning: "open the next chat of the project", Kind: KindTerm, Surfaces: []Surface{"chats", "chat"}, Typing: true},
-	{Op: PrevChat, Default: "alt+shift+n", Meaning: "open the previous chat of the project", Kind: KindTerm, Surfaces: []Surface{"chats", "chat"}, Typing: true},
-	{Op: NextItem, Default: "alt+n", Meaning: "open the next task, or the next issue, in the board's order", Kind: KindTerm, Surfaces: []Surface{
+	{Op: NextChat, Default: "alt+.", Meaning: "open the next chat of the project", Kind: KindTerm, Surfaces: []Surface{"chats", "chat"}, Typing: true},
+	{Op: PrevChat, Default: "alt+,", Meaning: "open the previous chat of the project", Kind: KindTerm, Surfaces: []Surface{"chats", "chat"}, Typing: true},
+	{Op: NextItem, Default: "alt+.", Meaning: "open the next task, or the next issue, in the board's order", Kind: KindTerm, Surfaces: []Surface{
 		"task overview", "timeline", "task details", "output", "diff", "task workflow", "task step details", "task pull request", "issue",
 	}},
-	{Op: PrevItem, Default: "alt+shift+n", Meaning: "open the previous task, or the previous issue, in the board's order", Kind: KindTerm, Surfaces: []Surface{
+	{Op: PrevItem, Default: "alt+,", Meaning: "open the previous task, or the previous issue, in the board's order", Kind: KindTerm, Surfaces: []Surface{
 		"task overview", "timeline", "task details", "output", "diff", "task workflow", "task step details", "task pull request", "issue",
 	}},
 	{Op: Chat1, Default: "alt+1", Meaning: "open the project's 1st chat", Kind: KindTerm, Surfaces: []Surface{"chats", "chat"}, Typing: true},
@@ -525,8 +531,8 @@ var exceptions = []exception{
 	{key: "ctrl+s", ops: []Op{Steer}, anyFixed: true, why: "task 156 decision 5: ctrl+s is the forms' save or start, and steer is on the chat surface, which is no form and answers no other ctrl+s"},
 	{key: "S", ops: []Op{ChatSearch}, anyFixed: true, why: "task 158: S installs skills on the daemon screen and syncs on the issues list, and neither is the chats board"},
 	{key: "T", ops: []Op{Chat}, anyFixed: true, why: "task 119: T dry-runs a trigger on the triggers takeover, which offers no available_actions"},
-	{key: "alt+n", ops: []Op{NextChat, NextItem}, why: "#1077: next chat and next task or issue are one move, the next one, on surfaces that never meet: the chats and a chat, and the task workspace and an issue"},
-	{key: "alt+shift+n", ops: []Op{PrevChat, PrevItem}, why: "#1077: the previous one, as alt+n is the next"},
+	{key: "alt+.", ops: []Op{NextChat, NextItem}, why: "#1077: next chat and next task or issue are one move, the next one, on surfaces that never meet: the chats and a chat, and the task workspace and an issue"},
+	{key: "alt+,", ops: []Op{PrevChat, PrevItem}, why: "#1077: the previous one, as alt+. is the next"},
 	{key: "shift+tab", ops: []Op{ChatMode}, anyFixed: true, why: "task 162 decision 9: shift+tab switches main tabs and moves between form rows, and the chat surface captures input, so neither reaches it — tab there is the skills list's (task 124 decision 69)"},
 }
 

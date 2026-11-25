@@ -159,7 +159,12 @@ func (t *taskView) leaveAbsentPullTab() {
 	}
 	if t.tab == taskTabPull && !t.pullTabAvailable() {
 		t.tab = taskTabDetails
+		if t.pullKept {
+			// A step kept the tab for a task that has none (#1157).
+			t.tab = t.pullFallback
+		}
 	}
+	t.pullKept = false
 }
 
 func (t *taskView) applyChecks(msg taskChecksMsg) {

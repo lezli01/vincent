@@ -10423,7 +10423,8 @@ for pause and resume, `approve`, `reject`, `retry`, `edit_retry`, `repair`,
 it is answered while the composer has the keyboard, so the printable-key
 refusal below covers it (§15). *Amended 2026-11-19 (tasks 158 and 159, issues
 #1022 and #1023; review F3):* `chat_search`, `S` by default on the chats
-board, and `export_chat`, `alt+e` by default on the chat workspace and both
+board, and `export_chat`, `alt+e` by default (*`alt+w` since 2026-11-25,
+issue #1157*) on the chat workspace and both
 chats boards, are two more terms; *and 2026-11-20 (task 169 decision 3):*
 `chat_diff`, `alt+d` by default on the chat surface and `Typing` like the
 others pressed from the composer, is one more; and `pause_all`, `Z` by default (*added
@@ -17031,6 +17032,22 @@ stream for the live tail.
    `backspace` or another such character. A dead key's own press sends
    nothing and is not detectable.
 
+   *Amended 2026-11-25 (issue #1157).* **No default on a dead key.** Option+e,
+   i and n are dead keys on a stock macOS terminal, so the defaults bound to
+   them could neither work nor be noticed on their first press. They move:
+   `next_chat` / `prev_chat` and `next_item` / `prev_item` (#1077) to `alt+.`
+   / `alt+,` (`>` and `<` without the shift, still one key shared by a
+   recorded exception), `conversation` (#1078) to `alt+o`, and `export_chat`
+   to `alt+w`. Their Option characters — `≥`, `≤`, `ø`, `∑` — arrive on the
+   first press and raise the note above. A user's `tui.keys` that names an
+   operation keeps its key, the old ones included, since overrides name
+   operations; the dead-key detection stays for such a binding. Stepping to
+   the neighbouring task opens it on the workspace tab the step was pressed
+   on when its strip has that tab, and where a fresh open lands otherwise;
+   stepping between issues keeps the issue's tab. The conversation's
+   one-line fields — the search line and the shell prompt — scroll
+   horizontally with the cursor, with a `…` at a cut edge.
+
    *Amended 2026-11-20 (task 160, issue #1014).* **Conversation focus.** The
    composer holds the keyboard by default, no longer always: `ctrl+f` hands it
    to the conversation with a search line open, and `capturesInput` is false
@@ -20080,7 +20097,8 @@ sends it, `esc` leaves the draft as it was. Neither takes `ctrl+s` (steer,
 task 156 decision 5) nor `ctrl+r` (the verbosity cycle). The chats board marks
 a chat holding a draft `✎ draft` ahead of its title.
 *Amended 2026-11-19 (task 159, issue #1023).* **Exporting a chat** is the
-rebindable operation `export_chat`, default `alt+e`, on the chat workspace and
+rebindable operation `export_chat`, default `alt+e` (*amended 2026-11-25
+(issue #1157):* `alt+w`, because Option+e is a dead key on macOS), on the chat workspace and
 on the chats board (live and archived) for the selected row, and in the command
 palette. It opens a small form: the format (`md`, `html` or `json`, default
 `md`), whether to include the diff (default off), and a path prefilled
@@ -20490,6 +20508,13 @@ surfaces now include `chat conversation`, so moving `filter` moves it there
 too. `chat conversation` captures no text, so a printable `filter` key is
 not refused for it. None of the other keys is nameable in `tui.keys` yet, a
 departure from the task's brief recorded in its document.
+
+*Amended 2026-11-25 (issue #1157).* The `conversation` term (#1078), which
+moves the keyboard between the composer and `chat conversation`, defaults to
+`alt+o`, and the step terms `next_item` / `prev_item` (#1077) and the chat
+switch's `next_chat` / `prev_chat` to `alt+.` / `alt+,`; the recorded
+exception that lets the two pairs share keys moved with them. `export_chat`
+defaults to `alt+w`. No default is an Option dead key (§15's chat workspace).
 
 *Amended 2026-09-30 (task 129.18, issue #607).* Two more vocabulary terms.
 `N` (`next_failure`) is on every workspace tab and walks the open task's
