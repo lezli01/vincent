@@ -2305,7 +2305,7 @@ func (v *chatView) askClose() {
 	case chat.LinkedTaskID == nil && chat.IssueID == nil:
 		v.note, v.noteBad = "only a chat opened on a task or an issue can be closed — archive this one from the chats board", true
 	case chatstate.Terminal(chatstate.State(chat.State)):
-		v.note, v.noteBad = "this chat is already "+chat.State, true
+		v.note, v.noteBad = "this chat is already "+chatStateLabel(chat.State), true
 	default:
 		v.closing = true
 		v.note = ""
@@ -2670,6 +2670,34 @@ func (v *chatView) retryFailedTurn() tea.Cmd {
 		v.resending = t.Seq
 	}
 	return cmd
+}
+
+// failedTurnTitle is a failed turn's reason as a title (#1150): the catalogue's,
+// or for the two reasons only a chat turn fails with — which the catalogue
+// leaves to chats — their words.
+func failedTurnTitle(reason string) string {
+	switch reason {
+	case "session_lost":
+		return "session lost"
+	case "checkpoint_failed":
+		return "checkpoint failed"
+	}
+	return reasons.Explain(reason).Title
+}
+
+// failedTurnText is a failed turn's one account of what went wrong: the
+// reason's title with its code beside it — the code is what the logs, the API
+// and the troubleshooting guide's headings are keyed by — then the agent's
+// message. The chat and the chats board's preview both print it (#1150).
+func failedTurnText(t apiclient.ChatTurn) string {
+	text := t.FailReason
+	if title := failedTurnTitle(t.FailReason); title != t.FailReason {
+		text = title + " (" + t.FailReason + ")"
+	}
+	if t.ErrorMessage != "" {
+		text += ": " + t.ErrorMessage
+	}
+	return text
 }
 
 // failedTurnMeaning is what a failed turn's reason means for a chat turn
