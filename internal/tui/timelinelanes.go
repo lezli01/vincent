@@ -306,7 +306,7 @@ func (d *detail) laneTimelineLines(lanes []apiclient.Task, cursor int64, indent 
 			row += fmt.Sprintf("  · %d below", lane.Children.Total)
 		}
 		if lane.BlockReason != nil && *lane.BlockReason != "" {
-			row += "  " + *lane.BlockReason
+			row += "  " + reasonTitle(*lane.BlockReason) // its title, as the board's row (#1150)
 		}
 		if d.width > 0 {
 			row = ansi.Truncate(row, d.width, "…")

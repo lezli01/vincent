@@ -9,8 +9,6 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
-
-	"github.com/lezli01/vincent/internal/reasons"
 )
 
 // The chat workspace's rendering: history, live tail, composer.
@@ -518,17 +516,8 @@ func (v *chatView) bodyLinesAt(width int) ([]string, []lineAnchor) {
 			// Wrapped, never clipped (issue #801 F3): the message is the
 			// one account of what went wrong, and its tail — "retrying
 			// later is safe" — is usually the part worth reading. The
-			// reason is humanised through the one catalogue of them.
-			// The code stays beside its title: it is what the logs, the
-			// API and the troubleshooting guide's headings are keyed by.
-			text := t.FailReason
-			if title := reasons.Explain(t.FailReason).Title; title != t.FailReason {
-				text = title + " (" + t.FailReason + ")"
-			}
-			if t.ErrorMessage != "" {
-				text += ": " + t.ErrorMessage
-			}
-			for _, l := range wrapText(text, max(width-1, 1), wrapOpts{indent: 2}) {
+			// reason is humanised through failedTurnText.
+			for _, l := range wrapText(failedTurnText(*t), max(width-1, 1), wrapOpts{indent: 2}) {
 				lines = append(lines, " "+styleBad.Render(l))
 				pad(1)
 			}

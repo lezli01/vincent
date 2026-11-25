@@ -93,7 +93,7 @@ func (m *root) paletteItems() []paletteEntry {
 		for _, t := range s.board.projectTasks() {
 			id, pid, state := t.ID, t.ProjectID, t.State
 			out = append(out, paletteEntry{
-				group: "tasks", label: "#" + strconv.FormatInt(id, 10) + " " + oneLine(t.Title) + " — " + state,
+				group: "tasks", label: "#" + strconv.FormatInt(id, 10) + " " + oneLine(t.Title) + " — " + stateWords(state),
 				item:   true,
 				action: func() tea.Msg { return selectTaskMsg{id: id, state: state, projectID: pid} },
 			})
@@ -103,7 +103,7 @@ func (m *root) paletteItems() []paletteEntry {
 		for _, c := range v.chats {
 			id, pid := c.ID, c.ProjectID
 			out = append(out, paletteEntry{
-				group: "chats", label: "chat #" + strconv.FormatInt(id, 10) + " " + oneLine(c.Title) + " — " + c.State,
+				group: "chats", label: "chat #" + strconv.FormatInt(id, 10) + " " + oneLine(c.Title) + " — " + chatStateLabel(c.State),
 				item:   true,
 				action: func() tea.Msg { return openChatMsg{id: id, projectID: pid, back: viewChats} },
 			})

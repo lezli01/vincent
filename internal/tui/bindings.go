@@ -1195,7 +1195,7 @@ var bindings = []binding{
 	// used to say in its parenthesis while the key shadowed retry.
 	{op: keymap.OpenRow, key: "enter", label: "open the selected check's own page in a browser", scope: scopePanel, context: ctxTaskPull, hint: "enter open check", priority: 3, github: true, term: termOpenRow},
 	{op: keymap.Browser, key: "o", label: "open the pull request in a browser", scope: scopePanel, context: ctxTaskPull, hint: "o open PR", priority: 4, github: true, term: termBrowser},
-	{key: "u", label: "unlink this pull request from the task — the refusal sticks, and the reconciler will not link it again", scope: scopePanel, context: ctxTaskPull, hint: "u unlink", priority: 6, github: true},
+	{key: "u", label: "unlink this pull request from the task — the refusal sticks, and vincent will not link it again", scope: scopePanel, context: ctxTaskPull, hint: "u unlink", priority: 6, github: true},
 	// Not github-gated: `l` is a jump between two tasks vincent owns, and it
 	// means the same thing on this tab whether or not a lane has a pull
 	// request of its own.
@@ -1235,7 +1235,7 @@ var bindings = []binding{
 	// picker of tasks that have a branch and no pull request, and choosing
 	// one opens that task's workspace with the form up.
 	{key: "P", label: "open a pull request for a task that has none — pick the task, then push its branch and create it", scope: scopePanel, context: ctxPullRequests, hint: "P open a PR", priority: 5, github: true},
-	{key: "u", label: "unlink it (asks first — the refusal sticks, and the reconciler will not link it again)", scope: scopePanel, context: ctxPullRequests, hint: "u unlink", priority: 5},
+	{key: "u", label: "unlink it (asks first — the refusal sticks, and vincent will not link it again)", scope: scopePanel, context: ctxPullRequests, hint: "u unlink", priority: 5},
 	{op: keymap.Scope, key: "s", label: "cycle the listing between open, closed and all", scope: scopePanel, context: ctxPullRequests, hint: "s state", priority: 6, term: termScope},
 	{op: keymap.Refresh, key: "R", label: "re-list this project", scope: scopePanel, context: ctxPullRequests, hint: "R refresh", priority: 7, term: termRefresh},
 	{key: "down", label: "move the selection (↑/↓)", scope: scopePanel, context: ctxPullRequests, priority: 8},

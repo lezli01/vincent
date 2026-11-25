@@ -70,7 +70,7 @@ func TestTimelineDrawsLanesUnderTheirOwnFanOut(t *testing.T) {
 	if api > web || web > test || test > document || document > docs {
 		t.Fatalf("lanes not under their own fan_out step:\n%s", strings.Join(lines, "\n"))
 	}
-	if !strings.Contains(lines[web], "#52") || !strings.Contains(lines[web], "check_failed") {
+	if !strings.Contains(lines[web], "#52") || !strings.Contains(lines[web], "check failed") {
 		t.Fatalf("blocked lane row %q lacks its task number or block reason", lines[web])
 	}
 }

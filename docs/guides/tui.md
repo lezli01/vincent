@@ -777,7 +777,7 @@ stored, because a stored check result reads exactly like a current one while
 being wrong, and there is no refresh key: `R` is repair on every tab of this
 workspace, and the poll is what makes a fourth trigger unnecessary. `↑`/`↓`
 select a row, `enter` opens it in a browser, `o` opens the pull request and `u`
-unlinks it from the task; the refusal is sticky, so the reconciler will not
+unlinks it from the task; the refusal is sticky, so vincent will not
 link it again. Every §6 action key works here too — the tab you happen to be
 reading is not a statement about what you may do to the task.
 

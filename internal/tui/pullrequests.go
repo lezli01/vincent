@@ -752,7 +752,7 @@ func (v *pullRequestsView) createOptions() []pickerOption {
 		out = append(out, pickerOption{
 			value: strconv.FormatInt(t.ID, 10),
 			label: "#" + strconv.FormatInt(t.ID, 10) + "  " + t.Title,
-			note:  t.State + " · " + t.BranchName,
+			note:  stateWords(t.State) + " · " + t.BranchName,
 		})
 	}
 	return out
@@ -843,7 +843,7 @@ func (v *pullRequestsView) askUnlink() {
 		number: row.pull.Number,
 		text: "unlink #" + strconv.Itoa(row.pull.Number) + " from task #" +
 			strconv.FormatInt(*row.pull.TaskID, 10) +
-			"? the refusal sticks — the reconciler will not link it again",
+			"? the refusal sticks — vincent will not link it again",
 	}
 }
 
