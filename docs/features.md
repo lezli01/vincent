@@ -113,7 +113,7 @@ records what it ran with, and its heading names the model.
 
 Old conversations stay findable. **Search every chat**, live or archived, by
 its title, what you asked or what the agent answered: matching is by
-substring, so `429` finds `status429Body`. In the TUI, "Search all chats" in
+substring, so `429` finds `status429Body`. In the TUI, "search all chats" in
 the command palette or `S` on the chats screen opens the search, and `enter` on
 a match opens the chat at that turn. From a shell,
 [`vincent chat search`](reference/cli.md#vincent-chat-search) prints the same

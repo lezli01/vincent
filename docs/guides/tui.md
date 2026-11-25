@@ -1722,8 +1722,10 @@ from the details tab takes two.
 Every screen is two keys away: `` ` `` opens the **screens menu**, which
 lists each one on a letter — `t` tasks, `i` issues, `c` chats, `/` chat
 search, `n` new task, `p` projects, `w` workflows, `d` daemon, `s` settings,
-`r` pull requests, `a` archived tasks, `A` archived chats, `T` triggers — and
-the letter goes there; `↑`/`↓` and `enter` work too, and `esc` closes it. The
+`k` key bindings, `r` pull requests, `a` archived tasks, `A` archived chats,
+`T` triggers — and the letter goes there; `↑`/`↓` and `enter` work too, and
+`esc` closes it. Its box is as tall as its list, so at 80x24 every screen is
+on it at once. The
 header's right edge names the key (`` ` screens ``) until a narrow terminal
 needs the room — and only where the key opens it: over a text field, such as
 a chat's composer or a filter, `` ` `` is a character typed, so the header
@@ -2960,7 +2962,7 @@ typed into it, and `y` returns you to the board.
 
 ### Chat search
 
-**Search all chats** in the palette, or `S` on the chats board, opens a search
+The palette's **search all chats** row, or `S` on the chats board, opens a search
 over every chat in every project: live, archived, handed off and closed. It
 searches each chat's title, the messages sent to it and the agent's final
 answers. Tool output is not searched. Matching ignores case and finds text
@@ -4354,7 +4356,7 @@ The first forty-seven are the operations screens share, the next twelve are the
 | `diagnose` | `Q` | Diagnose a stopped task — ask an agent why it stopped: `chat` with the failure card already sent as the question |
 | `chat_with` | `alt+t` | The same chat as `chat`, choosing its agent, model and effort — and an optional first message — first |
 | `palette` | `:` | Open the command palette |
-| `go_to` | `` ` `` | Open the screens menu: every screen, each on a letter — `t` tasks, `i` issues, `c` chats, `/` chat search, `n` new task, `p` projects, `w` workflows, `d` daemon, `s` settings, `r` pull requests, `a` archived tasks, `A` archived chats, `T` triggers |
+| `go_to` | `` ` `` | Open the screens menu: every screen, each on a letter — `t` tasks, `i` issues, `c` chats, `/` chat search, `n` new task, `p` projects, `w` workflows, `d` daemon, `s` settings, `k` key bindings, `r` pull requests, `a` archived tasks, `A` archived chats, `T` triggers |
 | `palette_alt` | `ctrl+p` | Open the command palette, also while a text field has the keyboard |
 | `help` | `?` | Toggle help |
 | `help_alt` | `f1` | Toggle help, also while a text field has the keyboard |

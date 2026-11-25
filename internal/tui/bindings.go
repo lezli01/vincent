@@ -500,7 +500,7 @@ var bindings = []binding{
 	// but new task follows. `n` is not shared: on the chats board it makes a
 	// chat, everywhere else it still makes a task.
 	{label: "chats — conversations with an agent, each in its own worktree", scope: scopeGlobal, nav: true, navTarget: viewChats},
-	{label: "Search all chats — find text in any chat's title, prompts or answers, live or archived", scope: scopeGlobal, nav: true, navTarget: viewChatSearch},
+	{label: "search all chats — find text in any chat's title, prompts or answers, live or archived", scope: scopeGlobal, nav: true, navTarget: viewChatSearch},
 	// The two archived boards get palette rows and no keys, for the reason
 	// task 049 retired 1..6 and task 067 gave chats a row: retiring memorized
 	// keys without substituting new ones is the point. `s` is skip and `A` is

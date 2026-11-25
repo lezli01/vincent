@@ -18246,7 +18246,7 @@ stream for the live tail.
    is a listed task. The tab is client-only and unpaged.
 
 14. **Chat search.** *Added 2026-11-19 (task 158, issue #1022).* A takeover
-    reached from the command palette's "Search all chats", on any tab, and
+    reached from the command palette's "search all chats", on any tab, and
     from `S` on the chats board (rebindable; `/` keeps filtering the board's
     list, and `ctrl+f` is left for in-conversation search). A query box over
     results from `GET /v1/chats/search` with its default scope, every chat
@@ -19739,6 +19739,16 @@ task, `p` projects, `w` workflows, `d` daemon, `s` settings, `r` pull requests,
 form the way `n` does. The header's right edge names the key. "Navigation
 living here" above still holds: the menu is a faster route to the palette's
 own screen rows, not a second set of view keys to memorise.
+
+*Amended 2026-11-25 (issue #1166).* **The screens menu is its own box.** It
+is titled `screens`, not `commands`, and where the palette has its search
+line it has one line of instruction (`press a screen's letter — or ↑/↓ and
+enter`), with no section header under it. It lists the key-bindings screen
+too, on `k`. Its box is as wide as the shared popup box but only as tall as its
+list, never taller; the two-line reserve for the focused label is drawn only
+where every screen still fits beside it, so at 80x24 every screen is on it at
+once, with no empty row. The palette's screen rows are spelled alike: "search
+all chats", lower case like the rest.
 
 *Amended 2026-11-25 (issue #1159).* **A short query is answered by words, and
 the header offers the menu only where it opens.** Matches sort best first in
