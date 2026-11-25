@@ -73,7 +73,7 @@ func TestWorkspaceTaskKeysNotOfferedSayWhy(t *testing.T) {
 		{keymap.Repair, "repair: not available while running"},
 		{keymap.FollowUp, "follow-up: not available while running"},
 		{keymap.Chat, "chat: not available while running"},
-		{keymap.Diagnose, "ask why: not available while running"},
+		{keymap.Diagnose, "diagnose: not available while running"},
 	} {
 		t.Run(string(tc.op), func(t *testing.T) {
 			v := newTaskView(taskDetailFixture(t)) // running, offers nothing

@@ -924,7 +924,8 @@ func (d *detail) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	case opKey(keymap.Diagnose):
 		cmd, handled := diagnoseCmd(d.target(), d.actions)
 		if !handled {
-			d.actions.setNote(unavailableText("ask why", d.target()))
+			// Named diagnose, as everywhere else `Q` is shown (#1153).
+			d.actions.setNote(unavailableText(actionDiagnose, d.target()))
 		}
 		return cmd
 	case "f":

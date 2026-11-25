@@ -20191,6 +20191,17 @@ restricted; the task stays locked until the chat closes` — because a yes
 starts an agent turn that spends and runs with the task's permissions.
 Reopening a chat already open on the task asks nothing. `approve` stays
 unconfirmed: it moves the task on, which is what a gate is for.
+*Amended 2026-11-25 (issue #1153).* When the daemon creates the chat but
+refuses its first turn — the chat cap reached, say — `diagnose` closes that
+chat with the ordinary close, so the task is not left locked by a chat that
+asked nothing, and the action bar names the daemon's reason. Only if the close
+itself fails does the chat open, with the question back in its composer, as
+`chat_with` does for a refused send. The failure card and the hand-over read
+the closed diagnosis chats for the card's step and reason **newest first and
+take the first with an answer**, at most five reads, so an answerless newer
+chat (refused, failed or cancelled) never hides an older one that answered.
+The key is named `diagnose` everywhere it is shown — card, footer, palette and
+question — and the operation id is unchanged.
 
 An **open new-chat draft captures input on every row**, not only on the two
 text ones. This is a deliberate, scoped exception to the rule above that the

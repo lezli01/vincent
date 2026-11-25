@@ -1455,7 +1455,7 @@ action you took stays until something replaces it.
 | `A` | Archive (asks first — the worktree is removed) | `done`, `aborted` |
 | `F` | Follow up — run more work in this finished task's worktree | `done`, `aborted` |
 | `T` | Chat with an agent in this task's worktree, or reopen the chat already open on it | `blocked`, `awaiting_gate`, `done`, `aborted` |
-| `Q` | [Ask why it stopped](#asking-why-a-task-stopped--q): the same chat, opened with the failure card as its first message (asks first — an agent turn starts) | `blocked`, `aborted` |
+| `Q` | [Diagnose](#asking-why-a-task-stopped--q) — ask why it stopped: the same chat, opened with the failure card as its first message (asks first — an agent turn starts) | `blocked`, `aborted` |
 | `alt+t` | As `T`, but first asks for the agent, model and effort, and an optional first message | `blocked`, `awaiting_gate`, `done`, `aborted` |
 
 `E` opens the failing step's prompt or command in your editor, and the override
@@ -1624,12 +1624,18 @@ does, with the default agent, and sends a first message that asks why the task
 stopped and what would fix it — diagnosis only, no changes yet — and hands the
 agent what the failure card shows: the step, attempt and reason, how it
 exited, the command that failed, the evidence lines and the last status. The
-failure card lists `Q` beside `T`, and the footer offers `Q ask why`. Like `T`,
+failure card lists `Q` beside `T`, and the footer offers `Q diagnose`. Like `T`,
 it starts an agent in the task's worktree, full-auto unless the task runs
 restricted, and the task is locked until the chat is closed. Because a yes
 starts an agent turn, `Q` asks first — `diagnose #7? (y/n) · starts an agent
 turn in a new chat on its worktree…` — and `y` sends it. When a chat is
 already open on the task, `Q` reopens it without asking: nothing new starts.
+
+If the daemon makes the chat but refuses to start its turn — too many chats are
+already running, say — `Q` closes that empty chat again, so the task is not
+left locked, and the action bar says why: `chat: not asked, chat #12 closed so
+task #7 stays unlocked — chat_cap_reached: …`. Press `Q` again once a chat
+slot is free.
 
 The chat is titled after what it asked about — `why step 3 verify stopped ·
 check_failed` — and that title is how the task finds it again. Once it is
@@ -1638,7 +1644,9 @@ closed, the failure card shows the opening lines of its first answer under
 step for the same reason, the card shows that answer under **Stopped here
 before**, so it can be read before asking again; and a new `Q` hands it to the
 new chat, which is told to check whether it still holds before looking
-elsewhere. Renaming the chat takes it out of this.
+elsewhere. A diagnosis chat that never answered — its turn refused, failed or
+cancelled — is passed over for the newest one that did, so it never hides an
+older answer. Renaming the chat takes it out of this.
 
 ## Answering a question
 
@@ -4287,7 +4295,7 @@ The first forty-seven are the operations screens share, the next twelve are the
 | `cancel` | `c` | Cancel the task |
 | `follow_up` | `F` | Follow up on a finished task |
 | `chat` | `T` | Chat in the task's worktree, or on the issue's main worktree from the issue screens — or reopen the chat open on it |
-| `diagnose` | `Q` | Ask why a stopped task stopped: `chat` with the failure card already sent as the question |
+| `diagnose` | `Q` | Diagnose a stopped task — ask an agent why it stopped: `chat` with the failure card already sent as the question |
 | `chat_with` | `alt+t` | The same chat as `chat`, choosing its agent, model and effort — and an optional first message — first |
 | `palette` | `:` | Open the command palette |
 | `go_to` | `` ` `` | Open the screens menu: every screen, each on a letter — `t` tasks, `i` issues, `c` chats, `/` chat search, `n` new task, `p` projects, `w` workflows, `d` daemon, `s` settings, `r` pull requests, `a` archived tasks, `A` archived chats, `T` triggers |
