@@ -982,6 +982,10 @@ func (v *issuesView) bodyNotice(width int) []string {
 			line += ", " + issueSyncKey + " syncs from the project's issue source"
 		}
 		return prose(line+".", styleDim)
+	case v.filterHidesAll():
+		// Said once, here, rather than in every column (#1161), with the way
+		// out: esc clears a committed filter (§15).
+		return prose("none match "+strconv.Quote(strings.TrimSpace(v.filter.Value()))+" — esc clears the filter.", styleDim)
 	}
 	return nil
 }

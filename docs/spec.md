@@ -17697,7 +17697,11 @@ stream for the live tail.
    above and below, whose text stays as the record).* **The lanes are columns
    of cards**, left to right in the same order. A column's top edge carries
    its glyph, title, count and `! n` badge; an empty one reads "no issues", or
-   "none match" under a filter. A card shows the id, kind and age, two lines
+   "none match" under a filter that keeps an issue in another column. *(Amended
+   2026-11-25, #1161: one message per board.)* A filter that keeps no issue is
+   said once above the board, as `none match "‹filter›" — esc clears the
+   filter.`, with the columns left blank; a project with no issues says "No
+   issues yet" whether or not a filter is typed. A card shows the id, kind and age, two lines
    of title, the labels, the source and one status line; the selected card has
    thick edges, so selection survives `NO_COLOR`. `↑`/`↓`, `pgup`/`pgdown` and
    `home`/`end` stay inside a column, and `←`/`→` cross to the nearest column

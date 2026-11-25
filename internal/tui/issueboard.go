@@ -116,11 +116,9 @@ func (v *issuesView) laneLines(sec int, issues []apiclient.Issue, x, top, w, h i
 
 	var body []string
 	if len(issues) == 0 {
-		none := "no issues"
-		if strings.TrimSpace(v.filter.Value()) != "" {
-			none = "none match"
+		if none := v.emptyLaneText(); none != "" {
+			body = append(body, styleDim.Render(none))
 		}
-		body = append(body, styleDim.Render(none))
 	}
 	cardW := w - 4
 	for _, iss := range issues[start:end] {
@@ -132,6 +130,27 @@ func (v *issuesView) laneLines(sec int, issues []apiclient.Issue, x, top, w, h i
 		body = append(body, styleDim.Render(cue))
 	}
 	return drawBox(title, right, body, w, h, edgesRounded, styleDim)
+}
+
+// emptyLaneText is what an empty column says. One message per board
+// (#1161): a project with no issues says "no issues" in every column under
+// bodyNotice's "No issues yet", filter or not, and a filter that hides every
+// issue is said once above the board, leaving the columns blank. Only a
+// filter that keeps some issues elsewhere has a column say "none match".
+func (v *issuesView) emptyLaneText() string {
+	switch {
+	case len(v.issues) == 0 || strings.TrimSpace(v.filter.Value()) == "":
+		return "no issues"
+	case v.filterHidesAll():
+		return ""
+	}
+	return "none match"
+}
+
+// filterHidesAll reports a typed filter that keeps none of the project's
+// issues.
+func (v *issuesView) filterHidesAll() bool {
+	return len(v.issues) > 0 && strings.TrimSpace(v.filter.Value()) != "" && len(v.filtered()) == 0
 }
 
 // issueLaneTitle capitalizes a section's label for its column.
