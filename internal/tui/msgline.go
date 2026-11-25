@@ -1,5 +1,7 @@
 package tui
 
+import "github.com/charmbracelet/x/ansi"
+
 // The status line (#1164): one line for what the TUI has to say, owned by
 // the root and drawn as the lead of the footer row, which every screen has.
 //
@@ -29,6 +31,12 @@ package tui
 // right" — so its start, the error, is what survives a narrow terminal.
 // Drawing it under the header instead would take a body row from every view
 // whenever a message is up and move the layout under the cursor.
+//
+// The one exception is a result or an error the footer would cut (#1207):
+// it takes one row above the footer while it is shown (root.statusRow),
+// because a report cut from the right lost exactly the part worth reading —
+// the archived board's `failed:` clause at 80 columns. It is news, shown
+// once and kept until replaced, so the layout moves once, not per key.
 
 // statusKind says how long a status message stays.
 type statusKind uint8
@@ -80,10 +88,23 @@ func (h *statusHolder) shown() string {
 	if h == nil || h.text == "" {
 		return ""
 	}
+	return h.styled(h.text)
+}
+
+// styled renders text, the line's or a cut of it, the way the line is drawn.
+func (h *statusHolder) styled(text string) string {
 	if h.bad {
-		return styleBad.Render(h.text)
+		return styleBad.Render(text)
 	}
-	return styleDim.Render(h.text)
+	return styleDim.Render(text)
+}
+
+// overflows reports whether the line holds a result or an error wider than
+// room, the cells the footer would give it: such a message takes a row of
+// its own above the footer (#1207). A note never does — it is cut on the
+// footer row, since it goes with the next key anyway.
+func (h *statusHolder) overflows(room int) bool {
+	return h != nil && h.kind == statusResult && h.text != "" && room > 0 && ansi.StringWidth(h.text) > room
 }
 
 // statusAware is a view that posts to the status line; the root hands each

@@ -262,11 +262,14 @@ func TestArchivedTasksPromptAndReportFitEightyColumns(t *testing.T) {
 		refused: []bulkFailure{{id: 2, err: errors.New("a lane is holding on")}},
 		failed:  []bulkFailure{{id: 1, err: errors.New("connection refused")}},
 	})
-	// The report is the status line's (#1164): one footer row, cut from
-	// the right with its start kept, and whole on the line itself.
-	out = ansi.Strip(m.footerLine())
-	if !strings.Contains(out, "delete · 1 of 3") {
-		t.Errorf("the archived delete report at 80 columns lost its start:\n%s", out)
+	// The report is the status line's (#1164), and too long for the footer
+	// row, so it takes the row above it (#1207): on screen at 80 columns,
+	// start to failed: clause.
+	out = ansi.Strip(content(m))
+	for _, want := range []string{"delete · 1 of 3", "failed:"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the archived delete report at 80 columns does not show %q:\n%s", want, out)
+		}
 	}
 	for _, want := range []string{"failed:", "connection refused"} {
 		if !strings.Contains(m.status.text, want) {

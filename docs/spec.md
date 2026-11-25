@@ -19794,6 +19794,21 @@ pause line, the keymap warning) are not messages and stay where they were; so
 do a form's own field errors, a popup's errors, and the chat's note line for
 its questions and its draft hints.
 
+*Amended 2026-11-25 (issue #1207).* **A long result takes one row above the
+footer.** A result or an error wider than the room the footer gives its lead
+is drawn instead on one extra row directly above the footer, the terminal's
+full width, and cut with `…` only beyond that row; the footer then carries its
+keys alone. The row is there only while that message is shown: when it is
+replaced or cleared, the row goes. The body shrinks by one row while it is up,
+so nothing is overlapped, and the footer stays the last row, where its clicks
+land; a click on the row itself does nothing. A note never takes the row: it
+goes with the next key, so it stays on the footer and is cut from the right
+as above. Nor does a message the footer is not showing — under the help
+overlay, a popup, a view's question or the action bar's y/n. This restores
+what #790 and #796 had given the long reports (the archived board's delete
+report at 80 columns keeps its `failed:` clause), which one cut footer row had
+dropped.
+
 *Amended 2026-11-24 (issue #1162).* **Every y/n confirmation answers by one
 rule.** `y` or `Y` confirms; `n`, `N` or `esc` declines; any other key is
 ignored and the question stays until it is answered. One client helper

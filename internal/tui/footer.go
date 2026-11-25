@@ -241,6 +241,17 @@ func footerMainHints(hints []footerSeg) []footerSeg {
 	return out
 }
 
+// footerLeadRoom is how many cells buildFooterStatus gives a leading status
+// at width before it cuts it with "…" — the budget the root measures a
+// result against when it decides on a row of its own (#1207).
+func footerLeadRoom(width int, textField bool) int {
+	pw := 0
+	for _, s := range footerPinnedSegs(textField) {
+		pw += ansi.StringWidth(s.text)
+	}
+	return width - pw - 2 - 1
+}
+
 // footerLeadFloor is the fewest cells left beside a leading status that are
 // worth giving to hints; under it the status has the left of the line alone.
 const footerLeadFloor = 8
