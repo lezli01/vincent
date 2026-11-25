@@ -408,7 +408,7 @@ func TestChatsBoardRefusesAChatWithNoProject(t *testing.T) {
 	if v.create != nil {
 		t.Fatal("n opened a new-chat form with no project to create in")
 	}
-	if v.note == "" || !v.noteBad {
-		t.Fatalf("the board says %q, want a refusal naming the missing project", v.note)
+	if v.status().text == "" || !v.status().bad {
+		t.Fatalf("the board says %q, want a refusal naming the missing project", v.status().text)
 	}
 }

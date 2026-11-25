@@ -225,10 +225,10 @@ func TestChatDeleteResultReachesTheChatsBoard(t *testing.T) {
 			tasks.marks = markSet{1}
 			m.views[viewArchived] = tasks
 
-			chats.note = "deleting…"
+			chats.status().text = "deleting…"
 			m.Update(tc.msg)
 
-			if chats.note == "deleting…" {
+			if chats.status().text == "deleting…" {
 				t.Error("the chats note still reads deleting… after the result landed")
 			}
 			if !tasks.marks.has(1) {

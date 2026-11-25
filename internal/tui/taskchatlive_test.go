@@ -143,8 +143,8 @@ func TestTaskChatKeyOpensAndReopensLive(t *testing.T) {
 	})
 	board := h.m.views[viewChats].(*chatsView)
 	h.press(t, "A")
-	if board.confirm != nil || !strings.Contains(board.note, "which that task owns") {
-		t.Fatalf("A on a linked chat asked %v / noted %q, want the linked refusal", board.confirm, board.note)
+	if board.confirm != nil || !strings.Contains(board.status().text, "which that task owns") {
+		t.Fatalf("A on a linked chat asked %v / noted %q, want the linked refusal", board.confirm, board.status().text)
 	}
 }
 

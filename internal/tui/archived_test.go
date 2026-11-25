@@ -210,8 +210,8 @@ func TestArchivedChatsBoardRefusesToAskAboutAHandedOffChat(t *testing.T) {
 	if v.delPrompt != nil {
 		t.Fatal("the board asked about deleting a handed-off chat")
 	}
-	if !v.noteBad || !strings.Contains(v.note, "handed off") {
-		t.Fatalf("the refusal does not name what is holding on: %q", v.note)
+	if !v.status().bad || !strings.Contains(v.status().text, "handed off") {
+		t.Fatalf("the refusal does not name what is holding on: %q", v.status().text)
 	}
 }
 

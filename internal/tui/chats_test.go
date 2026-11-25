@@ -234,16 +234,16 @@ func TestChatsNoSelectionWaitsForAnEmptyListing(t *testing.T) {
 		t.Errorf("before any listing the board claims no project: %q", out)
 	}
 	v.update(registryKey(t, "n"))
-	if v.create != nil || strings.Contains(v.note, "register a project") {
-		t.Errorf("before any listing n: create %v, note %q; want a resolving note", v.create != nil, v.note)
+	if v.create != nil || strings.Contains(v.status().text, "register a project") {
+		t.Errorf("before any listing n: create %v, note %q; want a resolving note", v.create != nil, v.status().text)
 	}
 	v.setProjects([]apiclient.Project{})
 	if out := strings.Join(firstOf(v.bodyLines(80)), "\n"); !strings.Contains(out, noProjectsEmpty()) {
 		t.Errorf("an empty listing does not say so: %q", out)
 	}
 	v.update(registryKey(t, "n"))
-	if !strings.Contains(v.note, "the project overview adds one") {
-		t.Errorf("n after an empty listing: note %q", v.note)
+	if !strings.Contains(v.status().text, "the project overview adds one") {
+		t.Errorf("n after an empty listing: note %q", v.status().text)
 	}
 }
 
