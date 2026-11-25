@@ -51,8 +51,6 @@ type taskPullTab struct {
 	// top is the first check row the window shows. It moves only when the
 	// cursor leaves the window, so a press inside it never scrolls (#799 W2).
 	top      int
-	note     string
-	noteBad  bool
 	fetching bool
 	// confirm is the inline y/n in front of close, reopen or re-run (task
 	// 068.4); while it is up it owns the keyboard.
@@ -238,14 +236,13 @@ func (t *taskView) movePullCursor(delta int) {
 func (t *taskView) openCheckCmd() tea.Cmd {
 	run := t.selectedCheck()
 	if run == nil {
-		t.pullTab.note, t.pullTab.noteBad = "there is no check selected", true
+		t.status().note("there is no check selected", true)
 		return nil
 	}
 	if run.URL == "" {
-		t.pullTab.note, t.pullTab.noteBad = run.Name+" reported no page to open", true
+		t.status().note(run.Name+" reported no page to open", true)
 		return nil
 	}
-	t.pullTab.note, t.pullTab.noteBad = "", false
 	return openURLCmd(run.URL)
 }
 
@@ -260,10 +257,9 @@ func (t *taskView) openCheckCmd() tea.Cmd {
 func (t *taskView) unlinkPullCmd() tea.Cmd {
 	client, id := t.detail.client, t.detail.taskID
 	if client == nil || id == 0 || !t.pull.Linked {
-		t.pullTab.note, t.pullTab.noteBad = "no pull request is linked to this task", true
+		t.status().note("no pull request is linked to this task", true)
 		return nil
 	}
-	t.pullTab.note, t.pullTab.noteBad = "", false
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), loadTimeout)
 		defer cancel()
@@ -285,13 +281,6 @@ func (t *taskView) renderPullTab(width, height int) string {
 	top := t.pullHeaderLines(width)
 	top = append(top, "")
 	var bottom []string
-	if note := t.pullTab.note; note != "" {
-		style := styleDim
-		if t.pullTab.noteBad {
-			style = styleWarn
-		}
-		bottom = append(bottom, "", style.Render("  "+note))
-	}
 	var hint string
 	if c := t.pullTab.confirm; c != nil {
 		hint = ansi.Truncate(styleWarn.Render("  "+c.text), max(width, 1), "…")

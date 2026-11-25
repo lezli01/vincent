@@ -103,7 +103,7 @@ func TestTaskWorkspaceOpenPull(t *testing.T) {
 	if cmd := empty.openPullCmd(); cmd != nil {
 		t.Fatal("o opened something with nothing linked")
 	}
-	if !empty.pullNoteBad || empty.pullNote == "" {
+	if !empty.status().bad || empty.status().text == "" {
 		t.Error("o said nothing with nothing linked")
 	}
 }
@@ -127,8 +127,8 @@ func TestTaskWorkspaceCreatePR(t *testing.T) {
 	if linked.createPR != nil {
 		t.Fatal("P offered to create a second pull request for a linked task")
 	}
-	if !strings.Contains(linked.pullNote, "already has a pull request") {
-		t.Errorf("note = %q, want the reason", linked.pullNote)
+	if !strings.Contains(linked.status().text, "already has a pull request") {
+		t.Errorf("note = %q, want the reason", linked.status().text)
 	}
 
 	unusable := taskPullFixture(t, apiclient.GitHubTaskPull{Reason: "not_authenticated"})
@@ -136,8 +136,8 @@ func TestTaskWorkspaceCreatePR(t *testing.T) {
 	if unusable.createPR != nil {
 		t.Fatal("P opened an editor with no compare URL")
 	}
-	if !strings.Contains(unusable.pullNote, "not_authenticated") {
-		t.Errorf("note = %q, want the daemon's reason", unusable.pullNote)
+	if !strings.Contains(unusable.status().text, "not_authenticated") {
+		t.Errorf("note = %q, want the daemon's reason", unusable.status().text)
 	}
 }
 

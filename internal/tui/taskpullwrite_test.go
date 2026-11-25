@@ -385,18 +385,18 @@ func TestPullWriteReportsTheDaemonsAnswer(t *testing.T) {
 		taskID: v.detail.taskID, write: pullWriteMerge, subject: "octo/api#41",
 		err: &apiclient.Error{Status: http.StatusConflict, Message: "could not merge octo/api#41: GitHub will not merge this pull request as it stands"},
 	})
-	if cmd != nil || !v.pullTab.noteBad ||
-		v.pullTab.note != "could not merge octo/api#41: GitHub will not merge this pull request as it stands" {
-		t.Fatalf("note = %q (bad=%v)", v.pullTab.note, v.pullTab.noteBad)
+	if cmd != nil || !v.status().bad ||
+		v.status().text != "could not merge octo/api#41: GitHub will not merge this pull request as it stands" {
+		t.Fatalf("note = %q (bad=%v)", v.status().text, v.status().bad)
 	}
 	if cmd := v.applyPullWrite(pullWriteMsg{
 		taskID: v.detail.taskID, write: pullWriteMerge, subject: "octo/api#41", method: "rebase",
-	}); cmd == nil || v.pullTab.note != "merged octo/api#41 (rebase)" {
-		t.Fatalf("a merge did not refetch or report: %q", v.pullTab.note)
+	}); cmd == nil || v.status().text != "merged octo/api#41 (rebase)" {
+		t.Fatalf("a merge did not refetch or report: %q", v.status().text)
 	}
 	if cmd := v.applyPullWrite(pullWriteMsg{
 		taskID: v.detail.taskID, write: pullWriteRerun, subject: "octo/api#41", runID: 77,
-	}); cmd == nil || v.pullTab.note != "re-run requested for Actions run 77" {
-		t.Fatalf("a re-run did not refetch or report: %q", v.pullTab.note)
+	}); cmd == nil || v.status().text != "re-run requested for Actions run 77" {
+		t.Fatalf("a re-run did not refetch or report: %q", v.status().text)
 	}
 }

@@ -325,7 +325,7 @@ func TestLinkPickerThroughTheTaskRoot(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			opened := withFakeOpener(t, tc.openErr)
-			m, tv := taskOutputRoot(t)
+			m, _ := taskOutputRoot(t)
 			d := detailOf(m)
 
 			_, cmd := m.Update(tea.KeyPressMsg{Code: 'l', Mod: tea.ModCtrl})
@@ -340,9 +340,6 @@ func TestLinkPickerThroughTheTaskRoot(t *testing.T) {
 			}
 			if d.actions.status().text != tc.want || d.actions.status().bad != tc.bad {
 				t.Fatalf("the pane said %q (bad=%v), want %q", d.actions.status().text, d.actions.status().bad, tc.want)
-			}
-			if tv.pullNote != "" || tv.pullNoteBad {
-				t.Fatalf("the pull-request note spoke for a link: %q", tv.pullNote)
 			}
 		})
 	}

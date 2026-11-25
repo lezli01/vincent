@@ -244,8 +244,8 @@ func (t *taskView) updatePullWriteKey(msg tea.KeyPressMsg) (cmd tea.Cmd, handled
 func (t *taskView) refuseInFlight(writes ...pullWrite) bool {
 	for _, w := range writes {
 		if t.pullTab.inflight[w] {
-			t.pullTab.note, t.pullTab.noteBad = "still waiting for the daemon to answer the last "+
-				strings.TrimSuffix(w.verb(), " on")+" — nothing was sent", true
+			t.status().note("still waiting for the daemon to answer the last "+
+				strings.TrimSuffix(w.verb(), " on")+" — nothing was sent", true)
 			return true
 		}
 	}
@@ -294,7 +294,6 @@ func (t *taskView) askCloseOrReopen() {
 	if w == pullWriteReopen {
 		text = "reopen " + t.pullSubject() + "? (y/n)"
 	}
-	t.pullTab.note, t.pullTab.noteBad = "", false
 	t.pullTab.confirm = &pullConfirm{write: w, text: text}
 }
 
@@ -312,7 +311,6 @@ func (t *taskView) askRerun() {
 			names = append(names, r.Name)
 		}
 	}
-	t.pullTab.note, t.pullTab.noteBad = "", false
 	t.pullTab.confirm = &pullConfirm{
 		write: pullWriteRerun,
 		runID: run.RunID,
@@ -347,7 +345,7 @@ func (t *taskView) updatePullConfirmKey(msg tea.KeyPressMsg) tea.Cmd {
 func (t *taskView) pullWriteCmd(w pullWrite, call func(ctx context.Context, client *apiclient.Client, msg *pullWriteMsg) error) tea.Cmd {
 	client, id := t.detail.client, t.detail.taskID
 	if client == nil || id == 0 {
-		t.pullTab.note, t.pullTab.noteBad = "not connected — nothing was sent", true
+		t.status().result("not connected — nothing was sent", true)
 		return nil
 	}
 	t.pullTab.inflight[w] = true
@@ -417,7 +415,7 @@ func (t *taskView) applyPullWrite(msg pullWriteMsg) tea.Cmd {
 	}
 	t.pullTab.inflight[msg.write] = false
 	if msg.err != nil {
-		t.pullTab.note, t.pullTab.noteBad = pullWriteFailure(msg), true
+		t.status().result(pullWriteFailure(msg), true)
 		if msg.write == pullWriteMerge {
 			t.pullMerge = nil
 		}
@@ -429,24 +427,25 @@ func (t *taskView) applyPullWrite(msg pullWriteMsg) tea.Cmd {
 		t.dropEmptyPopup()
 		return nil
 	}
+	var note string
 	switch msg.write {
 	case pullWriteMerge:
 		t.pullMerge = nil
-		t.pullTab.note = "merged " + msg.subject + " (" + msg.method + ")"
+		note = "merged " + msg.subject + " (" + msg.method + ")"
 	case pullWriteClose:
-		t.pullTab.note = "closed " + msg.subject + " without merging"
+		note = "closed " + msg.subject + " without merging"
 	case pullWriteReopen:
-		t.pullTab.note = "reopened " + msg.subject
+		note = "reopened " + msg.subject
 	case pullWriteComment:
 		t.pullComment = nil
-		t.pullTab.note = "commented on " + msg.subject
+		note = "commented on " + msg.subject
 		if msg.url != "" {
-			t.pullTab.note += " — " + msg.url
+			note += " — " + msg.url
 		}
 	case pullWriteRerun:
-		t.pullTab.note = "re-run requested for Actions run " + strconv.FormatInt(msg.runID, 10)
+		note = "re-run requested for Actions run " + strconv.FormatInt(msg.runID, 10)
 	}
-	t.pullTab.noteBad = false
+	t.status().result(note, false)
 	t.dropEmptyPopup()
 	switch msg.write {
 	case pullWriteMerge, pullWriteClose, pullWriteReopen:

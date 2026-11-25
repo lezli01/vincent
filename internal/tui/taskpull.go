@@ -77,7 +77,7 @@ func (t *taskView) applyPull(msg taskPullMsg) {
 	t.refreshPullMerge()
 	if t.pullFormPending {
 		// The takeover's intent, now that the prefill it needs has arrived.
-		// openCreatePR reports its own refusal into pullNote when the task
+		// openCreatePR reports its own refusal on the status line when the task
 		// turns out not to be eligible after all, which is the same sentence
 		// pressing P here would have produced.
 		t.pullFormPending = false
@@ -110,19 +110,12 @@ func (t *taskView) openPullCmd() tea.Cmd {
 		t.refusePull("no pull request is linked to this task")
 		return nil
 	}
-	t.pullNote, t.pullNoteBad = "", false
 	return openURLCmd(url)
 }
 
-// refusePull says why `P` or `o` did nothing: in the Pull Request tab's own
-// note, and on the status line when another tab is open (#1068), where the
-// note is a section far below the fold and the key looked dead.
-func (t *taskView) refusePull(why string) {
-	t.pullNote, t.pullNoteBad = why, true
-	if t.tab != taskTabPull {
-		t.detail.actions.setStatus(why, true)
-	}
-}
+// refusePull says why `P` or `o` did nothing (#1068), on the status line
+// whatever tab is open (#1164): a note, about the key just pressed.
+func (t *taskView) refusePull(why string) { t.status().note(why, true) }
 
 // openCreatePR is `P`: the pull-request form. The offer exists only while
 // nothing is linked and the daemon could build a compare URL, which needs the
@@ -139,14 +132,13 @@ func (t *taskView) openCreatePR() tea.Cmd {
 	}
 	form, err := newCreatePRForm(t.detail.taskID, t.pull.CompareURL, t.detail.task.BranchName)
 	if err != nil {
-		t.pullNote, t.pullNoteBad = "the daemon's compare URL will not parse: "+errString(err), true
+		t.status().result("the daemon's compare URL will not parse: "+errString(err), true)
 		return nil
 	}
 	form.openEditor = t.detail.editCreatePRBody
 	form.submit = t.createPullCmd
 	t.createPR = form
 	t.popup = true
-	t.pullNote, t.pullNoteBad = "", false
 	return nil
 }
 
@@ -201,13 +193,6 @@ func (t *taskView) pullSectionLines(width int) []string {
 		out = append(out, styleDim.Render("  No pull request is linked to this task."))
 		out = append(out, "", styleDim.Render(
 			"  "+pullNoOfferReason(t.pull, t.detail.task.BranchName)))
-	}
-	if t.pullNote != "" {
-		style := styleDim
-		if t.pullNoteBad {
-			style = styleBad
-		}
-		out = append(out, "", style.Render("  "+t.pullNote))
 	}
 	return out
 }
@@ -290,7 +275,7 @@ func (t *taskView) applyCreatedPull(msg taskPullCreatedMsg) tea.Cmd {
 		return nil
 	}
 	t.createPR, t.popup = nil, false
-	t.pullNote, t.pullNoteBad = "opened "+msg.created.Pull.Repo+"#"+
-		strconv.Itoa(msg.created.Pull.Number), false
+	t.status().result("opened "+msg.created.Pull.Repo+"#"+
+		strconv.Itoa(msg.created.Pull.Number), false)
 	return t.pullCmd()
 }

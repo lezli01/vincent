@@ -118,12 +118,10 @@ type taskView struct {
 	pullKept     bool
 	pullFallback taskViewTab
 	// createPR is the pull-request form, open only while a human has it up.
-	pull        apiclient.GitHubTaskPull
-	pullLoaded  bool
-	pullErr     string
-	pullNote    string
-	pullNoteBad bool
-	createPR    *createPRForm
+	pull       apiclient.GitHubTaskPull
+	pullLoaded bool
+	pullErr    string
+	createPR   *createPRForm
 	// pullTab is the §15 Pull Request tab (task 068). Its checks are fetched
 	// and never stored, so it holds a rollup and a cursor and nothing else —
 	// everything about the pull request itself is read off `pull` above, so
@@ -440,7 +438,6 @@ func (t *taskView) route(msg tea.Msg) (panel, tea.Cmd) {
 		t.pullMerge, t.pullComment = nil, nil
 		t.pull, t.pullLoaded, t.pullErr = apiclient.GitHubTaskPull{}, false, ""
 		t.detail.pullRecord = nil
-		t.pullNote, t.pullNoteBad = "", false
 		t.pullTab = taskPullTab{}
 		t.pullFormPending = msg.openPR
 		t.thenOp, t.thenID = msg.then, msg.id
@@ -555,9 +552,7 @@ func (t *taskView) route(msg tea.Msg) (panel, tea.Cmd) {
 			return t, nil
 		}
 		if msg.err != nil {
-			t.pullNote, t.pullNoteBad = openFailure(msg), true
-		} else {
-			t.pullNote, t.pullNoteBad = "", false
+			t.status().result(openFailure(msg), true)
 		}
 		return t, nil
 	case noteMsg:
