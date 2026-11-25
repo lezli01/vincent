@@ -74,3 +74,33 @@ func TestEditWithin1(t *testing.T) {
 		}
 	}
 }
+
+// #1158: the key-bindings screen is a palette row, found first by the words
+// somebody looking for it types, on every surface, and it opens Settings on
+// that screen.
+func TestPaletteListsTheKeyBindingsScreen(t *testing.T) {
+	contexts := []bindingContext{ctxTasks, ctxTaskOverview, ctxDaemon, ctxSettings, ctxChats, ctxChat, ctxIssues, ctxWorkflows}
+	for _, ctx := range contexts {
+		for _, q := range []string{"key", "keys", "bind", "keybindings", "shortcuts", "key bindings"} {
+			got := paletteWith(q, paletteEntries(ctx, everyAction, true, true, true, nil, nil)...)
+			if len(got) == 0 || got[0].label != keyBindingsPaletteLabel {
+				first := "nothing"
+				if len(got) > 0 {
+					first = got[0].label
+				}
+				t.Errorf("%s: %q found %q first, want the key-bindings screen", ctx, q, first)
+			}
+		}
+	}
+	for _, e := range paletteEntries(ctxTasks, everyAction, true, false, true, nil, nil) {
+		if e.label != keyBindingsPaletteLabel {
+			continue
+		}
+		msg, ok := e.action().(openConfigKeyMsg)
+		if !ok || msg.path != tuiKeysPath {
+			t.Fatalf("the row sends %#v, want openConfigKeyMsg for %s", e.action(), tuiKeysPath)
+		}
+		return
+	}
+	t.Fatal("the key-bindings row is not listed while disconnected")
+}

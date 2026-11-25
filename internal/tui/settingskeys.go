@@ -31,8 +31,12 @@ type keyBindings struct {
 	// capturing is the next key press being taken as the cursor's binding.
 	capturing bool
 	saving    bool
-	note      string
-	noteBad   bool
+	// sending is the map on its way to the daemon, and pending the change
+	// it makes, which becomes Settings' undo slot when it lands (#1158).
+	sending map[string]string
+	pending *settingsUndo
+	note    string
+	noteBad bool
 }
 
 func newKeyBindings(cfg apiclient.Config) *keyBindings {
@@ -75,13 +79,21 @@ func (b *keyBindings) propose(op keymap.Op, key string) (map[string]string, erro
 	return next, nil
 }
 
-// saveKeys sends the whole map, as the tui.keys row's own save does.
-func (v *settingsView) saveKeys(next map[string]string) tea.Cmd {
+// saveKeys sends the whole map, as the tui.keys row's own save does. op is
+// the operation the save changes, remembered so `u` can put back its key
+// alone (#1158) rather than the whole map, which may have moved since.
+func (v *settingsView) saveKeys(next map[string]string, op keymap.Op) tea.Cmd {
 	b := v.bindings
 	if v.client == nil {
+		v.undoing = false
 		b.note, b.noteBad = "the daemon is not reachable", true
 		return nil
 	}
+	b.pending = &settingsUndo{op: op, opWas: b.overrides[string(op)]}
+	if k, ok := v.key(tuiKeysPath); ok {
+		b.pending.key, b.pending.was = k, k.read(v.config)
+	}
+	b.sending = next
 	b.saving, b.note, b.noteBad = true, "saving…", false
 	client := v.client
 	return func() tea.Msg {
@@ -95,14 +107,56 @@ func (v *settingsView) saveKeys(next map[string]string) tea.Cmd {
 // applyKeysSaved lands a save made from this screen.
 func (v *settingsView) applyKeysSaved(msg configSavedMsg) {
 	b := v.bindings
-	b.saving = false
+	pending := b.pending
+	b.saving, b.sending, b.pending = false, nil, nil
 	if msg.err != nil {
+		v.undoing = false // #1158: an undo that failed is not pending
 		b.note, b.noteBad = errString(msg.err), true
 		return
 	}
 	v.config, v.configOK, v.configErr = msg.cfg, true, nil
 	b.adopt(msg.cfg)
 	b.note, b.noteBad = "saved — the new key works now", false
+	if pending == nil {
+		return
+	}
+	info, _ := keymap.Lookup(pending.op)
+	if v.undoing {
+		// Named, as Settings names what it puts back (#1137), and not
+		// itself undoable.
+		v.undoing, v.undo = false, nil
+		now, _ := b.current(info)
+		b.note += " · " + string(pending.op) + " put back to " + now
+		return
+	}
+	// #1158: backspace reset a binding with nothing to take it back. What
+	// it was, and the key that puts it back — Settings' one undo slot.
+	v.undo = pending
+	b.note += " · was " + valueOr(pending.opWas, info.Default) + " · u puts it back"
+}
+
+// undoBinding is `u` for a change made on this screen: the operation's own
+// key put back, checked as any binding is, with the cursor on it so the
+// write is made on screen (#1158, as #1137 does for a setting).
+func (v *settingsView) undoBinding(u *settingsUndo) tea.Cmd {
+	if v.bindings == nil {
+		v.goTo(tuiKeysPath)
+		v.form = nil
+		v.bindings = newKeyBindings(v.config)
+	}
+	b := v.bindings
+	for i, info := range b.ops {
+		if info.Op == u.op {
+			b.cursor = i
+		}
+	}
+	next, err := b.propose(u.op, u.opWas)
+	if err != nil {
+		b.note, b.noteBad = "not put back — "+err.Error(), true
+		return nil
+	}
+	v.undoing = true
+	return v.saveKeys(next, u.op)
 }
 
 // updateBindings is the screen's keyboard.
@@ -134,7 +188,7 @@ func (v *settingsView) updateBindings(msg tea.KeyPressMsg) tea.Cmd {
 			b.note, b.noteBad = "not saved — "+err.Error(), true
 			return nil
 		}
-		return v.saveKeys(next)
+		return v.saveKeys(next, info.Op)
 	}
 	switch msg.String() {
 	case "esc":
@@ -172,7 +226,13 @@ func (v *settingsView) updateBindings(msg tea.KeyPressMsg) tea.Cmd {
 			b.note, b.noteBad = "not reset — "+err.Error(), true
 			return nil
 		}
-		return v.saveKeys(next)
+		return v.saveKeys(next, info.Op)
+	case "u":
+		if v.undo == nil {
+			b.note, b.noteBad = "nothing to undo", false
+			return nil
+		}
+		return v.undoLast()
 	}
 	return nil
 }
@@ -193,7 +253,7 @@ func (v *settingsView) renderBindings(width, height int) string {
 	b := v.bindings
 	head := []string{
 		styleTitle.Render("  Key bindings") + styleDim.Render(fmt.Sprintf("  ·  %d operations, %d changed", len(b.ops), len(b.overrides))),
-		styleDim.Render("  enter set by pressing the key · backspace back to the default · " + opKey(keymap.FreeText) + " type them all as text · esc back to Settings"),
+		styleDim.Render("  enter set by pressing the key · backspace back to the default · u undo · " + opKey(keymap.FreeText) + " type them all as text · esc back to Settings"),
 	}
 	note := ""
 	if b.note != "" {

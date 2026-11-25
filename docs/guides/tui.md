@@ -4072,7 +4072,10 @@ Its **global** group carries **switch project**, which opens the
 [project picker](#switching-project) — the way to it from a chat, where `@`
 types into the draft.
 
-The takeover screens have their own **screens** group. The palette exists so
+The takeover screens have their own **screens** group. Beside Settings it lists
+**key bindings**, which opens Settings on its [Key bindings](#rebinding-keys)
+screen; `key`, `keys`, `bind`, `keybindings` and `shortcuts` all put it first.
+The palette exists so
 the takeover screens do not need memorized number keys. If you cannot remember a binding, `:` and `?` are the two keys worth
 knowing.
 
@@ -4208,7 +4211,11 @@ grouped as the table below groups them, with the key in force and — for one yo
 changed — its default. `enter` on a row waits for the next key you press and
 binds it: a key that would clash is refused there and then, naming what it
 clashes with, and nothing is saved; a free key is saved at once and works
-straight away. `backspace` puts the row back on its default, `t` opens every
+straight away. `backspace` puts the row back on its default, and the note says
+what it was (`was ctrl+e · u puts it back`): `u` puts the last change back,
+a rebinding or a reset, with the cursor on its row — from the list of settings
+too, which opens this screen to make it. It is Settings' one undo, and is not
+itself undoable. `t` opens every
 binding as one line of `operation=key` pairs (for pasting a whole keymap), and
 `esc` goes back. `ctrl+c`, `ctrl+p` and `f1` stay with the TUI while it waits
 for a key, so they cannot be bound from there.

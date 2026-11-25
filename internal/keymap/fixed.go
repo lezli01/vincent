@@ -410,6 +410,7 @@ var fixed = []Fixed{
 	{"key bindings", "down", "move through the operations"},
 	{"key bindings", "enter", "set the operation's key by pressing it"},
 	{"key bindings", "backspace", "put the operation back on its default key"},
+	{"key bindings", "u", "undo the last change, a reset included"},
 	{"key bindings", "esc", "back to Settings"},
 	{"daemon", "f", "follow the end of the log again"},
 	{"daemon", "h", "show or hide the successful request lines"},

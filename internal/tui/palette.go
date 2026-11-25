@@ -62,6 +62,10 @@ type paletteEntry struct {
 	// item is a task, chat or issue row (#1080): listed only once something
 	// is typed, and run by its action.
 	item bool
+	// keywords are words the row is found by without drawing them: the
+	// spellings somebody looking for it types that its label does not carry
+	// (#1158).
+	keywords string
 }
 
 func newPalette(entries []paletteEntry) *palette {
@@ -131,6 +135,9 @@ func paletteEntries(ctx bindingContext, target taskActions, editable, connected,
 				nav: true, navTarget: b.navTarget, global: true,
 			})
 		}
+		if b.nav && b.navTarget == viewSettings {
+			out = append(out, keyBindingsPaletteEntry())
+		}
 	}
 	rows := withoutGitHub(bindingsFor(ctx), github)
 	if live != nil {
@@ -157,8 +164,26 @@ func paletteEntries(ctx bindingContext, target taskActions, editable, connected,
 	return out
 }
 
+// keyBindingsPaletteLabel is the key-bindings screen's palette row.
+const keyBindingsPaletteLabel = "key bindings — rebind any key, or put one back on its default"
+
+// keyBindingsPaletteEntry opens Settings on its key-bindings screen (#1158).
+// The screen (#1079) was reachable only through Settings' own search, so
+// `:key` and `:bind` listed nothing that changes a key. It sits right after
+// the Settings row, ahead of every panel row whose label happens to say
+// "key", and carries the other words it is looked for by; it runs through
+// the message the triggers banner opens a setting with, so it works from
+// any screen, and while the config has not loaded yet.
+func keyBindingsPaletteEntry() paletteEntry {
+	return paletteEntry{
+		group: "screens", label: keyBindingsPaletteLabel, global: true,
+		keywords: "keys keybindings keybinds keymap bind rebind shortcuts",
+		action:   func() tea.Msg { return openConfigKeyMsg{path: tuiKeysPath} },
+	}
+}
+
 // matches filters entries against the typed query, case-insensitive, over
-// label, group and key.
+// label, group, key and keywords.
 func (p *palette) matches() []paletteEntry {
 	q := strings.ToLower(strings.TrimSpace(p.input.Value()))
 	if q == "" {
@@ -176,7 +201,7 @@ func (p *palette) matches() []paletteEntry {
 	// list's own order, so the sections stay together where scores agree.
 	var exact []paletteEntry
 	for _, e := range p.entries {
-		if strings.Contains(strings.ToLower(e.label+" "+e.group+" "+e.key), q) {
+		if strings.Contains(strings.ToLower(e.label+" "+e.group+" "+e.key+" "+e.keywords), q) {
 			exact = append(exact, e)
 		}
 	}
@@ -190,7 +215,7 @@ func (p *palette) matches() []paletteEntry {
 	}
 	var hits []scored
 	for _, e := range p.entries {
-		if s := fuzzyScore(e.label+" "+e.group+" "+e.key, words); s > 0 {
+		if s := fuzzyScore(e.label+" "+e.group+" "+e.key+" "+e.keywords, words); s > 0 {
 			hits = append(hits, scored{e, s})
 		}
 	}

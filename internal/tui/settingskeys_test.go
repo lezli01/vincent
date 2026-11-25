@@ -56,6 +56,13 @@ func init() {
 				t.Fatal("backspace on a changed operation did not save its default back")
 			}
 		},
+		"u": func(t *testing.T) {
+			v := bindingsFixture(t)
+			v.undo = &settingsUndo{op: keymap.Refresh, opWas: "f5"}
+			if cmd := v.updateKey(registryKey(t, "u")); cmd == nil || !v.bindings.saving {
+				t.Fatal("u did not put the last change back")
+			}
+		},
 		"esc": func(t *testing.T) {
 			v := bindingsFixture(t)
 			v.updateKey(registryKey(t, "esc"))
@@ -114,5 +121,91 @@ func TestKeyBindingsEscKeepsTheKey(t *testing.T) {
 	v.updateKey(namedKey("enter"))
 	if cmd := v.updateKey(namedKey("esc")); cmd != nil || v.bindings == nil || v.bindings.capturing {
 		t.Fatal("esc while capturing did not just cancel")
+	}
+}
+
+// keysSaved is the daemon's answer to a save from the screen: the
+// configuration with these overrides in force.
+func keysSaved(v *settingsView, keys map[string]string) configSavedMsg {
+	cfg := v.config
+	cfg.TUI.Keys = keys
+	return configSavedMsg{path: tuiKeysPath, cfg: cfg}
+}
+
+// #1158: backspace reset a binding with nothing to take it back. The reset
+// says what the key was and `u` puts it back — Settings' one undo slot,
+// named, and not itself undoable.
+func TestKeyBindingsResetIsUndoable(t *testing.T) {
+	v := bindingsFixture(t)
+	v.update(keysSaved(v, map[string]string{"refresh": "f5"}))
+	v.bindings.adopt(v.config)
+	bindingCursorOn(t, v, keymap.Refresh)
+	if cmd := v.updateKey(namedKey("backspace")); cmd == nil {
+		t.Fatal("backspace did not reset")
+	}
+	v.update(keysSaved(v, map[string]string{}))
+	if note := v.bindings.note; !strings.Contains(note, "was f5") || !strings.Contains(note, "u puts it back") {
+		t.Fatalf("the reset does not say how to take it back: %q", note)
+	}
+	bindingCursorOn(t, v, keymap.Quit)
+	if cmd := v.updateKey(keyPress("u")); cmd == nil || !v.bindings.saving {
+		t.Fatalf("u did not put the binding back: %q", v.bindings.note)
+	}
+	if got := v.bindings.sending["refresh"]; got != "f5" {
+		t.Fatalf("u sends refresh=%q, want f5", got)
+	}
+	if v.bindings.ops[v.bindings.cursor].Op != keymap.Refresh {
+		t.Fatal("u did not put the cursor on the operation it puts back")
+	}
+	v.update(keysSaved(v, map[string]string{"refresh": "f5"}))
+	if note := v.bindings.note; !strings.Contains(note, "refresh put back to f5") {
+		t.Fatalf("the undo is not named: %q", note)
+	}
+	if v.undo != nil {
+		t.Fatalf("the undo is itself undoable: %+v", v.undo)
+	}
+	if cmd := v.updateKey(keyPress("u")); cmd != nil || !strings.Contains(v.bindings.note, "nothing to undo") {
+		t.Fatalf("a second u: note %q", v.bindings.note)
+	}
+}
+
+// #1158: the slot is Settings' own, so `u` after leaving the screen still
+// takes a reset back — on the screen, where the change is seen.
+func TestKeyBindingsResetUndoneFromSettings(t *testing.T) {
+	v := bindingsFixture(t)
+	v.update(keysSaved(v, map[string]string{"refresh": "f5"}))
+	v.bindings.adopt(v.config)
+	bindingCursorOn(t, v, keymap.Refresh)
+	v.updateKey(namedKey("backspace"))
+	v.update(keysSaved(v, map[string]string{}))
+	v.updateKey(namedKey("esc"))
+	v.updateKey(namedKey("tab"))
+	if cmd := v.updateKey(keyPress("u")); cmd == nil || v.bindings == nil || !v.bindings.saving {
+		t.Fatal("u in Settings did not reopen the screen to put the binding back")
+	}
+	if got := v.bindings.sending["refresh"]; got != "f5" {
+		t.Fatalf("u sends refresh=%q, want f5", got)
+	}
+}
+
+// #1158: a failed undo is not left pending, so the next save is a change
+// of its own and can be undone in turn.
+func TestKeyBindingsFailedUndoIsNotPending(t *testing.T) {
+	v := bindingsFixture(t)
+	v.update(keysSaved(v, map[string]string{"refresh": "f5"}))
+	v.bindings.adopt(v.config)
+	bindingCursorOn(t, v, keymap.Refresh)
+	v.updateKey(namedKey("backspace"))
+	v.update(keysSaved(v, map[string]string{}))
+	v.updateKey(keyPress("u"))
+	v.update(configSavedMsg{path: tuiKeysPath, err: errDaemonUnreachable})
+	if v.undoing {
+		t.Fatal("a failed undo is still pending")
+	}
+	v.updateKey(namedKey("enter"))
+	v.updateKey(synthKey("f6"))
+	v.update(keysSaved(v, map[string]string{"refresh": "f6"}))
+	if v.undo == nil || !strings.Contains(v.bindings.note, "u puts it back") {
+		t.Fatalf("the next change is not undoable: note %q", v.bindings.note)
 	}
 }
