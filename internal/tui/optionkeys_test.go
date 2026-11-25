@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -83,17 +84,19 @@ func TestOptionGlyphTwiceNotes(t *testing.T) {
 	}
 }
 
-// #1140: the chat switch's alt+1 … alt+9, the shifted chords, and what the
-// dead keys deliver once the next key releases them.
+// #1140: the chat switch's alt+1 … alt+9 and the shifted chords. #1157: the
+// keys that moved off the dead keys — alt+. and alt+, (≥ and ≤), the
+// conversation's alt+o (ø) and the export's alt+w (∑) — each type their
+// character on the first press, so the first press is what is detected.
 func TestOptionGlyphsBeyondLetters(t *testing.T) {
 	for _, c := range []struct{ glyph, want string }{
 		{"¡", "Option+1 typed ¡ — the terminal sends Option as a character, so alt+1"},
 		{"ª", "alt+9 never arrives"},
 		{"˝", "Option+Shift+g typed ˝"},
-		{"´", "Option+e typed ´"},    // the export's dead key, pressed again
-		{"˜", "Option+n typed ˜"},    // next chat's dead key; Option+Shift+n types it too
-		{"ˆ", "Option+i typed ˆ"},    // the conversation's dead key
-		{"é", "alt+e never arrives"}, // Option+e, then e
+		{"≥", "Option+. typed ≥ — the terminal sends Option as a character, so alt+. never arrives"},
+		{"≤", "Option+, typed ≤ — the terminal sends Option as a character, so alt+, never arrives"},
+		{"ø", "Option+o typed ø — the terminal sends Option as a character, so alt+o never arrives"},
+		{"∑", "Option+w typed ∑ — the terminal sends Option as a character, so alt+w never arrives"},
 	} {
 		onMacOS(t)
 		m := connectedChatRoot(t)
@@ -103,6 +106,40 @@ func TestOptionGlyphsBeyondLetters(t *testing.T) {
 		if !strings.Contains(v.note, c.want) {
 			t.Errorf("%s: note %q, want %q", c.glyph, v.note, c.want)
 		}
+	}
+}
+
+// #1157: no default is bound to a dead key any more, so what the dead keys
+// deliver is only a chord when tui.keys puts an operation back on one.
+func TestOptionDeadKeyGlyphs(t *testing.T) {
+	for _, c := range []struct {
+		overrides   map[string]string
+		glyph, want string
+	}{
+		{nil, "´", ""},
+		{nil, "˜", ""},
+		{nil, "ˆ", ""},
+		{map[string]string{"export_chat": "alt+e"}, "´", "Option+e typed ´"}, // pressed again
+		{map[string]string{"export_chat": "alt+e"}, "é", "alt+e never arrives"},
+		{map[string]string{"next_chat": "alt+n"}, "˜", "Option+n typed ˜"},
+		{map[string]string{"conversation": "alt+i"}, "ˆ", "Option+i typed ˆ"},
+	} {
+		t.Run(fmt.Sprintf("%s %v", c.glyph, c.overrides), func(t *testing.T) {
+			onMacOS(t)
+			if c.overrides != nil {
+				withKeymap(t, c.overrides)
+			}
+			m := connectedChatRoot(t)
+			v := m.views[viewChat].(*chatView)
+			m.Update(key(c.glyph))
+			m.Update(backspace())
+			if c.want == "" && v.note != "" {
+				t.Errorf("an unbound dead key raised %q", v.note)
+			}
+			if !strings.Contains(v.note, c.want) {
+				t.Errorf("note %q, want %q", v.note, c.want)
+			}
+		})
 	}
 }
 
@@ -162,5 +199,23 @@ func TestOptionGlyphOnlyOnMacOS(t *testing.T) {
 	pressText(m, "∂∂")
 	if v.note != "" {
 		t.Fatalf("linux noted: %s", v.note)
+	}
+}
+
+// #1157: alt+. and alt+, arrive as those strings whichever way the terminal
+// encodes Meta — the legacy ESC prefix, or the kitty protocol's CSI u with
+// the alt modifier (3) — so the defaults are keys a press produces.
+func TestPunctuationAltChordsDecode(t *testing.T) {
+	for raw, want := range map[string]string{
+		"\x1b.":      "alt+.",
+		"\x1b,":      "alt+,",
+		"\x1b[46;3u": "alt+.",
+		"\x1b[44;3u": "alt+,",
+		"\x1bo":      "alt+o",
+		"\x1bw":      "alt+w",
+	} {
+		if got := decodePress(t, raw).String(); got != want {
+			t.Errorf("%q decodes as %q, want %q", raw, got, want)
+		}
 	}
 }

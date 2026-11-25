@@ -133,7 +133,7 @@ waiting on your answer counts in the attention count and `!` visits it with
 the tasks; the terminal bell rings for a chat's question or finished turn while
 the terminal is in the background; and `notify.chat_on` has the daemon run your
 notify command for chats with nothing open. Move between a project's chats
-without the list: `alt+n`/`alt+shift+n` open the next or previous one and
+without the list: `alt+.`/`alt+,` open the next or previous one and
 `alt+1`…`alt+9` the Nth, from the composer, and the draft you leave is kept as above.
 
 And when an exploration turns out to be the start of real work, **hand the chat

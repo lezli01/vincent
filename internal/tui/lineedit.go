@@ -1,9 +1,11 @@
 package tui
 
 import (
+	"strings"
 	"unicode"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // lineEdit is a one-line field drawn by its owner: the chat's find line and
@@ -15,6 +17,10 @@ type lineEdit struct {
 	r   []rune
 	pos int
 	max int // runes; 0 is unbounded
+	// off is the first rune ViewIn shows (#1157): the field's horizontal
+	// scroll, kept between draws so the window moves only when the cursor
+	// would leave it rather than on every key.
+	off int
 }
 
 func (e *lineEdit) String() string { return string(e.r) }
@@ -107,4 +113,91 @@ func (e *lineEdit) View() string {
 		return string(e.r) + "█"
 	}
 	return string(e.r[:e.pos]) + chatMatchStyle.Render(string(e.r[e.pos])) + string(e.r[e.pos+1:])
+}
+
+// ViewIn is View fitted to width cells (#1157). A line the field cannot hold
+// had been drawn whole and cut by its owner, so typing past the edge typed
+// out of sight and the cursor went with it. It scrolls instead: the window
+// keeps the cursor in view, and a … at either edge says the line goes on.
+func (e *lineEdit) ViewIn(width int) string {
+	width = max(width, 3)
+	cell := func(i int) int {
+		if i >= len(e.r) {
+			return 1 // the block past the end
+		}
+		return max(ansi.StringWidth(string(e.r[i])), 1)
+	}
+	total := 0
+	for i := 0; i <= len(e.r); i++ {
+		total += cell(i)
+	}
+	if total <= width {
+		e.off = 0
+		return e.View()
+	}
+	e.off = min(e.off, e.pos)
+	span := func(from, to int) int { // cells of runes [from, to]
+		n := 0
+		for i := from; i <= to; i++ {
+			n += cell(i)
+		}
+		return n
+	}
+	for e.off < e.pos {
+		left, right := 0, 0
+		if e.off > 0 {
+			left = 1
+		}
+		if e.pos < len(e.r)-1 {
+			right = 1
+		}
+		if left+span(e.off, e.pos)+right <= width {
+			break
+		}
+		e.off++
+	}
+	var b strings.Builder
+	used := 0
+	if e.off > 0 {
+		b.WriteString("…")
+		used++
+	}
+	b.WriteString(string(e.r[e.off:min(e.pos, len(e.r))]))
+	used += span(e.off, e.pos-1)
+	if e.pos >= len(e.r) {
+		b.WriteString("█")
+		return b.String()
+	}
+	b.WriteString(chatMatchStyle.Render(string(e.r[e.pos])))
+	used += cell(e.pos)
+	end := e.pos + 1
+	for end < len(e.r) && used+cell(end) <= width {
+		used += cell(end)
+		end++
+	}
+	if end < len(e.r) {
+		// Room for the mark: give back what it needs.
+		for used+1 > width && end > e.pos+1 {
+			end--
+			used -= cell(end)
+		}
+		b.WriteString(string(e.r[e.pos+1 : end]))
+		b.WriteString("…")
+		return b.String()
+	}
+	b.WriteString(string(e.r[e.pos+1:]))
+	return b.String()
+}
+
+// lineField draws a one-line field after prefix with its keys' hint after
+// it, in width cells: the field gets what the prefix and the hint leave, and
+// the hint goes when that would be too little to edit in (#1157).
+func lineField(prefix string, e *lineEdit, hint string, width int) string {
+	width = max(width, 1)
+	room := width - ansi.StringWidth(prefix) - ansi.StringWidth(hint)
+	if room < 12 {
+		hint = ""
+		room = width - ansi.StringWidth(prefix)
+	}
+	return ansi.Truncate(prefix+e.ViewIn(room)+styleDim.Render(hint), width, "…")
 }

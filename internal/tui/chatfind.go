@@ -595,8 +595,7 @@ func (v *chatView) edgeLabel() string {
 
 // searchLine is the open search line, drawn above the composer.
 func (v *chatView) searchLine(width int) string {
-	return ansi.Truncate(styleKey.Render("/")+v.search.buf.View()+
-		styleDim.Render("  enter search · esc close"), width, "…")
+	return lineField(styleKey.Render("/"), &v.search.buf, "  enter search · esc close", width)
 }
 
 // decorate highlights the query on every line it shows on, the current

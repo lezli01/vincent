@@ -89,11 +89,11 @@ func init() {
 	// starts; from a chat, the chat itself (2, the third).
 	onBoard := func() panel { return switchBoard() }
 	inChat := func() panel { return switchChatView(2) }
-	board["alt+n"] = expect(onBoard, "alt+n", 5)
-	board["alt+shift+n"] = expect(onBoard, "alt+shift+n", 4)
+	board["alt+."] = expect(onBoard, "alt+.", 5)
+	board["alt+,"] = expect(onBoard, "alt+,", 4)
 	board["]"] = expect(onBoard, "]", 5)
-	chat["alt+n"] = expect(inChat, "alt+n", 1)
-	chat["alt+shift+n"] = expect(inChat, "alt+shift+n", 5)
+	chat["alt+."] = expect(inChat, "alt+.", 1)
+	chat["alt+,"] = expect(inChat, "alt+,", 5)
 	for i := 1; i <= 9; i++ {
 		key := fmt.Sprintf("alt+%d", i)
 		if i <= len(switchOrder) {
@@ -173,9 +173,9 @@ func TestChatSwitchWraps(t *testing.T) {
 	}
 	// In a chat, wrapping keeps the opener: esc still leads where it led.
 	v := switchChatView(4)
-	got, ok := pressSwitch(t, v, "alt+n")
+	got, ok := pressSwitch(t, v, "alt+.")
 	if !ok || got.id != 3 || got.back != viewIssues || got.projectID != 7 {
-		t.Errorf("alt+n from the last chat: %+v (ok %v), want chat 3, back to issues, project 7", got, ok)
+		t.Errorf("alt+. from the last chat: %+v (ok %v), want chat 3, back to issues, project 7", got, ok)
 	}
 	// The one chat already open is not a switch.
 	if _, ok := pressSwitch(t, switchChatView(3), "alt+1"); ok {
@@ -189,9 +189,9 @@ func TestChatSwitchFromAPendingQuestion(t *testing.T) {
 	v := switchChatView(3)
 	v.chat = &apiclient.Chat{ID: 3, ProjectID: 7, State: "awaiting_input"}
 	v.form = newAnswerForm(apiclient.InputRequest{Kind: "question", Questions: []apiclient.InputQuestion{{Text: "which branch?", Options: []string{"a", "b"}}}})
-	got, ok := pressSwitch(t, v, "alt+n")
+	got, ok := pressSwitch(t, v, "alt+.")
 	if !ok || got.id != 5 {
-		t.Fatalf("alt+n under a pending question opened %d (ok %v), want chat 5", got.id, ok)
+		t.Fatalf("alt+. under a pending question opened %d (ok %v), want chat 5", got.id, ok)
 	}
 	if v.form == nil {
 		t.Error("the switch put the question away before leaving the chat")
@@ -214,9 +214,9 @@ func TestChatSwitchFetchesAnotherProjectsChats(t *testing.T) {
 	v := switchChatView(3)
 	v.chat.ProjectID = 9
 	v.client = offlineClient()
-	_, cmd := v.updateKey(registryKey(t, "alt+n"))
+	_, cmd := v.updateKey(registryKey(t, "alt+."))
 	if cmd == nil {
-		t.Fatal("alt+n with no board for the project fetched nothing")
+		t.Fatal("alt+. with no board for the project fetched nothing")
 	}
 	chats := switchChats()
 	for i := range chats {
@@ -245,7 +245,7 @@ func TestChatsBoardBracketsAreTextInAChat(t *testing.T) {
 	}
 	archived := switchBoard()
 	archived.archived = true
-	if _, ok := pressSwitch(t, archived, "alt+n"); ok {
+	if _, ok := pressSwitch(t, archived, "alt+."); ok {
 		t.Error("the archived board switched chats")
 	}
 }

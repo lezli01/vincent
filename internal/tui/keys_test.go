@@ -48,7 +48,7 @@ var reboundKeys = map[string]string{
 	"follow_up":  "f10",
 	"edit_retry": "f11",
 	"chat":       "alt+y",
-	"chat_with":  "alt+w",
+	"chat_with":  "alt+e",
 	"rename":     "f18",
 	"help":       "f12",
 	"palette":    "ctrl+a",
@@ -60,7 +60,7 @@ var reboundKeys = map[string]string{
 	// stay off every key the composer types.
 	"compact":       "alt+j",
 	"export_chat":   "alt+q",
-	"shell_command": "alt+o",
+	"shell_command": "alt+i",
 	"chat_diff":     "alt+u",
 }
 

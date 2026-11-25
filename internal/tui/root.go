@@ -1465,7 +1465,11 @@ func (m *root) routeOpen(open tea.Msg) tea.Cmd {
 		// openChatMsg's reason: an inactive view receives nothing.
 		if v, ok := m.views[viewIssue].(*issueView); ok {
 			v.back = msg.back
-			return tea.Batch(v.open(msg.id), m.switchTo(viewIssue))
+			cmd := v.open(msg.id)
+			if msg.keep {
+				v.tab = msg.keepTab
+			}
+			return tea.Batch(cmd, m.switchTo(viewIssue))
 		}
 	case openCompareMsg:
 		// Pointed first and switched second, for openChatMsg's reason.

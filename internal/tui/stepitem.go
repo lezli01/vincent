@@ -4,8 +4,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
-// Stepping to the neighbouring task or issue (#1077). Chats had alt+n and
-// alt+shift+n; a task workspace and an opened issue had no way to the next
+// Stepping to the neighbouring task or issue (#1077). Chats had alt+. and
+// alt+,; a task workspace and an opened issue had no way to the next
 // one but going back to the board. The same keys walk the board's own order
 // — the order the reader sees, filters and sort included — and wrap.
 
@@ -43,11 +43,12 @@ func (m *root) stepItem(msg stepItemMsg) tea.Cmd {
 			return nil
 		}
 		v.selectIssue(next)
-		back := viewIssues
+		open := openIssueMsg{id: next, projectID: v.project.id, back: viewIssues}
 		if iv, ok := m.views[viewIssue].(*issueView); ok {
-			back = iv.back
+			// The next issue opens on the tab this one was read on (#1157).
+			open.back, open.keep, open.keepTab = iv.back, true, iv.tab
 		}
-		return m.openObject(openIssueMsg{id: next, projectID: v.project.id, back: back})
+		return m.openObject(open)
 	}
 	s, ok := m.views[viewHome].(*shell)
 	if !ok {
@@ -73,7 +74,12 @@ func (m *root) stepItem(msg stepItemMsg) tea.Cmd {
 		return nil
 	}
 	t, _ := s.board.taskByID(next)
-	return m.openObject(selectTaskMsg{id: next, state: t.State, projectID: t.ProjectID})
+	open := selectTaskMsg{id: next, state: t.State, projectID: t.ProjectID}
+	// The next task opens on the tab this one was read on (#1157).
+	if tv, ok := m.views[viewTask].(*taskView); ok && m.active == viewTask {
+		open.keep, open.keepTab = true, tv.tab
+	}
+	return m.openObject(open)
 }
 
 // stepIn is the id delta places from from in ids, wrapping; false when from

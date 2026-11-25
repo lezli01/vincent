@@ -82,8 +82,7 @@ func (f *paneFind) highlight(lines []string) []string {
 // the keys once committed.
 func (f *paneFind) bar(width int, note string) string {
 	if f.typing {
-		return ansi.Truncate(styleKey.Render("/")+f.buf.View()+
-			styleDim.Render("  enter search · esc cancel"), max(width, 1), "…")
+		return lineField(styleKey.Render("/"), &f.buf, "  enter search · esc cancel", width)
 	}
 	count := "no match"
 	if len(f.hits) > 0 {
