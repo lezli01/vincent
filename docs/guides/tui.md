@@ -3897,8 +3897,14 @@ Version, uptime, a digest of the config in effect, the adapters detected, and a
 live tail of the daemon log. The one thing it does to the daemon is `r`, a
 restart: it asks first, stops the daemon gracefully the way `vincent daemon
 stop` does — running steps are interrupted, and re-run when the new daemon
-recovers them — and then starts a new one as the TUI does at launch.
-Stopping it for good stays with `vincent daemon stop`.
+recovers them — and then starts a new one as the TUI does at launch. When the
+daemon runs as a service ([Running at login](running-at-login.md)) the question
+says so — "restart the daemon through its service?" — and the restart goes
+through the service manager, as `vincent service restart` does, so the new
+daemon stays under the service; the TUI waits for it to come back rather than
+starting one of its own. Pressing `r` again while a restart is under way is
+ignored, and the line says so. Stopping it for good stays with
+`vincent daemon stop`.
 
 The log hides the successful `http request` lines, which are mostly this
 TUI's own polling; the pane's first line counts them, and `h` shows them. A

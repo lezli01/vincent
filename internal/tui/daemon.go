@@ -12,6 +12,7 @@ import (
 	"github.com/lezli01/vincent/internal/daemon"
 	"github.com/lezli01/vincent/internal/keymap"
 	"github.com/lezli01/vincent/internal/nerdfont"
+	"github.com/lezli01/vincent/internal/service"
 )
 
 const (
@@ -108,11 +109,24 @@ type daemonView struct {
 	logSearch textField
 	searching bool
 	// restartAsk is the open restart question; restarting is set once it is
-	// answered yes, until the view is rebuilt by the reconnect.
-	restartAsk bool
-	restarting bool
-	// restartErr is why the last restart could not stop the daemon.
+	// answered yes, until the root says the restart has ended — reconnected
+	// or failed (restartEndedMsg). restartIgnored notes an `r` pressed while
+	// one was under way (#1160).
+	restartAsk     bool
+	restarting     bool
+	restartIgnored bool
+	// restartViaService is the path the restart under way took.
+	restartViaService bool
+	// restartErr is why the last restart failed.
 	restartErr error
+	// svc is the service manager's reading, taken when `r` opens the
+	// question; svcKnown is false until it lands (#1160). serviceQuery is a
+	// field so a test never asks the developer's real launchd, systemd or
+	// Task Scheduler.
+	svc          service.Status
+	svcErr       error
+	svcKnown     bool
+	serviceQuery func(context.Context) (service.Status, error)
 
 	// statusLine is the open §16 status-line flow, nil when it is not open.
 	// It is a takeover for the same reason the config editor is.
@@ -174,6 +188,7 @@ func newDaemonView() *daemonView {
 		fontRelease:  nerdfont.Pinned,
 		fontDir:      nerdfont.DefaultDir,
 		fontEnv:      os.Getenv,
+		serviceQuery: service.Query,
 		vp:           viewport.New(),
 		following:    true,
 		logSearch:    newLogSearch(),
@@ -328,11 +343,11 @@ func (d *daemonView) update(msg tea.Msg) (panel, tea.Cmd) {
 			d.visible = false
 		}
 		return d, nil
-	case daemonStoppedMsg:
-		d.restarting = false
-		if msg.err != nil {
-			d.restartErr = msg.err
-		}
+	case restartEndedMsg:
+		d.restarting, d.restartIgnored, d.restartErr = false, false, msg.err
+		return d, nil
+	case serviceStateMsg:
+		d.svc, d.svcErr, d.svcKnown = msg.st, msg.err, true
 		return d, nil
 	case daemonTickMsg:
 		if !d.visible {
@@ -501,8 +516,7 @@ func (d *daemonView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		// The takeover layer of the §15 esc stack: back to the human's tab.
 		return d, backToTab
 	case daemonRestartKey:
-		d.restartAsk, d.restartErr = true, nil
-		return d, nil
+		return d, d.startRestart()
 	case daemonRequestsKey:
 		d.showRequests = !d.showRequests
 		d.logDirty = true
