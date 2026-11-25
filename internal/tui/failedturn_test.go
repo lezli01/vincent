@@ -30,8 +30,8 @@ func TestFailedTurnSaysWhatNextAndRetries(t *testing.T) {
 	// A second send while that one is in flight says so.
 	v.composer.SetValue("and another")
 	v.updateKey(tea.KeyPressMsg{Code: tea.KeyEnter})
-	if !strings.Contains(v.note, "still being sent") || v.composer.Value() != "and another" {
-		t.Fatalf("enter during a send: note %q, draft %q", v.note, v.composer.Value())
+	if !strings.Contains(v.status().text, "still being sent") || v.composer.Value() != "and another" {
+		t.Fatalf("enter during a send: note %q, draft %q", v.status().text, v.composer.Value())
 	}
 }
 
@@ -39,8 +39,8 @@ func TestFailedTurnSaysWhatNextAndRetries(t *testing.T) {
 func TestStopWithNothingRunningSaysSo(t *testing.T) {
 	v := chatViewFixture()
 	v.updateKey(tea.KeyPressMsg{Code: 'x', Mod: tea.ModCtrl})
-	if v.note != "no turn is running — nothing to stop" {
-		t.Fatalf("ctrl+x said %q", v.note)
+	if v.status().text != "no turn is running — nothing to stop" {
+		t.Fatalf("ctrl+x said %q", v.status().text)
 	}
 }
 
@@ -79,8 +79,8 @@ func TestRetryFailedTurnOncePerResend(t *testing.T) {
 	if cmd := v.retryFailedTurn(); cmd != nil {
 		t.Fatal("a second alt+l before the reload sent the prompt again")
 	}
-	if !strings.Contains(v.note, "already") {
-		t.Errorf("the ignored alt+l said %q", v.note)
+	if !strings.Contains(v.status().text, "already") {
+		t.Errorf("the ignored alt+l said %q", v.status().text)
 	}
 	// The reload shows the resent turn: a later failure can be retried.
 	v.applyLoaded(chatLoadedMsg{id: v.chatID, chat: v.chat, turns: []apiclient.ChatTurn{

@@ -127,14 +127,14 @@ func (v *chatView) applyImageClip(msg chatImageClipMsg) tea.Cmd {
 		return nil
 	}
 	if why := v.imagesRefused(); why != "" {
-		v.note, v.noteBad = why, true
+		v.status().note(why, true)
 		return nil
 	}
 	client, id := v.client, v.chatID
 	if client == nil {
 		return nil
 	}
-	v.note, v.noteBad = "uploading the image…", false
+	v.status().result("uploading the image…", false)
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), loadTimeout)
 		defer cancel()
@@ -150,10 +150,10 @@ func (v *chatView) applyImageAdded(msg chatImageAddedMsg) tea.Cmd {
 		return nil
 	}
 	if msg.err != nil || msg.image == nil {
-		v.note, v.noteBad = "image: "+errString(cmpErr(msg.err)), true
+		v.status().result("image: "+errString(cmpErr(msg.err)), true)
 		return nil
 	}
-	v.note, v.noteBad = "", false
+	v.status().result("", false)
 	before := v.composer.Value()
 	v.composer.InsertString(msg.image.Chip)
 	return v.draftEdited(before)

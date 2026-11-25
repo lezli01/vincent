@@ -58,7 +58,7 @@ func queueDiscardNote(c *apiclient.Chat) string {
 func (v *chatView) queueAction(note string, fn func(ctx context.Context, c *apiclient.Client, id int64) error) tea.Cmd {
 	client, id := v.client, v.chatID
 	if client == nil {
-		v.note, v.noteBad = "not connected", true
+		v.status().result("not connected", true)
 		return nil
 	}
 	return func() tea.Msg {
@@ -73,9 +73,9 @@ func (v *chatView) applyQueueDone(msg chatQueueDoneMsg) tea.Cmd {
 		return nil
 	}
 	if msg.err != nil {
-		v.note, v.noteBad = errString(msg.err), true
+		v.status().result(errString(msg.err), true)
 	} else {
-		v.note, v.noteBad = msg.note, false
+		v.status().result(msg.note, false)
 	}
 	return v.loadCmd()
 }
@@ -88,6 +88,10 @@ func (v *chatView) newestQueued() *apiclient.ChatQueuedMessage {
 	return &v.queue.Messages[len(v.queue.Messages)-1]
 }
 
+// chatQueueEditNote is the line under the conversation while a queued
+// message is in the composer.
+var chatQueueEditNote = "editing the queued message — enter saves, " + chatQueueDeleteKey + " deletes it, esc stops editing"
+
 // startQueueEdit puts the newest queued message in the composer. It reports
 // false when there is nothing to edit, so `↑` falls through to the composer.
 func (v *chatView) startQueueEdit() bool {
@@ -97,8 +101,6 @@ func (v *chatView) startQueueEdit() bool {
 	}
 	v.editingQueued = m.ID
 	v.composer.SetValue(m.Prompt)
-	v.note, v.noteBad = "editing the queued message — enter saves, "+
-		chatQueueDeleteKey+" deletes it, esc stops editing", false
 	return true
 }
 
@@ -106,7 +108,6 @@ func (v *chatView) startQueueEdit() bool {
 func (v *chatView) stopQueueEdit() {
 	v.editingQueued = 0
 	v.composer.SetValue("")
-	v.note = ""
 }
 
 func (v *chatView) saveQueueEditCmd() tea.Cmd {
@@ -136,7 +137,7 @@ func (v *chatView) deleteQueuedCmd() tea.Cmd {
 func (v *chatView) resumeQueueCmd() tea.Cmd {
 	stranded := v.chat != nil && v.chat.State == string(chatstate.Idle) && v.chat.QueuedCount > 0
 	if v.chat == nil || !v.chat.QueuePaused && !stranded {
-		v.note, v.noteBad = "the queue is not paused", false
+		v.status().note("the queue is not paused", false)
 		return nil
 	}
 	return v.queueAction("queue resumed", func(ctx context.Context, c *apiclient.Client, id int64) error {
@@ -150,11 +151,10 @@ func (v *chatView) resumeQueueCmd() tea.Cmd {
 // Nothing queued says so without asking.
 func (v *chatView) askClearQueue() {
 	if !queueWanted(v.chat) {
-		v.note, v.noteBad = "nothing is queued", false
+		v.status().note("nothing is queued", false)
 		return
 	}
 	v.clearingQueue = true
-	v.note = ""
 	v.hideInline("")
 	v.hideFiles()
 }
@@ -177,7 +177,7 @@ func (v *chatView) clearQueueQuestion() string {
 
 func (v *chatView) clearQueueCmd() tea.Cmd {
 	if !queueWanted(v.chat) {
-		v.note, v.noteBad = "nothing is queued", false
+		v.status().note("nothing is queued", false)
 		return nil
 	}
 	return v.queueAction("queue cleared", func(ctx context.Context, c *apiclient.Client, id int64) error {
@@ -196,7 +196,7 @@ func (v *chatView) steerNote() {
 	if v.chat.CanSteer || reason == "" {
 		reason = "steering is unavailable here"
 	}
-	v.note, v.noteBad = reason, true
+	v.status().note(reason, true)
 }
 
 // queueLines renders the queue below the conversation: one faded `You` card

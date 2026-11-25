@@ -1092,8 +1092,8 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		"alt+l": func(t *testing.T) {
 			v := chatViewFixture()
 			v.updateKey(registryKey(t, "alt+l"))
-			if v.note != "the last turn did not fail — nothing to retry" {
-				t.Fatalf("alt+l with no failed turn said %q", v.note)
+			if v.status().text != "the last turn did not fail — nothing to retry" {
+				t.Fatalf("alt+l with no failed turn said %q", v.status().text)
 			}
 		},
 		// Task 164: recall's way back, the stash and the history picker.
@@ -1135,8 +1135,8 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			v := chatViewFixture()
 			v.chat.State, v.chat.SteerReason = "running", "claude cannot steer a running turn"
 			v.updateKey(registryKey(t, "ctrl+s"))
-			if !strings.Contains(v.note, "cannot steer") {
-				t.Fatalf("ctrl+s noted %q, want the daemon's steer reason", v.note)
+			if !strings.Contains(v.status().text, "cannot steer") {
+				t.Fatalf("ctrl+s noted %q, want the daemon's steer reason", v.status().text)
 			}
 		},
 		"up": func(t *testing.T) {

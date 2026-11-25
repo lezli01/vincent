@@ -159,7 +159,7 @@ func TestChatSkillsPickedInvocationReachesTheAgentLive(t *testing.T) {
 	}
 	v.applySkills(answer)
 	if !v.skills.open {
-		t.Fatalf("the daemon's answer did not open a list: %q", v.note)
+		t.Fatalf("the daemon's answer did not open a list: %q", v.status().text)
 	}
 	// The daemon's claude adapter drops the built-in and keeps the two
 	// skills fakeagent's default `initialize` reply carries (task 124.7).

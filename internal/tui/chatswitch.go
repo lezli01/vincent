@@ -141,7 +141,7 @@ func (v *chatView) applySwitchList(msg chatSwitchListMsg) tea.Cmd {
 		return nil
 	}
 	if msg.err != nil {
-		v.note, v.noteBad = "could not list the project's chats: "+errString(msg.err), true
+		v.status().result("could not list the project's chats: "+errString(msg.err), true)
 		return nil
 	}
 	return v.switchWithin(msg.sw, msg.chats)

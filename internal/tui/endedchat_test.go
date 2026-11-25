@@ -28,8 +28,8 @@ func TestEndedChatHasNoComposer(t *testing.T) {
 	if v.composer.Value() != "" {
 		t.Fatalf("an ended chat took typed text: %q", v.composer.Value())
 	}
-	if !strings.Contains(v.note, "nothing typed here can be sent") {
-		t.Errorf("typing said %q", v.note)
+	if !strings.Contains(v.status().text, "nothing typed here can be sent") {
+		t.Errorf("typing said %q", v.status().text)
 	}
 	v.pasteText("pasted")
 	if v.composer.Value() != "" {
@@ -93,8 +93,8 @@ func TestEndedChatOffersNoComposerKeys(t *testing.T) {
 		if cmd != nil {
 			t.Errorf("%s on an ended chat returned a command", tc.key)
 		}
-		if want := tc.op + ": not available — the chat has ended"; v.note != want {
-			t.Errorf("%s said %q, want %q", tc.key, v.note, want)
+		if want := tc.op + ": not available — the chat has ended"; v.status().text != want {
+			t.Errorf("%s said %q, want %q", tc.key, v.status().text, want)
 		}
 		if v.composer.Value() != "" || v.history.open {
 			t.Errorf("%s on an ended chat reached the composer: %q (history open %v)", tc.key, v.composer.Value(), v.history.open)
@@ -115,18 +115,22 @@ func TestEndedChatOffersNoComposerKeys(t *testing.T) {
 		t.Fatalf("the editor's text reached an ended chat's composer: %q", v.composer.Value())
 	}
 	if cmd == nil {
-		t.Fatalf("the editor's text was dropped (note %q)", v.note)
+		t.Fatalf("the editor's text was dropped (note %q)", v.status().text)
 	}
 	res, ok := cmd().(clipboardResultMsg)
 	if !ok {
 		t.Fatal("the editor's text did not go through the clipboard write")
 	}
-	v.update(res)
+	// The copy's outcome is the root's to say (#1164).
+	m := phaseRoot(t, phaseConnected, 120, 30)
+	m.views[viewChat] = v
+	m.active = viewChat
+	m.Update(res)
 	if len(copied) != 1 || copied[0] != "written after it ended" {
 		t.Fatalf("clipboard got %q", copied)
 	}
-	if want := "editor: the chat has ended — what you wrote is on the clipboard"; v.note != want {
-		t.Errorf("note %q, want %q", v.note, want)
+	if want := "editor: the chat has ended — what you wrote is on the clipboard"; v.status().text != want {
+		t.Errorf("note %q, want %q", v.status().text, want)
 	}
 
 	// Nothing written: nothing to keep, and it says so.
@@ -136,7 +140,7 @@ func TestEndedChatOffersNoComposerKeys(t *testing.T) {
 	if cmd := v.applyEditorDraft(chatEditorMsg{chatID: 1, text: " \n"}); cmd != nil || len(copied) != 0 {
 		t.Fatalf("an empty editor file was copied: %q", copied)
 	}
-	if want := "editor: the chat has ended — nothing was written, so nothing is kept"; v.note != want {
-		t.Errorf("note %q, want %q", v.note, want)
+	if want := "editor: the chat has ended — nothing was written, so nothing is kept"; v.status().text != want {
+		t.Errorf("note %q, want %q", v.status().text, want)
 	}
 }

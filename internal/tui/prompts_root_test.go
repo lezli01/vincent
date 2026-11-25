@@ -297,8 +297,8 @@ func TestChatViewKeepsTheDraftOnARefusedSend(t *testing.T) {
 			if got := v.composer.Value(); got != draft {
 				t.Fatalf("after a %s refusal the composer holds %q, want %q", tc.name, got, draft)
 			}
-			if !v.noteBad || v.note == "" {
-				t.Fatalf("the refusal rendered as %q (bad=%v)", v.note, v.noteBad)
+			if !v.status().bad || v.status().text == "" {
+				t.Fatalf("the refusal rendered as %q (bad=%v)", v.status().text, v.status().bad)
 			}
 		})
 	}
@@ -323,8 +323,8 @@ func TestChatViewQueuesOnALiveChatAndRefusesATerminalOne(t *testing.T) {
 			if got := v.composer.Value(); got != "" {
 				t.Fatalf("a queued send left %q in the composer", got)
 			}
-			if !strings.Contains(v.note, "queued") || v.noteBad {
-				t.Fatalf("a queued send noted %q (bad=%v)", v.note, v.noteBad)
+			if !strings.Contains(v.status().text, "queued") || v.status().bad {
+				t.Fatalf("a queued send noted %q (bad=%v)", v.status().text, v.status().bad)
 			}
 		})
 	}
@@ -340,7 +340,7 @@ func TestChatViewQueuesOnALiveChatAndRefusesATerminalOne(t *testing.T) {
 			if got := v.composer.Value(); got != "hello" {
 				t.Fatalf("enter on a %s chat changed the draft to %q", state, got)
 			}
-			if v.note == "" {
+			if v.status().text == "" {
 				t.Fatalf("enter on a %s chat set no note", state)
 			}
 		})
@@ -399,8 +399,8 @@ func TestChatViewIgnoresASendResultForAChatItLeft(t *testing.T) {
 			if cmd := v.applySent(chatSentMsg{chatID: 1, err: tc.err}); cmd != nil {
 				t.Error("chat 1's send result reloaded chat 2")
 			}
-			if v.note != "" {
-				t.Errorf("chat 1's send result set chat 2's note: %q", v.note)
+			if v.status().text != "" {
+				t.Errorf("chat 1's send result set chat 2's note: %q", v.status().text)
 			}
 			if got := v.composer.Value(); got != "for chat two" {
 				t.Errorf("chat 1's send result changed chat 2's draft to %q", got)

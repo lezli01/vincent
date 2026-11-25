@@ -2703,3 +2703,10 @@ func (t *taskView) outputPane() *detail {
 	}
 	return t.detail
 }
+
+// setStatusHolder hands the root's status line to the workspace's action
+// bar (#1164) — the shell's own, when the root built both.
+func (t *taskView) setStatusHolder(h *statusHolder) { t.detail.actions.setStatusHolder(h) }
+
+// status is the line the workspace posts to.
+func (t *taskView) status() *statusHolder { return t.detail.actions.status() }

@@ -429,18 +429,19 @@ func TestClipboardSeam(t *testing.T) {
 }
 
 // TestCopyResultBecomesANotice: a key press a human made never fails
-// silently, in either workspace.
+// silently, in either workspace — on the one status line (#1164).
 func TestCopyResultBecomesANotice(t *testing.T) {
-	d := newTestDetail(t)
-	d.update(clipboardResultMsg{label: "markdown"})
-	if d.actions.status().text != "markdown copied" || d.actions.status().bad {
-		t.Fatalf("the task workspace said %q (bad=%v)", d.actions.status().text, d.actions.status().bad)
+	m := phaseRoot(t, phaseConnected, 120, 30)
+	m.active = viewTask
+	m.Update(clipboardResultMsg{label: "markdown"})
+	if m.status.text != "markdown copied" || m.status.bad {
+		t.Fatalf("the task workspace said %q (bad=%v)", m.status.text, m.status.bad)
 	}
 
-	v := chatViewFixture()
-	v.update(clipboardResultMsg{label: "markdown", err: errors.New("boom")})
-	if !v.noteBad || !strings.Contains(v.note, "boom") {
-		t.Fatalf("the chat said %q (bad=%v)", v.note, v.noteBad)
+	m.active = viewChat
+	m.Update(clipboardResultMsg{label: "markdown", err: errors.New("boom")})
+	if !m.status.bad || !strings.Contains(m.status.text, "boom") {
+		t.Fatalf("the chat said %q (bad=%v)", m.status.text, m.status.bad)
 	}
 }
 
@@ -543,8 +544,8 @@ func TestCopyPickerThroughTheRoot(t *testing.T) {
 	if len(*wrote) != 1 || (*wrote)[0] != readerDoc {
 		t.Fatalf("the clipboard got %v, want the assistant's stored Markdown", *wrote)
 	}
-	if v.note != "markdown copied" || v.noteBad {
-		t.Fatalf("the chat said %q (bad=%v)", v.note, v.noteBad)
+	if v.status().text != "markdown copied" || v.status().bad {
+		t.Fatalf("the chat said %q (bad=%v)", v.status().text, v.status().bad)
 	}
 }
 

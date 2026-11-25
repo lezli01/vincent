@@ -367,7 +367,7 @@ func TestDiagnoseAndClearQueueAskFirst(t *testing.T) {
 	v.chat.QueuedCount = 0
 	v.clearingQueue = false
 	v.updateKey(tea.KeyPressMsg{Code: 'c', Mod: tea.ModAlt})
-	if v.clearingQueue || v.note != "nothing is queued" {
-		t.Errorf("alt+c over an empty queue: asking=%v note=%q", v.clearingQueue, v.note)
+	if v.clearingQueue || v.status().text != "nothing is queued" {
+		t.Errorf("alt+c over an empty queue: asking=%v note=%q", v.clearingQueue, v.status().text)
 	}
 }

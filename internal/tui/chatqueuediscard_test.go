@@ -136,7 +136,7 @@ func TestAltRStartsAnIdleChatsUnpausedQueue(t *testing.T) {
 		t.Errorf("the stranded queue's lines = %q, want them to say alt+r starts it", got)
 	}
 	if cmd := v.resumeQueueCmd(); cmd == nil {
-		t.Errorf("alt+r on an idle chat's unpaused queue was refused: %q", v.note)
+		t.Errorf("alt+r on an idle chat's unpaused queue was refused: %q", v.status().text)
 	}
 	// A live chat's unpaused queue drains by itself: nothing to resume.
 	v.chat.State = "running"

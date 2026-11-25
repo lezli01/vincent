@@ -265,14 +265,21 @@ func newRoot(ctx context.Context, cn connector, dataDir string) *root {
 		bell:    newBellState(),
 		status:  newStatusHolder(),
 	}
+	m.wireStatus()
+	m.setTabs(defaultTabs())
+	m.setDataDir(dataDir)
+	return m
+}
+
+// wireStatus hands every view that posts the root's one status line
+// (#1164). Update repeats it, so a view put in place later — a test's
+// fixture — posts there too; it is a pointer store per view.
+func (m *root) wireStatus() {
 	for i := range m.views {
 		if sa, ok := m.views[i].(statusAware); ok {
 			sa.setStatusHolder(m.status)
 		}
 	}
-	m.setTabs(defaultTabs())
-	m.setDataDir(dataDir)
-	return m
 }
 
 // setDataDir hands the resolved directory to the views that read from it.
@@ -299,6 +306,7 @@ func (m *root) Init() tea.Cmd { return m.cn.probeCmd() }
 
 // Update implements tea.Model.
 func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	m.wireStatus()
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height

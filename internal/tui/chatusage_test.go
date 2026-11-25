@@ -306,7 +306,7 @@ func TestChatCompactKey(t *testing.T) {
 			}
 		}
 		v.updateKey(registryKey(t, "alt+k"))
-		if v.compacting || !v.noteBad {
+		if v.compacting || !v.status().bad {
 			t.Fatal("alt+k asked to compact a running chat")
 		}
 	})

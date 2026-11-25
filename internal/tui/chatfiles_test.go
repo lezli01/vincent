@@ -141,8 +141,8 @@ func TestChatFilesBareSigilOpensNothing(t *testing.T) {
 	t.Run("a GitHub handle says nothing at all", func(t *testing.T) {
 		v := chatFilesFixture(claudeFiles())
 		typeIntoChat(t, v, "cc @lezli01")
-		if v.files.open || v.note != "" {
-			t.Fatalf("a handle spoke up: open=%v note=%q", v.files.open, v.note)
+		if v.files.open || v.status().text != "" {
+			t.Fatalf("a handle spoke up: open=%v note=%q", v.files.open, v.status().text)
 		}
 		if plain := ansi.Strip(v.render(100, 30)); strings.Contains(plain, "nothing matches") {
 			t.Fatalf("a handle drew the no-match line:\n%s", plain)
@@ -269,8 +269,8 @@ func TestChatFilesNoMatchIsSilent(t *testing.T) {
 	if v.files.open {
 		t.Fatal("an unmatched token kept the picker open")
 	}
-	if v.note != "" || v.skills.inlineNote != "" {
-		t.Fatalf("an unmatched token was nagged about: %q / %q", v.note, v.skills.inlineNote)
+	if v.status().text != "" || v.skills.inlineNote != "" {
+		t.Fatalf("an unmatched token was nagged about: %q / %q", v.status().text, v.skills.inlineNote)
 	}
 	if plain := ansi.Strip(v.render(100, 30)); strings.Contains(plain, "files") {
 		t.Fatalf("an unmatched token drew a list:\n%s", plain)
@@ -470,8 +470,8 @@ func TestChatFilesStandsDownForTheAdaptersWord(t *testing.T) {
 		}
 		v := chatFilesFixture(data)
 		typeIntoChat(t, v, "@main")
-		if v.files.open || v.note != "" {
-			t.Fatalf("an adapter that cannot mention spoke up: open=%v note=%q", v.files.open, v.note)
+		if v.files.open || v.status().text != "" {
+			t.Fatalf("an adapter that cannot mention spoke up: open=%v note=%q", v.files.open, v.status().text)
 		}
 	})
 }
@@ -508,8 +508,8 @@ func TestChatFilesSanitizesHostileMention(t *testing.T) {
 	if got := v.composer.Value(); got != "@e" {
 		t.Fatalf("a disabled row wrote %q into the draft", got)
 	}
-	if !v.noteBad {
-		t.Fatalf("accepting a disabled row said %q, want a refusal", v.note)
+	if !v.status().bad {
+		t.Fatalf("accepting a disabled row said %q, want a refusal", v.status().text)
 	}
 }
 
@@ -592,8 +592,8 @@ func TestChatFilesFetchIsOnceAndIsNotRetried(t *testing.T) {
 		if n := calls.Load(); n != 1 {
 			t.Fatalf("a failed fetch was re-fired: %d requests", n)
 		}
-		if v.files.open || v.note != "" {
-			t.Fatalf("a failed fetch spoke up: open=%v note=%q", v.files.open, v.note)
+		if v.files.open || v.status().text != "" {
+			t.Fatalf("a failed fetch spoke up: open=%v note=%q", v.files.open, v.status().text)
 		}
 		// A different token is a different question, and it is asked.
 		typeChatFilesLive(t, v, " @docs")

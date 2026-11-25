@@ -255,8 +255,8 @@ func TestChatWithSendsTheChosenAgentLive(t *testing.T) {
 	if err != nil || len(turns) != 0 {
 		t.Fatalf("turns = %+v, %v; want none without a runner", turns, err)
 	}
-	if chat.composer.Value() != "why did it stop?" || !chat.noteBad {
-		t.Fatalf("composer %q (note %q), want the unsent first message back", chat.composer.Value(), chat.note)
+	if chat.composer.Value() != "why did it stop?" || !chat.status().bad {
+		t.Fatalf("composer %q (note %q), want the unsent first message back", chat.composer.Value(), chat.status().text)
 	}
 
 	// Locked now: chat_with navigates rather than opening the form.

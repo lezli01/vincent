@@ -405,7 +405,7 @@ func TestNewChatUnsentFirstMessageComesBackToTheComposer(t *testing.T) {
 			v.streamStop()
 		}
 	})
-	if v.composer.Value() != "hello there" || !v.noteBad {
-		t.Fatalf("composer %q (note %q), want the unsent message back", v.composer.Value(), v.note)
+	if v.composer.Value() != "hello there" || !v.status().bad {
+		t.Fatalf("composer %q (note %q), want the unsent message back", v.composer.Value(), v.status().text)
 	}
 }

@@ -88,7 +88,7 @@ func init() {
 		v.moveCursor(shellCardLine(v, 11))
 		_, cmd := v.updateKey(registryKey(t, "a"))
 		if cmd == nil {
-			t.Fatalf("a on a finished run's card sent nothing (note %q)", v.note)
+			t.Fatalf("a on a finished run's card sent nothing (note %q)", v.status().text)
 		}
 	}
 	panelKeyProbes[ctxChatShell] = map[string]func(*testing.T){
@@ -135,8 +135,8 @@ func TestChatShellRefusedOnAnEndedChat(t *testing.T) {
 	v := chatViewFixture()
 	v.chat.State = "closed"
 	v.updateKey(registryKey(t, "alt+x"))
-	if v.shell.prompt || !v.noteBad {
-		t.Fatalf("an ended chat opened the prompt (note %q)", v.note)
+	if v.shell.prompt || !v.status().bad {
+		t.Fatalf("an ended chat opened the prompt (note %q)", v.status().text)
 	}
 	for _, b := range v.liveBindings(bindings) {
 		if b.op == "shell_command" {
@@ -158,8 +158,8 @@ func TestChatShellRefusalIsTheNote(t *testing.T) {
 	v := chatViewFixture()
 	v.shell.busy = true
 	v.applyShellStarted(chatShellStartedMsg{chatID: 1, err: &apiclient.Error{Status: 409, Code: "invalid_state", Message: "this chat already has a shell command running"}})
-	if v.shell.busy || !v.noteBad || !strings.Contains(v.note, "already has a shell command running") || len(v.shell.runs) != 0 {
-		t.Fatalf("busy %v, note %q (bad %v), runs %d", v.shell.busy, v.note, v.noteBad, len(v.shell.runs))
+	if v.shell.busy || !v.status().bad || !strings.Contains(v.status().text, "already has a shell command running") || len(v.shell.runs) != 0 {
+		t.Fatalf("busy %v, note %q (bad %v), runs %d", v.shell.busy, v.status().text, v.status().bad, len(v.shell.runs))
 	}
 }
 
@@ -197,8 +197,8 @@ func TestChatShellCardsSitAfterTheirTurn(t *testing.T) {
 		t.Fatalf("a taken run does not say so:\n%s", body)
 	}
 	v.moveCursor(shellCardLine(v, 11))
-	if _, cmd := v.updateKey(registryKey(t, "a")); cmd != nil || !strings.Contains(v.note, "already sent") {
-		t.Fatalf("a re-attached a taken run (note %q)", v.note)
+	if _, cmd := v.updateKey(registryKey(t, "a")); cmd != nil || !strings.Contains(v.status().text, "already sent") {
+		t.Fatalf("a re-attached a taken run (note %q)", v.status().text)
 	}
 }
 
@@ -265,8 +265,8 @@ func TestChatImagePasteFallsBackToText(t *testing.T) {
 	if _, ok := msg.(chatImageClipMsg); ok {
 		t.Fatal("no image still uploaded one")
 	}
-	if v.note != "" {
-		t.Fatalf("the fallback left a note: %q", v.note)
+	if v.status().text != "" {
+		t.Fatalf("the fallback left a note: %q", v.status().text)
 	}
 }
 
@@ -281,16 +281,16 @@ func TestChatImageRefusedForAnAgentWithout(t *testing.T) {
 	if cmd := v.applyImageClip(chatImageClipMsg{chatID: 1, data: fakePNG}); cmd != nil {
 		t.Fatal("an agent without images was uploaded to")
 	}
-	if !v.noteBad || !strings.Contains(v.note, "claude cannot take images") {
-		t.Fatalf("note %q", v.note)
+	if !v.status().bad || !strings.Contains(v.status().text, "claude cannot take images") {
+		t.Fatalf("note %q", v.status().text)
 	}
 
 	v = chatViewFixture()
 	v.composer.SetValue("look at ")
 	v.composer.CursorEnd()
 	v.applyImageAdded(chatImageAddedMsg{chatID: 1, err: &apiclient.Error{Status: 422, Code: "validation_failed", Message: "codex cannot take images"}})
-	if v.composer.Value() != "look at " || !strings.Contains(v.note, "codex cannot take images") {
-		t.Fatalf("a refusal: draft %q, note %q", v.composer.Value(), v.note)
+	if v.composer.Value() != "look at " || !strings.Contains(v.status().text, "codex cannot take images") {
+		t.Fatalf("a refusal: draft %q, note %q", v.composer.Value(), v.status().text)
 	}
 	v.applyImageAdded(chatImageAddedMsg{chatID: 1, image: &apiclient.ChatImage{Number: 2, Chip: "[image 2]"}})
 	if v.composer.Value() != "look at [image 2]" {
@@ -380,8 +380,8 @@ func TestChatImagePathPastesAsTextWithoutTheCapability(t *testing.T) {
 			t.Fatalf("the path went to the upload: %#v", msg)
 		}
 	}
-	if v.composer.Value() != path || v.noteBad {
-		t.Fatalf("draft %q, note %q (bad %v)", v.composer.Value(), v.note, v.noteBad)
+	if v.composer.Value() != path || v.status().bad {
+		t.Fatalf("draft %q, note %q (bad %v)", v.composer.Value(), v.status().text, v.status().bad)
 	}
 }
 
@@ -409,8 +409,8 @@ func TestChatImagePasteSkipsTheHelperWhenRefused(t *testing.T) {
 	if !ok || asked != 1 {
 		t.Fatalf("an image-only clipboard answered %#v (helper asked %d times)", msg, asked)
 	}
-	if cmd := v.applyImageClip(msg); cmd != nil || !v.noteBad || !strings.Contains(v.note, "cannot take images") {
-		t.Fatalf("the image was not refused with the note: %q", v.note)
+	if cmd := v.applyImageClip(msg); cmd != nil || !v.status().bad || !strings.Contains(v.status().text, "cannot take images") {
+		t.Fatalf("the image was not refused with the note: %q", v.status().text)
 	}
 }
 

@@ -96,7 +96,7 @@ func TestCloseOnATerminalChatNamesItsStateInWords(t *testing.T) {
 	task := int64(3)
 	v.chat.LinkedTaskID, v.chat.State = &task, "handed_off"
 	v.askClose()
-	if !strings.Contains(v.note, "handed off") || strings.Contains(v.note, "handed_off") {
-		t.Fatalf("note = %q, want the chat state in words", v.note)
+	if !strings.Contains(v.status().text, "handed off") || strings.Contains(v.status().text, "handed_off") {
+		t.Fatalf("note = %q, want the chat state in words", v.status().text)
 	}
 }

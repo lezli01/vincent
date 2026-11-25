@@ -184,17 +184,16 @@ func (v *chatView) askCompact() {
 	case chat == nil:
 		return
 	case v.compactCommand() == "":
-		v.note, v.noteBad = chat.Agent+" has no compact command", true
+		v.status().note(chat.Agent+" has no compact command", true)
 	case chatstate.Terminal(chatstate.State(chat.State)):
-		v.note, v.noteBad = sendRefusal(chatstate.State(chat.State)), true
+		v.status().note(sendRefusal(chatstate.State(chat.State)), true)
 	case chat.State != string(chatstate.Idle):
 		// A live chat would queue an ordinary message (task 156), but a
 		// compact belongs to the conversation as it stands now, so it waits
 		// for the agent rather than queueing behind it.
-		v.note, v.noteBad = "compact once the agent is idle", true
+		v.status().note("compact once the agent is idle", true)
 	default:
 		v.compacting = true
-		v.note = ""
 		v.hideInline("")
 		v.hideFiles()
 	}

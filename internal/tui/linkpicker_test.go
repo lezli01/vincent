@@ -218,8 +218,8 @@ func TestLinkPickerThroughTheChatRoot(t *testing.T) {
 	if len(*opened) != 1 || (*opened)[0] != "https://example.test/guide" {
 		t.Fatalf("the opener got %v, want the guide", *opened)
 	}
-	if v.note != "opened https://example.test/guide" || v.noteBad {
-		t.Fatalf("the chat said %q (bad=%v)", v.note, v.noteBad)
+	if v.status().text != "opened https://example.test/guide" || v.status().bad {
+		t.Fatalf("the chat said %q (bad=%v)", v.status().text, v.status().bad)
 	}
 
 	// enter on a refused row opens nothing and says why.
@@ -232,8 +232,8 @@ func TestLinkPickerThroughTheChatRoot(t *testing.T) {
 	if len(*opened) != 1 {
 		t.Fatalf("a refused destination reached the opener: %v", *opened)
 	}
-	if !v.noteBad || !strings.Contains(v.note, `"mailto"`) {
-		t.Fatalf("the chat said %q (bad=%v), want the refusal naming the scheme", v.note, v.noteBad)
+	if !v.status().bad || !strings.Contains(v.status().text, `"mailto"`) {
+		t.Fatalf("the chat said %q (bad=%v), want the refusal naming the scheme", v.status().text, v.status().bad)
 	}
 
 	// ctrl+y copies it all the same.
@@ -249,8 +249,8 @@ func TestLinkPickerThroughTheChatRoot(t *testing.T) {
 	if len(*wrote) != 1 || (*wrote)[0] != "mailto:ops@example.test" {
 		t.Fatalf("the clipboard got %v, want the mailto destination", *wrote)
 	}
-	if v.note != "link [5] copied" || v.noteBad {
-		t.Fatalf("the chat said %q (bad=%v)", v.note, v.noteBad)
+	if v.status().text != "link [5] copied" || v.status().bad {
+		t.Fatalf("the chat said %q (bad=%v)", v.status().text, v.status().bad)
 	}
 }
 

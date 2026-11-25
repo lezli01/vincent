@@ -180,8 +180,8 @@ func TestChatDiffNotRejectableSaysWhy(t *testing.T) {
 	if _, cmd := v.updateKey(registryKey(t, "x")); cmd != nil || v.diff.busy {
 		t.Fatal("x on a binary file sent a reject")
 	}
-	if !strings.Contains(v.note, "not rejectable per hunk") {
-		t.Fatalf("x on a binary file said %q", v.note)
+	if !strings.Contains(v.status().text, "not rejectable per hunk") {
+		t.Fatalf("x on a binary file said %q", v.status().text)
 	}
 	if screen := chatDiffScreen(v); !strings.Contains(screen, "binary file — not rejectable per hunk") {
 		t.Fatalf("the pane does not name the binary file as not rejectable:\n%s", screen)
@@ -195,8 +195,8 @@ func TestChatDiffNotRejectableSaysWhy(t *testing.T) {
 	if _, cmd := v.updateKey(registryKey(t, "x")); cmd != nil || v.diff.busy {
 		t.Fatal("x on a nested repository sent a reject")
 	}
-	if !strings.Contains(v.note, "nested git repository") {
-		t.Fatalf("x on a nested repository said %q", v.note)
+	if !strings.Contains(v.status().text, "nested git repository") {
+		t.Fatalf("x on a nested repository said %q", v.status().text)
 	}
 	// An empty new file has no hunk at all (review F8): x says so rather
 	// than sending the reader to look for one with ] and [.
@@ -207,8 +207,8 @@ func TestChatDiffNotRejectableSaysWhy(t *testing.T) {
 	if _, cmd := v.updateKey(registryKey(t, "x")); cmd != nil || v.diff.busy {
 		t.Fatal("x on an empty file sent a reject")
 	}
-	if !strings.Contains(v.note, "empty file — nothing to reject per hunk") || strings.Contains(v.note, "move between the hunks") {
-		t.Fatalf("x on an empty file said %q", v.note)
+	if !strings.Contains(v.status().text, "empty file — nothing to reject per hunk") || strings.Contains(v.status().text, "move between the hunks") {
+		t.Fatalf("x on an empty file said %q", v.status().text)
 	}
 	if screen := chatDiffScreen(v); !strings.Contains(screen, "empty file — nothing to reject per hunk") {
 		t.Fatalf("the pane does not say the empty file cannot be rejected:\n%s", screen)
@@ -226,15 +226,15 @@ func TestChatDiffRefusals(t *testing.T) {
 	if cmd := v.applyHunkRejected(chatHunkRejectedMsg{chatID: v.chatID, err: conflict(apiclient.CodeChatTurnLive, "live")}); cmd != nil {
 		t.Fatal("a live turn re-read something")
 	}
-	if v.diff.busy || !strings.Contains(v.note, "a turn is running") {
-		t.Fatalf("chat_turn_live: busy %v, note %q", v.diff.busy, v.note)
+	if v.diff.busy || !strings.Contains(v.status().text, "a turn is running") {
+		t.Fatalf("chat_turn_live: busy %v, note %q", v.diff.busy, v.status().text)
 	}
 	if cmd := v.applyHunkMarked(chatHunkMarkedMsg{chatID: v.chatID, err: conflict(apiclient.CodeChatHunkStale, "gone")}); cmd == nil || !v.diff.fetching {
 		t.Fatal("chat_hunk_stale did not re-read the diff")
 	}
 	v.applyHunkRejected(chatHunkRejectedMsg{chatID: v.chatID, err: conflict(apiclient.CodeChatHunkConflict, "git would not reverse it")})
-	if v.note != "git would not reverse it" || !v.noteBad {
-		t.Fatalf("chat_hunk_conflict shown as %q", v.note)
+	if v.status().text != "git would not reverse it" || !v.status().bad {
+		t.Fatalf("chat_hunk_conflict shown as %q", v.status().text)
 	}
 }
 
@@ -272,8 +272,8 @@ func TestChatDiffRejectDraft(t *testing.T) {
 		v.draft.loaded, v.draft.saved = true, "stored"
 		v.composer.SetValue("stored")
 		v.applyHunkRejected(chatHunkRejectedMsg{chatID: v.chatID, res: &apiclient.ChatHunkReject{Draft: "NOTE\n\nstored", NoteAdded: true, Note: "- a @@"}})
-		if v.composer.Value() != "NOTE\n\nstored" || v.draft.saved != "NOTE\n\nstored" || v.noteBad {
-			t.Fatalf("composer %q, saved %q, note %q", v.composer.Value(), v.draft.saved, v.note)
+		if v.composer.Value() != "NOTE\n\nstored" || v.draft.saved != "NOTE\n\nstored" || v.status().bad {
+			t.Fatalf("composer %q, saved %q, note %q", v.composer.Value(), v.draft.saved, v.status().text)
 		}
 	})
 	t.Run("unsent edit", func(t *testing.T) {
@@ -312,8 +312,8 @@ func TestChatDiffRejectDraft(t *testing.T) {
 		v.draft.loaded, v.draft.saved = true, "stored"
 		v.composer.SetValue("stored")
 		v.applyHunkRejected(chatHunkRejectedMsg{chatID: v.chatID, res: &apiclient.ChatHunkReject{Draft: "stored", Warning: "the draft is full"}})
-		if !strings.Contains(v.note, "the draft is full") || !v.noteBad || v.composer.Value() != "stored" {
-			t.Fatalf("note %q (bad %v), composer %q", v.note, v.noteBad, v.composer.Value())
+		if !strings.Contains(v.status().text, "the draft is full") || !v.status().bad || v.composer.Value() != "stored" {
+			t.Fatalf("note %q (bad %v), composer %q", v.status().text, v.status().bad, v.composer.Value())
 		}
 	})
 }
@@ -449,8 +449,8 @@ func TestChatDiffSendsTheRawPath(t *testing.T) {
 	if v.diff.pane.cursorPath != bin {
 		t.Fatalf("the file cursor is on %q, want %q", v.diff.pane.cursorPath, bin)
 	}
-	if _, ok := v.diffTarget(); ok || !strings.Contains(v.note, "binary file") {
-		t.Fatalf("x on the binary file: target %v, note %q", ok, v.note)
+	if _, ok := v.diffTarget(); ok || !strings.Contains(v.status().text, "binary file") {
+		t.Fatalf("x on the binary file: target %v, note %q", ok, v.status().text)
 	}
 }
 

@@ -184,7 +184,7 @@ func TestTurnZeroEditRoundTrip(t *testing.T) {
 		}
 		_, cmd := v.update(row.action())
 		if cmd == nil {
-			t.Fatalf("edit turn 0 started no editor (note %q)", v.note)
+			t.Fatalf("edit turn 0 started no editor (note %q)", v.status().text)
 		}
 		_, cmd = v.update(cmd())
 		return cmd
@@ -192,7 +192,7 @@ func TestTurnZeroEditRoundTrip(t *testing.T) {
 	save := func(t *testing.T, v *chatView, cmd tea.Cmd) {
 		t.Helper()
 		if cmd == nil {
-			t.Fatalf("nothing was sent (note %q)", v.note)
+			t.Fatalf("nothing was sent (note %q)", v.status().text)
 		}
 		v.update(cmd())
 	}
@@ -202,16 +202,16 @@ func TestTurnZeroEditRoundTrip(t *testing.T) {
 		t.Setenv("FAKEEDITOR_TEXT", "my own summary")
 		v := fixture()
 		save(t, v, edit(t, v))
-		if v.chat.PendingPreamble == "" || !strings.Contains(v.note, "turn 0 saved") {
-			t.Fatalf("chat %+v, note %q", v.chat, v.note)
+		if v.chat.PendingPreamble == "" || !strings.Contains(v.status().text, "turn 0 saved") {
+			t.Fatalf("chat %+v, note %q", v.chat, v.status().text)
 		}
 	})
 	t.Run("emptied clears", func(t *testing.T) {
 		t.Setenv("FAKEEDITOR_MODE", "empty")
 		v := fixture()
 		save(t, v, edit(t, v))
-		if v.chat.PendingPreamble != "" || !strings.Contains(v.note, "turn 0 cleared") {
-			t.Fatalf("chat %+v, note %q", v.chat, v.note)
+		if v.chat.PendingPreamble != "" || !strings.Contains(v.status().text, "turn 0 cleared") {
+			t.Fatalf("chat %+v, note %q", v.chat, v.status().text)
 		}
 	})
 	t.Run("unchanged sends nothing", func(t *testing.T) {
@@ -220,8 +220,8 @@ func TestTurnZeroEditRoundTrip(t *testing.T) {
 		if cmd := edit(t, v); cmd != nil {
 			t.Fatal("an untouched file sent a PATCH")
 		}
-		if v.note != "turn 0 is unchanged" {
-			t.Fatalf("note = %q", v.note)
+		if v.status().text != "turn 0 is unchanged" {
+			t.Fatalf("note = %q", v.status().text)
 		}
 	})
 	mu.Lock()
