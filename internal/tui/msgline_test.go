@@ -173,3 +173,10 @@ func TestStatusErrorKeepsItsStartAt80(t *testing.T) {
 		t.Errorf("footer is %d cells", w)
 	}
 }
+
+// buildFooterStatusLine is a footer at 120 columns leading with h, the way
+// the root draws it: what a view's message looks like on screen (#1164).
+func buildFooterStatusLine(h *statusHolder) string {
+	line, _ := buildFooterStatus(120, nil, nil, taskActions{}, attentionTally{}, false, false, h.shown())
+	return ansi.Strip(line)
+}

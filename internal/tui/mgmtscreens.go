@@ -386,12 +386,6 @@ func (v *pullRequestsView) renderWide(width, height int) string {
 		}
 	case v.confirm != nil:
 		lines = append(lines, styleWarn.Render(ansi.Truncate(" "+v.confirm.text+" (y/n)", width, "…")))
-	case v.note != "":
-		style := styleDim
-		if v.noteBad {
-			style = styleBad
-		}
-		lines = append(lines, style.Render(ansi.Truncate(" "+v.note, width, "…")))
 	}
 	h := max(height-len(lines), 4)
 	paneW := min(width*30/100, 58)

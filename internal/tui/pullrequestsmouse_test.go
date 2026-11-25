@@ -47,8 +47,8 @@ func TestPullRequestsEnterOnUnclaimedAndWidePicker(t *testing.T) {
 	v := pullRequestsFixture(testPull(12, "unclaimed"))
 	v.loaded = true
 	v.updateKey(tea.KeyPressMsg{Code: tea.KeyEnter})
-	if !strings.Contains(v.note, "creates one from it") || !strings.Contains(v.note, "l links") {
-		t.Fatalf("enter on an unclaimed pull request said %q", v.note)
+	if !strings.Contains(v.status().text, "creates one from it") || !strings.Contains(v.status().text, "l links") {
+		t.Fatalf("enter on an unclaimed pull request said %q", v.status().text)
 	}
 	v.termW = 200
 	if !v.wide() {

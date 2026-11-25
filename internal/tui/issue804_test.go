@@ -94,7 +94,7 @@ func TestPullHeaderAndEmptyStateNameTheState(t *testing.T) {
 	if v.state != "closed" {
 		t.Fatalf("state = %q after one s, want closed", v.state)
 	}
-	v.note = ""
+	v.status().text = ""
 	out := ansi.Strip(v.render(120, 24))
 	if strings.Contains(out, "open") {
 		t.Errorf("the closed listing still says \"open\":\n%s", out)
