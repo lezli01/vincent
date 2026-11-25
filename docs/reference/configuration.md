@@ -1995,7 +1995,10 @@ means:
 - a key that already means anything else, anywhere in the TUI, even on a screen
   never open beside the operation. The shipped keymap's few shared keys (`R` is
   refresh and repair, `a` is add and approve, `s` is scope and skip) are
-  recorded for those keys only: `refresh: r` is refused, because `r` is retry;
+  recorded for those keys only: `refresh: r` is refused, because `r` is retry.
+  The next/previous pairs are the exception: `next_chat` and `next_item` may
+  share any one key, and so may `prev_chat` and `prev_item` (a chat answers
+  one, a task or issue the other), while a third operation on it still clashes;
 - a plain character or `space` for `palette_alt`, `help_alt`, `compact`,
   `stash` or `prompt_history`, whose purpose is to work while a text field has the keyboard.
 
