@@ -2436,13 +2436,9 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			w := newWorkflowsView()
 			w.client = offlineClient()
 			loadedWorkflows(w, globalEntry("review"))
-			w.err = "a stale note the reload should clear"
 			_, cmd := w.updateKey(registryKey(t, "R"))
 			if cmd == nil {
 				t.Fatal("R did not re-read the registry")
-			}
-			if w.err != "" {
-				t.Errorf("R left the previous error on screen: %q", w.err)
 			}
 		},
 		"g": func(t *testing.T) {

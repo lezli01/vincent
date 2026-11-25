@@ -135,11 +135,10 @@ func (w *workflowsView) openGraph() tea.Cmd {
 		return nil
 	}
 	if !line.entry.Valid() {
-		w.err = line.entry.Name + " does not parse — there is no graph to draw; see the errors above"
+		w.status().note(line.entry.Name+" does not parse — there is no graph to draw; see the errors above", true)
 		return nil
 	}
 	key := line.key()
-	w.err = ""
 	if w.wideTerm() && w.preview != nil && w.preview.key == key {
 		w.graph = w.preview
 		return nil

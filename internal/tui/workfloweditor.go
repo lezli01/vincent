@@ -146,7 +146,7 @@ func (w *workflowsView) openEditor() tea.Cmd {
 		return nil
 	}
 	if line.entry.File == "" {
-		w.err = line.entry.Name + " is built in — fork it with f to edit a copy"
+		w.status().note(line.entry.Name+" is built in — fork it with f to edit a copy", true)
 		return nil
 	}
 	key := line.key()

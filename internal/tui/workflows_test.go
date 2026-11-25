@@ -285,8 +285,8 @@ func TestWorkflowsRefuseToEditAnEntryWithNoFile(t *testing.T) {
 	if ran {
 		t.Error("an editor was launched for an entry with no file")
 	}
-	if !strings.Contains(w.err, "built in") {
-		t.Errorf("err = %q, want it to say there is no file", w.err)
+	if !strings.Contains(w.status().text, "built in") {
+		t.Errorf("err = %q, want it to say there is no file", w.status().text)
 	}
 	if !strings.Contains(w.render(120, 24), "built-in") {
 		t.Error("the row does not say the entry is built in")
@@ -309,8 +309,8 @@ func TestWorkflowsEditOpensTheRealFileAndWaitsForTheReload(t *testing.T) {
 	if len(opened) == 0 || opened[len(opened)-1] != entry.File {
 		t.Fatalf("editor args = %v, want it to end at %q", opened, entry.File)
 	}
-	if w.err != "" {
-		t.Errorf("err = %q, want none", w.err)
+	if w.status().text != "" {
+		t.Errorf("err = %q, want none", w.status().text)
 	}
 
 	// The editor exiting changes nothing on its own.
@@ -324,8 +324,8 @@ func TestWorkflowsEditOpensTheRealFileAndWaitsForTheReload(t *testing.T) {
 
 	// A failed editor is reported.
 	w.update(workflowEditedMsg{err: errors.New("exit status 1")})
-	if !strings.Contains(w.err, "editor") {
-		t.Errorf("err = %q, want the editor failure surfaced", w.err)
+	if !strings.Contains(w.status().text, "editor") {
+		t.Errorf("err = %q, want the editor failure surfaced", w.status().text)
 	}
 }
 

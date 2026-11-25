@@ -84,8 +84,8 @@ func TestGraphRefusesAnInvalidWorkflow(t *testing.T) {
 	if w.graph != nil {
 		t.Fatal("g opened a graph for a workflow that does not parse")
 	}
-	if !strings.Contains(w.err, "does not parse") {
-		t.Errorf("note = %q, want it to say why there is no graph", w.err)
+	if !strings.Contains(w.status().text, "does not parse") {
+		t.Errorf("note = %q, want it to say why there is no graph", w.status().text)
 	}
 }
 
