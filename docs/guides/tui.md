@@ -792,11 +792,16 @@ commit — name, state, and the check's own page — read live from the daemon o
 open, on a reconciler tick and on its own poll. Nothing about a check is
 stored, because a stored check result reads exactly like a current one while
 being wrong, and there is no refresh key: `R` is repair on every tab of this
-workspace, and the poll is what makes a fourth trigger unnecessary. `↑`/`↓`
-select a row, `enter` opens it in a browser, `o` opens the pull request and `u`
-unlinks it from the task; the refusal is sticky, so vincent will not
-link it again. Every §6 action key works here too — the tab you happen to be
-reading is not a statement about what you may do to the task.
+workspace, and the poll is what makes a fourth trigger unnecessary. Every §6
+action key works here too — the tab you happen to be reading is not a
+statement about what you may do to the task.
+
+| Key | Does |
+|---|---|
+| `↑`/`↓` or `j`/`k` | Select a check |
+| `enter` | Open the selected check's own page in a browser |
+| `o` | Open the pull request in a browser |
+| `u` | Unlink the pull request from the task — the refusal is sticky, so vincent will not link it again |
 
 ![The Pull Request tab on a finished task: the pull request's title, state,
 head and base, author, URL and how it was linked, then its checks — one running,
@@ -1310,11 +1315,11 @@ line names what the diff is of, and for the whole task what it is against.
 
 | Key | Does |
 |---|---|
-| `↑`/`↓` | Move between files (the pane scrolls to keep the cursor in view) |
-| `enter` or `space` | Expand or collapse the file under the cursor (`→`/`←` too) |
+| `↑`/`↓` or `j`/`k` | Move between files (the pane scrolls to keep the cursor in view) |
+| `enter` or `space` | Expand or collapse the file under the cursor (`→`/`←` and `l`/`h` too — `l` opens the selected fan-out lane instead when there is one) |
 | `O` | Expand every file |
 | `C` | Collapse every file — which is how the tab opens |
-| `pgup`/`pgdn`, `f`/`b`, `u` | Scroll by lines inside what is expanded |
+| `pgup`/`pgdn` or `f`/`b`; `ctrl+d`/`ctrl+u` | Page the diff; half a page — the chat diff's keys, less its `d`/`u`, since `d` switches the scope here |
 | `alt+↑`/`alt+↓` | Scroll one line, whatever file the cursor is on |
 | `shift+←`/`shift+→` | Pan sideways to the end of a line wider than the pane — diff lines are never wrapped |
 | `/` | Search the diff: every file opens, `n`/`N` walk the matches, `esc` ends the search. The line under the pane names the key `filter` is bound to, so it reads right after a rebinding |
