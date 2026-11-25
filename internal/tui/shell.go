@@ -606,13 +606,21 @@ func openAttentionChat(t attentionTarget, back viewID) tea.Cmd {
 
 // liveBindings drops the registry rows whose keys are inert in the shell's
 // current state, so the footer never offers a press that does nothing. The
-// board's fold keys are the only ones: with `group_by: []` the table has no
+// board's fold keys are the shell's own: with `group_by: []` the table has no
 // groups at all (task 054 decision 5).
 //
 // The timeline's fold rows carry the same marker but not the same condition —
 // a loop's iterations and a `fan_out`'s rounds are tiers whatever the board is
 // grouped by — so the drop is scoped to the surface the decision was about.
+//
+// The board's own filter runs first whenever the board has the keys (#1151):
+// the root consults only this method on the home screen, so a filter left on
+// the board alone — L hinted only where it does something (#1072) — never
+// reached the footer or the palette.
 func (s *shell) liveBindings(rows []binding) []binding {
+	if s.boardOnly || s.focus == panelTasks {
+		rows = s.board.liveBindings(rows)
+	}
 	if len(s.board.group) > 0 {
 		return rows
 	}

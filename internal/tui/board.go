@@ -2191,8 +2191,8 @@ func (b *board) agentsSummary() string {
 }
 
 // liveBindings offers the archived board's `<`/`>` only where a page lies
-// that way (#804 AR-11). The live board has none of its own: the home
-// shell's liveBindings is the one consulted there.
+// that way (#804 AR-11). On the live board it drops L where L does nothing;
+// the root consults the home shell's liveBindings, which calls this (#1151).
 func (b *board) liveBindings(rows []binding) []binding {
 	if !b.archived {
 		// L is hinted only where it does something (#1072): a fan-out, or
