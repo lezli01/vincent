@@ -66,7 +66,6 @@ func (v *triggersView) openTest() tea.Cmd {
 	}
 	d := &trigDryRun{id: s.ID, pane: newTextPane()}
 	d.pane.SetValue(sample)
-	v.err, v.note = "", ""
 	v.dry = d
 	return d.pane.Focus()
 }
@@ -76,7 +75,6 @@ func (v *triggersView) openPoll() tea.Cmd {
 	if !ok {
 		return nil
 	}
-	v.err, v.note = "", ""
 	v.dry = &trigDryRun{id: s.ID, poll: true}
 	return v.pollCmd()
 }

@@ -107,7 +107,6 @@ func (v *triggersView) openForm() tea.Cmd {
 }
 
 func (v *triggersView) openFormOn(id, file, version string) tea.Cmd {
-	v.err, v.note = "", ""
 	v.form = &trigFormLayer{
 		id: id, file: file, version: version,
 		loading: true, editing: -1, rowErr: map[string]string{},

@@ -82,12 +82,6 @@ func (v *triggersView) renderList(width, height int) string {
 	if v.loadErr != nil {
 		head = append(head, " "+styleBad.Render("could not read the triggers: "+errString(v.loadErr)))
 	}
-	if v.note != "" {
-		head = append(head, " "+styleOK.Render(v.note))
-	}
-	if v.err != "" {
-		head = append(head, " "+styleBad.Render("⚠ "+v.err))
-	}
 	head = append(head, "")
 	if width > 0 {
 		// The directory, the load error and the notes are one line each, cut

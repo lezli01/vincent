@@ -237,12 +237,6 @@ func (v *triggersView) renderWide(width, height int) string {
 	if v.loadErr != nil {
 		lines = append(lines, " "+styleBad.Render("could not read the triggers: "+errString(v.loadErr)))
 	}
-	if v.note != "" {
-		lines = append(lines, " "+styleOK.Render(v.note))
-	}
-	if v.err != "" {
-		lines = append(lines, " "+styleBad.Render("⚠ "+v.err))
-	}
 	lines = truncateRows(lines, width)
 	h := max(height-len(lines), 4)
 	listW := min(width*34/100, 66)
