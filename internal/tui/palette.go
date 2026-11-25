@@ -133,6 +133,7 @@ func paletteEntries(ctx bindingContext, target taskActions, editable, connected,
 			out = append(out, paletteEntry{
 				group: "screens", label: b.label, key: b.key,
 				nav: true, navTarget: b.navTarget, global: true,
+				keywords: screenKeywords[b.navTarget],
 			})
 		}
 		if b.nav && b.navTarget == viewSettings {
@@ -162,6 +163,14 @@ func paletteEntries(ctx bindingContext, target taskActions, editable, connected,
 		}
 	}
 	return out
+}
+
+// screenKeywords are the words a screen is looked for by that its label does
+// not say (#1159): "pr" is how a pull request is spelled in a hurry, and
+// without it `:pr` led with "approve the gate", which holds the letters
+// mid-word.
+var screenKeywords = map[viewID]string{
+	viewPullRequests: "pr prs",
 }
 
 // keyBindingsPaletteLabel is the key-bindings screen's palette row.
@@ -196,30 +205,41 @@ func (p *palette) matches() []paletteEntry {
 		return out
 	}
 	// The whole query as typed wins: where some row contains it, those rows
-	// are the answer, as they always were. Otherwise fuzzy, best first
-	// (#1080) — word order, a typo, letters in order — with ties in the
-	// list's own order, so the sections stay together where scores agree.
-	var exact []paletteEntry
+	// are the answer, as they always were. Otherwise fuzzy (#1080) — word
+	// order, a typo, letters in order. Either way best first, with ties in
+	// the list's own order, so the sections stay together where scores
+	// agree: a row where the query starts a word ranks above one that only
+	// holds it mid-word (#1159: `:arch` had put "Search all chats" above
+	// "archived tasks"), and a row found by scattered letters ranks below
+	// every other.
+	words := strings.Fields(q)
+	type scored struct {
+		e         paletteEntry
+		s         int
+		scattered bool
+	}
+	var exact, hits []scored
 	for _, e := range p.entries {
-		if strings.Contains(strings.ToLower(e.label+" "+e.group+" "+e.key+" "+e.keywords), q) {
-			exact = append(exact, e)
+		hay := e.label + " " + e.group + " " + e.key + " " + e.keywords
+		s, scattered := fuzzyScore(hay, words)
+		if strings.Contains(strings.ToLower(hay), q) {
+			exact = append(exact, scored{e, s, false})
+		} else if s > 0 {
+			hits = append(hits, scored{e, s, scattered})
 		}
 	}
 	if len(exact) > 0 {
-		return exact
+		hits = exact
 	}
-	words := strings.Fields(q)
-	type scored struct {
-		e paletteEntry
-		s int
-	}
-	var hits []scored
-	for _, e := range p.entries {
-		if s := fuzzyScore(e.label+" "+e.group+" "+e.key+" "+e.keywords, words); s > 0 {
-			hits = append(hits, scored{e, s})
+	slices.SortStableFunc(hits, func(a, b scored) int {
+		if a.scattered != b.scattered {
+			if a.scattered {
+				return 1
+			}
+			return -1
 		}
-	}
-	slices.SortStableFunc(hits, func(a, b scored) int { return b.s - a.s })
+		return b.s - a.s
+	})
 	out := make([]paletteEntry, len(hits))
 	for i, h := range hits {
 		out[i] = h.e

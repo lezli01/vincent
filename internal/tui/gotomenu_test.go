@@ -93,3 +93,24 @@ func TestRewindPickerSwitchesToFork(t *testing.T) {
 		t.Fatal("f again did not come back to rewind")
 	}
 }
+
+// #1159: under a text field the menu's key is a character the field types,
+// so the header does not offer it there.
+func TestHeaderOmitsTheScreensMenuUnderATextField(t *testing.T) {
+	m := connectedRoot(t)
+	m.width = 160
+	m.views[viewChatSearch] = newChatSearchView()
+	m.active = viewChatSearch
+	if !m.activeCapturesInput() {
+		t.Fatal("the chat search does not capture input")
+	}
+	if got := ansi.Strip(m.headerLine()); strings.Contains(got, "screens") {
+		t.Fatalf("the header offers the screens menu over a text field: %q", got)
+	}
+	// Nor while disconnected, where the key opens nothing.
+	m.active = viewHome
+	m.phase = phaseFailed
+	if got := ansi.Strip(m.headerLine()); strings.Contains(got, "screens") {
+		t.Fatalf("the header offers the screens menu while disconnected: %q", got)
+	}
+}

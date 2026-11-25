@@ -12,9 +12,27 @@ import (
 // ("dameon"). fuzzyScore takes the query's words in any order and accepts
 // each one as a substring, a prefix of a word, the letters in order, or a
 // word one edit away; the best matches sort first.
+//
+// Letters in order are the loosest of those, and on a short word they are
+// noise (#1159): the palette's rows are long sentences, and three or four
+// letters turn up in order in most of them — `:key` had preselected "new
+// task" and `:bind` "Search all chats", and "sync" on the task table listed
+// twelve rows, none about syncing. So a word is matched by its scattered
+// letters only from scatterMinLen runes on, and a row that needed that for
+// any word ranks below every row that holds all the words themselves.
 
-// fuzzyScore rates hay against the query's words; 0 is no match.
-func fuzzyScore(hay string, words []string) int {
+// scatterMinLen is the shortest query word matched by its letters in order.
+// Five, because a four-letter word is still a whole short word somebody
+// typed ("diff", "sync", "logs") rather than an abbreviation, and at four
+// the scattered matches across the palette's long rows were still mostly
+// unrelated; a short word keeps its word-start, substring and one-typo
+// matches.
+const scatterMinLen = 5
+
+// fuzzyScore rates hay against the query's words; 0 is no match. scattered
+// reports that some word matched only by its letters in order, which ranks
+// the row below every row matched without that (#1159).
+func fuzzyScore(hay string, words []string) (score int, scattered bool) {
 	hay = strings.ToLower(hay)
 	hayWords := strings.FieldsFunc(hay, func(r rune) bool { return !wordRune(r) })
 	total := 0
@@ -35,15 +53,15 @@ func fuzzyScore(hay string, words []string) int {
 		if best == 0 && strings.Contains(hay, w) {
 			best = 3
 		}
-		if best == 0 && len([]rune(w)) >= 3 && subsequence(hay, w) {
-			best = 1
+		if best == 0 && len([]rune(w)) >= scatterMinLen && subsequence(hay, w) {
+			best, scattered = 1, true
 		}
 		if best == 0 {
-			return 0
+			return 0, false
 		}
 		total += best
 	}
-	return total
+	return total, scattered
 }
 
 // subsequence reports whether every rune of w appears in s, in order.

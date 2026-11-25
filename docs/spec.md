@@ -19707,6 +19707,19 @@ form the way `n` does. The header's right edge names the key. "Navigation
 living here" above still holds: the menu is a faster route to the palette's
 own screen rows, not a second set of view keys to memorise.
 
+*Amended 2026-11-25 (issue #1159).* **A short query is answered by words, and
+the header offers the menu only where it opens.** Matches sort best first in
+both cases above: among rows containing the query, a row where it starts a word
+ranks above one that holds it mid-word. Letters in order match only a query
+word of five letters or more — three or four letters turn up in order in most
+of the palette's long rows (`:key` had preselected "new task") — and a row that
+needed them for any word ranks below every row matched without. A screen row
+carries words it is looked for by without drawing them, as the key-bindings
+row does (`pr` for pull requests). The header names `` ` `` only where it
+opens the menu: never over a text field, where it is a character typed (it is
+not hoisted above the capture gate, unlike `ctrl+p` and `f1`), nor while the
+daemon is not connected.
+
 **The footer is one line and never wraps.** Left to right: the focused panel's
 keys (at most five, in registry priority order), then the task's
 `available_actions`, then — pinned right and never truncated — `: commands`,
