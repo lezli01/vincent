@@ -228,6 +228,8 @@ func (p *diffPane) openTask(taskID int64) {
 	// Another task's attempt is no scope for this one, nor its size.
 	p.stepRun, p.stepLabel = 0, ""
 	p.whole, p.wholeSeen = [2]int{}, false
+	// So is its search (#1154); a reload or a scope change keeps it.
+	p.find.end()
 	p.reset()
 }
 

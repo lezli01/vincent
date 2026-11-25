@@ -942,7 +942,7 @@ output. It is the sentence that decides whether to open the transcript.
 | `←`/`→` or `h`/`l` | On Output, select which attempt's output to show |
 | `f` or `G` | Follow the live output again |
 | `g` or `home` | On Output, jump to the top (follow stops) |
-| `/` | On Output or Diff, search: type, `enter` lands on the first match and draws it reversed; `n` / `N` then walk the matches, wrapping, `/` searches again and `esc` ends the search — while it runs `n` and `N` are the search's, and they mean new task and next failure again after |
+| `/` | On Output or Diff, search: type, `enter` lands on the first match and draws it reversed; `n` / `N` then walk the matches, wrapping, `/` searches again and `esc` ends the search and clears its highlight — while it runs `n` and `N` are the search's, and they mean new task and next failure again after. With a lane selected, Output searches that lane's output, the one on screen; opening another task starts without a search |
 | `v` | More or less detail: quiet → compact → normal → verbose (tool lines, then reasoning, the run's own metadata, then unrecognized lines) |
 | `ctrl+o` | Show the assistant's original Markdown instead of the rendered view |
 | `ctrl+y` | Copy the task's id, branch, worktree path or pull request URL — from any tab — and, on Output, the attempt's whole output as plain text, an assistant message, its plain text, or one of its code blocks; on Diff, the selected hunk (the one `]`/`[` stand on) or the file's whole diff |

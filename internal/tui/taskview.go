@@ -270,7 +270,8 @@ func (t *taskView) setClient(c *apiclient.Client) tea.Cmd {
 func (t *taskView) setConnected(ok bool) { t.connected = ok }
 
 func (t *taskView) capturesInput() bool {
-	return t.popup || t.pullTab.confirm != nil || t.detail.capturesInput()
+	return t.popup || t.pullTab.confirm != nil || t.detail.capturesInput() ||
+		t.laneDetail != nil && t.laneDetail.find.typing // a lane's search (#1154)
 }
 
 func (t *taskView) paste(text string) tea.Cmd {
@@ -327,7 +328,7 @@ func (t *taskView) bindingContext() bindingContext {
 			return ctxForm
 		}
 	}
-	if t.tab == taskTabOutput && t.detail.find.active() || t.tab == taskTabDiff && t.detail.diff.find.active() {
+	if t.tab == taskTabOutput && t.outputPane().find.active() || t.tab == taskTabDiff && t.detail.diff.find.active() {
 		return ctxPaneFind
 	}
 	switch t.tab {
@@ -617,11 +618,14 @@ func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	// walk its matches while it runs, and mean what they always mean after.
 	switch t.tab {
 	case taskTabOutput:
-		if t.detail.findKey(msg) {
+		// The search is the pane's on screen: a selected lane's, not the
+		// parent's hidden one (#1154).
+		pane := t.outputPane()
+		if pane.findKey(msg) {
 			return nil
 		}
 		if msg.String() == opKey(keymap.Filter) {
-			t.detail.find.open()
+			pane.find.open()
 			return nil
 		}
 	case taskTabDiff:
