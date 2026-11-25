@@ -2125,7 +2125,9 @@ counts the cards it hides, as `▲ 3  ▼ 8 more`.
 
 `s` hides the Done column, listing open issues only, and `s` again shows it. That
 choice lasts until you quit and survives a project switch. `/` filters within the
-columns and keeps them on screen, so an empty one reads "none match". With no
+columns and keeps them on screen, so an empty one reads "none match". A filter
+that matches nothing at all says so once above the board — `none match "‹filter›"
+— esc clears the filter.` — and leaves the columns blank. With no
 card to select, `enter` and `a` say so — `open: no issue selected — n files
 one` — rather than doing nothing.
 
@@ -2167,7 +2169,8 @@ changed.
 
 A column taller than the screen says `▲ n more` or `▼ n more` at its foot,
 counting the cards scrolled out of sight above and below; a column with no
-cards says `no issues`, or `none match` under a filter. When the columns are
+cards says `no issues`, or `none match` under a filter that matches cards in
+another column. When the columns are
 too many for the width, `‹` and `›` beside the edge titles say more lie that
 way.
 

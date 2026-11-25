@@ -316,8 +316,9 @@ func (p *projectsView) update(msg tea.Msg) (panel, tea.Cmd) {
 		return p, nil
 	case openProjectAddMsg:
 		// #1082: with no project registered, @ lands here with the form open.
-		p.form = newProjectForm(p.client, nil)
-		return p, nil
+		// Through openAdd, as `a` does (#1161): a form opened without its
+		// load offers only "(none)" for the default workflow.
+		return p, p.openAdd()
 	case pfWorkflowsMsg:
 		if p.form != nil && msg.err == nil {
 			p.form.workflows = msg.entries
@@ -408,9 +409,7 @@ func (p *projectsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		}
 		return p, backToTab
 	case opKey(keymap.Add):
-		p.err = ""
-		p.form = newProjectForm(p.client, nil)
-		return p, p.form.loadCmd()
+		return p, p.openAdd()
 	case "tab", "shift+tab":
 		// Two sections, one cursor: tab moves it between the table and the
 		// "needs you" list, the way the daemon and triggers takeovers move
@@ -467,6 +466,15 @@ func (p *projectsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 // pick is enter (task 132 decision 42): on a project row, that project; on
 // a "needs you" row, the task and its project. Either way the root does the
 // selecting, through selectProject.
+// openAdd opens the add form and fetches the workflow registry its default
+// picker offers. Both ways in — `a` here and @ with nothing registered —
+// come through it (#1161), so neither can show the form without its load.
+func (p *projectsView) openAdd() tea.Cmd {
+	p.err = ""
+	p.form = newProjectForm(p.client, nil)
+	return p.form.loadCmd()
+}
+
 func (p *projectsView) pick() tea.Cmd {
 	if p.inAttention {
 		attn := p.attention()
