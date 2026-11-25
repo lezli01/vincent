@@ -257,7 +257,8 @@ column with more cards than fit counts the rest on its top edge — `▲2 ▼5`.
 | `H` | Show only what needs you |
 
 The filter box's top edge counts the tasks, says how many are running against the
-concurrency cap, and shows any agent that needs a look. A terminal too narrow for
+concurrency cap, names an order `z` chose (`newest first`), and shows any agent
+that needs a look. A terminal too narrow for
 all four columns shows the ones around your selection, with `‹` and `›` where more
 are hidden. From 170 columns a preview of the selected task sits on the right: its
 steps, its issue across the board, and the keys that act on it now.
@@ -394,7 +395,7 @@ are queued and have finished.
 | `f` | Fold the issue group under the cursor, or open the one the cursor rests on |
 | `C` | Fold every group |
 | `O` | Open every group |
-| `z` | Cycle the order: by state (the board's own), newest, oldest, title |
+| `z` | Cycle the order: by state (the board's own), newest, oldest, title. Any order but the board's own is named on the Tasks title after the filter, and dropped there first when the title runs out of room |
 | `L` | Show or hide a fan-out's lanes under its card — on a lane, its own lanes, or back to its parent. Hinted only on a fan-out; `loading lanes…` shows while they arrive, and on any other card it says so |
 
 ### Fan-out lanes on the board
@@ -2183,7 +2184,7 @@ completed](../assets/tui-issues.png)
 | `enter` | Open the selected issue |
 | `o` | Open an imported issue's page in a browser — a local issue has none, and says so; the footer offers `o` only on an imported issue |
 | `s` | Show or hide the done lane |
-| `z` | Cycle the order within the lanes: the daemon's, newest, priority, title |
+| `z` | Cycle the order within the lanes: the daemon's, recently updated (the time the card's age counts from), priority, title. Any order but the daemon's is named on the filter box's edge |
 | `ctrl+y` | Copy the selected issue's id, title, source reference or URL |
 | `R` | Re-read the issues |
 | `S` | Sync this project's issues from its issue source now — what `vincent issue sync` does, for GitHub and Jira alike; offered once the project's sync status has loaded and names a sync to wake, never on a project with no issue source or pinned to `github` off github.com. The note says how the pass ended once a later listing shows it — `synced from octo/web`, or why it did not finish |

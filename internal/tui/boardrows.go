@@ -564,6 +564,21 @@ func sortBoardTasks(tasks []apiclient.Task, order string) {
 	}
 }
 
+// boardSortLabel is how the task board names its order: in the `z` note,
+// and — for every order but its own — on the Tasks title and the card
+// board's edge, so a sort stays visible while it is in force (#1155).
+func boardSortLabel(order string) string {
+	switch order {
+	case "newest":
+		return "newest first"
+	case "oldest":
+		return "oldest first"
+	case "title":
+		return "by title"
+	}
+	return "by state"
+}
+
 // nextSort is the order after cur in orders, wrapping.
 func nextSort(orders []string, cur string) string {
 	for i, o := range orders {

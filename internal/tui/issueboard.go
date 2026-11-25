@@ -341,8 +341,8 @@ func (v *issuesView) boardSummary() string {
 
 // boardSummaryFit is boardSummary in at most room cells (0 is no limit).
 // The issue source's health leads (#1069): a failing import looked like a
-// healthy one. When the whole does not fit, "updated" goes first; then a
-// healthy source's line goes, and an unhealthy one moves out of the label
+// healthy one. When the whole does not fit, "updated" goes first; then the
+// active sort's name (#1155); then a healthy source's line goes, and an unhealthy one moves out of the label
 // into syncLine, a line of its own inside the box — so the sync health is
 // never lost exactly when the source is failing, and the issue count stays
 // (review finding 7).
@@ -370,10 +370,20 @@ func (v *issuesView) boardSummaryFit(room int) (label, syncLine string) {
 	if syncBad {
 		syncStyle = styleBad
 	}
+	// The order `z` chose, while one is in force (#1155). It gives way
+	// after "updated" and before the sync line and the count.
+	sorted := ""
+	if v.sortOrder != "" {
+		sorted = issueSortLabel(v.sortOrder)
+	}
+	withSort := true
 	compose := func(withSync, withUpdated bool) string {
-		ps := parts
+		ps := append([]string(nil), parts...)
+		if withSort && sorted != "" {
+			ps = append(ps, sorted)
+		}
 		if withUpdated && updated != "" {
-			ps = append(append([]string(nil), parts...), updated)
+			ps = append(ps, updated)
 		}
 		out := styleDim.Render(strings.Join(ps, " · "))
 		if withSync && syncText != "" {
@@ -388,6 +398,10 @@ func (v *issuesView) boardSummaryFit(room int) (label, syncLine string) {
 	if out := compose(true, true); fits(out) {
 		return out, ""
 	}
+	if out := compose(true, false); fits(out) {
+		return out, ""
+	}
+	withSort = false
 	if out := compose(true, false); fits(out) {
 		return out, ""
 	}
