@@ -597,6 +597,13 @@ func (v *pullRequestsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	case "u":
 		v.askUnlink()
 		return v, nil
+	case copyPickKey:
+		// The selected pull request's URL, reference, branch and title
+		// (#1156), the key every other board copies its row with.
+		if row, ok := v.current(); ok {
+			return v, openCopyItems(pullCopyItems(row.pull))
+		}
+		return v, nil
 	}
 	return v, nil
 }

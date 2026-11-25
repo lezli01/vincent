@@ -429,7 +429,7 @@ times with a confirmation between each. Select the tasks instead:
 |---|---|
 | `space` | Select the task under the cursor (again deselects) |
 | `V` | Select every task the filter is showing — or clear that selection |
-| `ctrl+y` | Copy the selected task's id, branch, worktree path or pull request URL |
+| `ctrl+y` | Copy the selected task's id, branch, worktree path or pull request (`owner/repo#N`) |
 | `esc` | Clear the selection |
 
 While anything is selected, a `✔` marks each selected card, the board's
@@ -946,7 +946,7 @@ output. It is the sentence that decides whether to open the transcript.
 | `/` | On Output or Diff, search: type, `enter` lands on the first match and draws it reversed; `n` / `N` then walk the matches, wrapping, `/` searches again and `esc` ends the search and clears its highlight — while it runs `n` and `N` are the search's, and they mean new task and next failure again after. With a lane selected, Output searches that lane's output, the one on screen; opening another task starts without a search |
 | `v` | More or less detail: quiet → compact → normal → verbose (tool lines, then reasoning, the run's own metadata, then unrecognized lines) |
 | `ctrl+o` | Show the assistant's original Markdown instead of the rendered view |
-| `ctrl+y` | Copy the task's id, branch, worktree path or pull request URL — from any tab — and, on Output, the attempt's whole output as plain text, an assistant message, its plain text, or one of its code blocks; on Diff, the selected hunk (the one `]`/`[` stand on) or the file's whole diff |
+| `ctrl+y` | Copy the task's id, branch, worktree path, pull request (`owner/repo#N`) or its URL — the one the daemon's record of it carries, so a GitHub Enterprise pull request copies its own host's address; a pull request you unlinked offers neither — from any tab — and, on Output, the attempt's whole output as plain text, an assistant message, its plain text, or one of its code blocks; on Diff, the selected hunk (the one `]`/`[` stand on) or the file's whole diff |
 | `ctrl+l` | List the links in the assistant's messages — open one in a browser or copy it |
 | `e` | Open this attempt's **whole** transcript in `$EDITOR` |
 | `↑`/`↓` | Select an attempt or Task Details section, scroll Output, or move between diff files — according to the active tab |
@@ -2010,6 +2010,7 @@ the screen with no keypress.
 | `↑`/`↓` | Move the selection |
 | `home`/`end`, `pgup`/`pgdown` | Jump to the first or last row, or move a page |
 | `/` | Filter by number, title or branch |
+| `ctrl+y` | Copy the selected pull request's URL, reference (`owner/repo#N`), head branch or title |
 
 `P` is the one key here that is not about the selected row. This screen has no
 task rows — its question is "what is open in this project", and a task with no

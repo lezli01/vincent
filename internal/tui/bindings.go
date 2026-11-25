@@ -571,7 +571,7 @@ var bindings = []binding{
 	{key: "L", label: "show or hide a fan-out's lanes under its card — on a lane, its own lanes, or back to its parent", scope: scopePanel, context: ctxTasks, hint: "L lanes", priority: 8},
 	{key: "space", label: "select this task for a bulk action — the action keys then act on every selected task (space again deselects, esc clears)", scope: scopePanel, context: ctxTasks, hint: "space select", priority: 4},
 	{op: keymap.AttentionFilter, key: "H", label: "show only the tasks that need a human — awaiting input, awaiting approval, blocked, or a fan-out whose lane is (H again shows every task)", scope: scopePanel, context: ctxTasks, hint: "H needs you", priority: 6, term: termAttention},
-	{key: copyPickKey, label: "copy the selected task's id, branch, worktree path or pull request URL", scope: scopePanel, context: ctxTasks, priority: 9},
+	{key: copyPickKey, label: "copy the selected task's id, branch, worktree path or pull request", scope: scopePanel, context: ctxTasks, hint: "ctrl+y copy", priority: 17},
 	{key: "V", label: "select every task the filter is showing, or clear that selection", scope: scopePanel, context: ctxTasks, priority: 6},
 	// Folding the issue groups (task 150.6). C/O are the diff pane's two
 	// letters in the same meaning.
@@ -589,7 +589,7 @@ var bindings = []binding{
 	{op: keymap.Browser, key: "o", label: "open this task's pull request in a browser", scope: scopePanel, context: ctxTaskOverview, priority: 9, github: true, term: termBrowser},
 	{key: "P", label: "push this task's branch to origin and open its pull request — the title, body and draft flag are editable first", scope: scopePanel, context: ctxTaskOverview, hint: "P open a PR", priority: 9, github: true},
 	{op: keymap.Lane, key: "l", label: "open the fan-out lane the failure card blames, or the first lane that needs you on a parent waiting on its lanes", scope: scopePanel, context: ctxTaskOverview, hint: "l open the lane", priority: 6, term: termLane},
-	{key: copyPickKey, label: "copy the task's id, branch, worktree path or pull request URL", scope: scopePanel, context: ctxTaskOverview, priority: 12},
+	{key: copyPickKey, label: "copy the task's id, branch, worktree path, pull request or its URL", scope: scopePanel, context: ctxTaskOverview, hint: "ctrl+y copy", priority: 12},
 	{op: keymap.NextFailure, key: "N", label: "jump to the next failure: the newest failed attempt of each step in execution order, on the Output tab at the line it failed on — a blocked lane opens, esc comes back", scope: scopePanel, context: ctxTaskOverview, hint: "N next failure", priority: 6, term: termNextFail},
 	{op: keymap.NextItem, key: "alt+n", label: "open the next task in the board's order", scope: scopePanel, context: ctxTaskOverview, priority: 12},
 	{op: keymap.PrevItem, key: "alt+shift+n", label: "open the previous task in the board's order", scope: scopePanel, context: ctxTaskOverview, priority: 12},
@@ -650,7 +650,7 @@ var bindings = []binding{
 	{key: "f", label: "follow the live output again (f/G)", scope: scopePanel, context: ctxOutput, hint: "f follow", priority: 2},
 	{key: "v", label: "show more or less: quiet → compact → normal → verbose (tool lines, then reasoning, then unrecognized lines)", scope: scopePanel, context: ctxOutput, hint: "v detail", priority: 3},
 	{key: rawToggleKey, label: "show the assistant's original Markdown instead of the rendered view", scope: scopePanel, context: ctxOutput, hint: "ctrl+o raw", priority: 6},
-	{key: copyPickKey, label: "copy the task's id, branch, worktree path or pull request URL, this attempt's whole output, an assistant message, its plain text, or one of its code blocks", scope: scopePanel, context: ctxOutput, hint: "ctrl+y copy", priority: 7},
+	{key: copyPickKey, label: "copy the task's id, branch, worktree path, pull request or its URL, this attempt's whole output, an assistant message, its plain text, or one of its code blocks", scope: scopePanel, context: ctxOutput, hint: "ctrl+y copy", priority: 7},
 	// No vocabulary term, for copyPickKey's reason: the key raises a picker,
 	// and the picker's enter is what opens (task 112 decision 1).
 	{key: linkPickKey, label: "list the links in the assistant's messages — open one in a browser or copy it", scope: scopePanel, context: ctxOutput, hint: "ctrl+l links", priority: 8},
@@ -693,7 +693,7 @@ var bindings = []binding{
 	{key: "d", label: "switch between the whole task's diff and what the attempt selected on the rail changed", scope: scopePanel, context: ctxDiff, hint: "d by attempt", priority: 9},
 	{key: "pgdown", label: "page the diff (pgup/pgdown, ctrl+d/ctrl+u)", scope: scopePanel, context: ctxDiff, priority: 10},
 	{key: "shift+right", label: "pan long lines (shift+←/→)", scope: scopePanel, context: ctxDiff, priority: 11},
-	{key: copyPickKey, label: "copy the selected hunk, the file's diff, or the task's id, branch, worktree path or pull request URL", scope: scopePanel, context: ctxDiff, priority: 15},
+	{key: copyPickKey, label: "copy the selected hunk, the file's diff, or the task's id, branch, worktree path, pull request or its URL", scope: scopePanel, context: ctxDiff, hint: "ctrl+y copy", priority: 15},
 	// #1074: search the diff, scroll it by line, read it again.
 	{op: keymap.Filter, key: "/", label: "search the diff, every file opened — n and N then walk the matches, esc ends the search", scope: scopePanel, context: ctxDiff, hint: "/ search", priority: 12, term: termFilter},
 	{key: "alt+down", label: "scroll the diff one line (alt+↑/alt+↓); ↑/↓ move between files", scope: scopePanel, context: ctxDiff, priority: 13},
@@ -1244,6 +1244,8 @@ var bindings = []binding{
 	{op: keymap.Refresh, key: "R", label: "re-list this project", scope: scopePanel, context: ctxPullRequests, hint: "R refresh", priority: 7, term: termRefresh},
 	{key: "down", label: "move the selection (↑/↓)", scope: scopePanel, context: ctxPullRequests, priority: 8},
 	{op: keymap.Filter, key: "/", label: "filter by number, title or branch", scope: scopePanel, context: ctxPullRequests, priority: 9, term: termFilter},
+	// #1156: the key every other board copies its row with.
+	{key: copyPickKey, label: "copy the selected pull request's URL, reference, head branch or title", scope: scopePanel, context: ctxPullRequests, hint: "ctrl+y copy", priority: 10},
 
 	// Daemon.
 	{op: keymap.Refresh, key: "R", label: "re-read the daemon info, the config and the log", scope: scopePanel, context: ctxDaemon, hint: "R refresh", priority: 1, term: termRefresh},
@@ -1329,7 +1331,7 @@ var bindings = []binding{
 	{key: "tab", label: mainTabLabel, scope: scopePanel, context: ctxIssues, hint: "tab next tab", priority: 0, mainTab: true, noPalette: true},
 	{op: keymap.OpenRow, key: "enter", label: "open the selected issue", scope: scopePanel, context: ctxIssues, hint: "enter open", priority: 1, term: termOpenRow},
 	{key: "down", label: "move up and down the column (↑/↓)", scope: scopePanel, context: ctxIssues, hint: "↑↓ card", priority: 2},
-	{key: copyPickKey, label: "copy the selected issue's id, title, source reference or URL", scope: scopePanel, context: ctxIssues, priority: 12},
+	{key: copyPickKey, label: "copy the selected issue's id, title, source reference or URL", scope: scopePanel, context: ctxIssues, hint: "ctrl+y copy", priority: 12},
 	{op: keymap.Filter, key: "/", label: "filter by id, title, label, kind, priority, author or source reference", scope: scopePanel, context: ctxIssues, hint: "/ filter", priority: 3, term: termFilter},
 	// The writes (task 130.12). `n` is §15's "make a new one here", the
 	// chats board's precedent; `i` is the trigger list's "edit in a form";

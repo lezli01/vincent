@@ -1025,7 +1025,7 @@ func (b *board) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		// The selected task's id, branch, worktree path and pull request
 		// (#1076).
 		if t, ok := b.taskByID(b.selectedIDOrCursor()); ok {
-			return b, openCopyItems(taskCopyItems(t))
+			return b, openCopyItems(taskCopyItems(t, nil))
 		}
 		return b, nil
 	case opKey(keymap.AttentionFilter):
