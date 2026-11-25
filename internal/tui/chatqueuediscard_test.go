@@ -74,6 +74,34 @@ func TestChatHandoffFormNamesTheDiscardedQueue(t *testing.T) {
 	}
 }
 
+// TestWideHandoffFormMarksInheritedRows is task 074's `(from the chat)` mark
+// in the wide form's Branch box, which had dropped it: the base branch and the
+// branch both carry it, and a branch name too long for the box is cut before
+// the mark rather than cutting the mark off.
+func TestWideHandoffFormMarksInheritedRows(t *testing.T) {
+	n := branchForm(t)
+	n.handoff = &apiclient.Chat{ID: 1, Branch: "vincent/1-where-is-the-rate-limit-applied-in-the-public-api", BaseBranch: "main"}
+	const width = 50
+	rows, _ := n.wideRows([]ntRow{ntBranch, ntBranchName}, width)
+	if len(rows) != 2 {
+		t.Fatalf("wide rows = %q, want the base branch and the branch", rows)
+	}
+	for _, r := range rows {
+		plain := ansi.Strip(r)
+		if !strings.HasSuffix(plain, "(from the chat)") {
+			t.Errorf("row %q does not end with the inherited mark", plain)
+		}
+		if w := ansi.StringWidth(r); w > width {
+			t.Errorf("row %q is %d wide, over the box's %d", plain, w, width)
+		}
+	}
+	n.handoff = nil
+	rows, _ = n.wideRows([]ntRow{ntBranch}, width)
+	if len(rows) == 1 && strings.Contains(ansi.Strip(rows[0]), "from the chat") {
+		t.Errorf("a new task's row %q claims a chat", ansi.Strip(rows[0]))
+	}
+}
+
 // TestChatFooterSaysEnterQueuesWhileATurnRuns is task 156 decision 5 in the
 // footer (review F2): enter is offered while a turn runs or waits on a
 // question, reading `enter queue`, and steer is shown beside a running turn
