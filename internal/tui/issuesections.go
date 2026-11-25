@@ -93,15 +93,34 @@ func (v *issuesView) filtered() []apiclient.Issue {
 }
 
 // issueSorts are the orders `z` cycles the issues board through (#1075):
-// the daemon's, then newest, priority and title.
-var issueSorts = []string{"", "newest", "priority", "title"}
+// the daemon's, then recently updated, priority and title.
+//
+// The time order is by the update, not the creation (#1155): the card's
+// age is how long ago the issue last changed, and an order by a time the
+// board never prints read as shuffled beside it. The card keeps that age —
+// it is what says an issue has gone quiet — and the order is named for it.
+var issueSorts = []string{"", "updated", "priority", "title"}
+
+// issueSortLabel names the issues board's order, for the `z` note and, while
+// one is in force, the board's edge (#1155).
+func issueSortLabel(order string) string {
+	switch order {
+	case "updated":
+		return "recently updated first"
+	case "priority":
+		return "by priority"
+	case "title":
+		return "by title"
+	}
+	return "in the daemon's order"
+}
 
 // sortIssues orders issues within the board's lanes; "" keeps the daemon's
 // order, and every other order falls back to it on a tie.
 func sortIssues(issues []apiclient.Issue, order string) {
 	switch order {
-	case "newest":
-		sort.SliceStable(issues, func(i, j int) bool { return issues[i].CreatedAt.After(issues[j].CreatedAt) })
+	case "updated":
+		sort.SliceStable(issues, func(i, j int) bool { return issues[i].UpdatedAt.After(issues[j].UpdatedAt) })
 	case "priority":
 		// 1 is urgent and 4 low; 0, none, sorts after every set priority.
 		rank := func(p int) int {

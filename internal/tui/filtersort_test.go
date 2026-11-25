@@ -1,8 +1,11 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
 )
@@ -63,5 +66,59 @@ func TestSortOrders(t *testing.T) {
 	}
 	if nextSort(boardSorts, "title") != "" {
 		t.Error("the order does not wrap back to the board's own")
+	}
+}
+
+// #1155: the active sort is named while it is in force — on the Tasks
+// title beside the filter, on the card board's edge and on the issues
+// board's edge — and never pushes out what matters more: the title drops it
+// whole before it cuts the filter.
+func TestActiveSortIsNamed(t *testing.T) {
+	s, _ := newShellFixture(t, task(1, stateRunning), task(2, stateDone))
+	if got := s.panelTitle(panelTasks); got != "Tasks" {
+		t.Errorf("unsorted title = %q, want %q", got, "Tasks")
+	}
+	s.board.sortOrder = "newest"
+	s.board.filter.SetValue("x")
+	if got := s.panelTitle(panelTasks); got != "Tasks — /x — newest first" {
+		t.Errorf("title = %q, want the filter then the sort", got)
+	}
+	if got := s.tasksTitle(len("Tasks — /x") + 3); got != "Tasks — /x" {
+		t.Errorf("tight title = %q, want the sort dropped whole", got)
+	}
+	if got := ansi.Strip(s.board.cardSummary()); !strings.Contains(got, "newest first") {
+		t.Errorf("card edge %q does not name the sort", got)
+	}
+
+	v := handoffBoardFixture()
+	if got := ansi.Strip(v.boardSummary()); strings.Contains(got, "first") || strings.Contains(got, "by ") {
+		t.Errorf("unsorted issues edge %q names a sort", got)
+	}
+	v.sortOrder = "priority"
+	if got := ansi.Strip(v.boardSummary()); !strings.Contains(got, "by priority") {
+		t.Errorf("issues edge %q does not name the sort", got)
+	}
+	v.lastLoad = time.Date(2026, 11, 25, 9, 0, 0, 0, time.UTC)
+	full := ansi.Strip(v.boardSummary())
+	if got, _ := v.boardSummaryFit(len(full) - 1); !strings.Contains(ansi.Strip(got), "by priority") {
+		t.Errorf("at %d cells the edge %q lost the sort before the time", len(full)-1, ansi.Strip(got))
+	}
+}
+
+// #1155: the issues board's time order and the card's age read the same
+// time. The card prints how long ago the issue last changed, so the order
+// is by that time, most recent first, and is named for it.
+func TestIssueSortMatchesCardAge(t *testing.T) {
+	now := time.Date(2026, 11, 25, 12, 0, 0, 0, time.UTC)
+	issues := []apiclient.Issue{
+		{ID: 1, CreatedAt: now.Add(-time.Hour), UpdatedAt: now.Add(-48 * time.Hour)},
+		{ID: 2, CreatedAt: now.Add(-72 * time.Hour), UpdatedAt: now.Add(-time.Minute)},
+	}
+	if issueSorts[1] != "updated" {
+		t.Fatalf("issue orders = %v, want the time order named for the update", issueSorts)
+	}
+	sortIssues(issues, "updated")
+	if issues[0].ID != 2 {
+		t.Errorf("recently updated first put #%d first", issues[0].ID)
 	}
 }

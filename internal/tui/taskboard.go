@@ -530,6 +530,12 @@ func (b *board) cardSummary() string {
 	if b.attentionOnly {
 		parts = append(parts, "needs you only")
 	}
+	// The order `z` chose, beside the filter it composes with (#1155). The
+	// edge is the card board's full width (mgmtWideMinW and up), so it fits
+	// beside everything else here.
+	if b.sortOrder != "" {
+		parts = append(parts, boardSortLabel(b.sortOrder))
+	}
 	if !b.lastLoad.IsZero() {
 		parts = append(parts, "updated "+b.lastLoad.Format("15:04:05"))
 	}

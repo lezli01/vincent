@@ -1019,7 +1019,7 @@ func (b *board) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		// Cycles the order (#1075); the cursor stays on its task, as `g`'s
 		// regrouping leaves it.
 		b.sortOrder = nextSort(boardSorts, b.sortOrder)
-		b.actions.setStatus("sorted by "+valueOr(b.sortOrder, "state"), false)
+		b.actions.setStatus("sorted "+boardSortLabel(b.sortOrder), false)
 		return b, nil
 	case copyPickKey:
 		// The selected task's id, branch, worktree path and pull request

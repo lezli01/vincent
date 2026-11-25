@@ -629,7 +629,7 @@ func (v *issuesView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		// by id.
 		v.sortOrder = nextSort(issueSorts, v.sortOrder)
 		v.reselect()
-		v.setNote("sorted by "+valueOr(v.sortOrder, "the daemon's order"), false)
+		v.setNote("sorted "+issueSortLabel(v.sortOrder), false)
 		return v, nil
 	case copyPickKey:
 		// The selected issue's id, reference and page (#1076).

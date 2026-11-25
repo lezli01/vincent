@@ -819,7 +819,18 @@ func (s *shell) tasksTitle(budget int) string {
 			title += sep + skippedLabel
 		}
 	}
-	return title + suffix
+	title += suffix
+	// The order `z` chose is named last and dropped whole when the budget
+	// has no room for it (#1155): it explains the order rows are in, but a
+	// filter or selection hiding or holding rows matters more, and a label
+	// cut mid-word says nothing.
+	if o := s.board.sortOrder; o != "" {
+		sorted := " — " + boardSortLabel(o)
+		if budget < 0 || ansi.StringWidth(title+sorted) <= budget {
+			title += sorted
+		}
+	}
+	return title
 }
 
 // tasksTitleSuffix is the indicators the Tasks title carries after its name
