@@ -434,6 +434,7 @@ func (t *taskView) route(msg tea.Msg) (panel, tea.Cmd) {
 		t.createPR = nil
 		t.pullMerge, t.pullComment = nil, nil
 		t.pull, t.pullLoaded, t.pullErr = apiclient.GitHubTaskPull{}, false, ""
+		t.detail.pullRecord = nil
 		t.pullNote, t.pullNoteBad = "", false
 		t.pullTab = taskPullTab{}
 		t.pullFormPending = msg.openPR
@@ -692,7 +693,7 @@ func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		// The Output tab adds its messages to these (detail.go); every other
 		// tab copies the task's references (#1076).
 		if t.tab != taskTabOutput && t.detail.loaded {
-			items := taskCopyItems(t.detail.task.Task)
+			items := taskCopyItems(t.detail.task.Task, t.detail.pullRecord)
 			if t.tab == taskTabDiff {
 				// The hunk and the file's diff first (#1076): on the Diff tab
 				// they are what is being read.

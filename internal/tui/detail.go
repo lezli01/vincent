@@ -92,6 +92,11 @@ type (
 // the selected attempt below. PR K adds the diff tab and the action bar to
 // the same shell.
 type detail struct {
+	// pullRecord is the daemon's record of the task's linked pull request,
+	// which the workspace fetched (taskView.applyPull) — the one source of
+	// the URL the copy picker offers (#1156). Nil until it arrives, and when
+	// nothing is linked.
+	pullRecord *apiclient.GitHubPullRequest
 	// find is the Output pane's search (#1074); feedLines is the content it
 	// last built, which the search scans, and findShown what the viewport
 	// holds with the current match drawn, so a render only re-sets it when
@@ -950,7 +955,7 @@ func (d *detail) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 			items = append([]copyItem{out}, items...)
 		}
 		if d.loaded {
-			items = append(taskCopyItems(d.task.Task), items...)
+			items = append(taskCopyItems(d.task.Task, d.pullRecord), items...)
 		}
 		return func() tea.Msg {
 			return openCopyPickerMsg{items: items, resolve: func(seq int64) (string, bool) {

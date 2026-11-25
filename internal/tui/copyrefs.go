@@ -60,8 +60,13 @@ func plainJoin(lines []string) string {
 // branch, worktree path and pull request, an issue's id, reference and page.
 // ctrl+y used to offer assistant messages and code blocks only.
 
-// taskCopyItems are a task's references as copy rows.
-func taskCopyItems(t apiclient.Task) []copyItem {
+// taskCopyItems are a task's references as copy rows. pull is the daemon's
+// record of the task's pull request when the caller has fetched one (the
+// workspace has; the board has not), and is the only source of its URL
+// (#1156): a URL built as https://github.com/… is wrong on GitHub Enterprise,
+// and the record carries the one GitHub itself gave. A link a person removed
+// — suppressed — is no longer this task's pull request, so it offers neither.
+func taskCopyItems(t apiclient.Task, pull *apiclient.GitHubPullRequest) []copyItem {
 	var out []copyItem
 	add := func(label, text string) {
 		if text = strings.TrimSpace(text); text != "" {
@@ -73,9 +78,31 @@ func taskCopyItems(t apiclient.Task) []copyItem {
 	if t.WorktreePath != nil {
 		add("worktree path", *t.WorktreePath)
 	}
-	if p := t.GitHubPull; p != nil && p.Repo != "" && p.Number > 0 {
-		add("pull request", "https://github.com/"+p.Repo+"/pull/"+strconv.Itoa(p.Number))
+	if p := t.GitHubPull; p != nil && !p.Suppressed && p.Repo != "" && p.Number > 0 {
+		add("pull request", p.Repo+"#"+strconv.Itoa(p.Number))
+		if pull != nil && pull.Number == p.Number {
+			add("pull request URL", pull.URL)
+		}
 	}
+	return out
+}
+
+// pullCopyItems are a listed pull request's references as copy rows (#1156):
+// the pull requests board copies its row as every other board does.
+func pullCopyItems(p apiclient.GitHubPullRequest) []copyItem {
+	var out []copyItem
+	group := "pull request #" + strconv.Itoa(p.Number)
+	add := func(label, text string) {
+		if text = strings.TrimSpace(text); text != "" {
+			out = append(out, copyItem{group: group, label: label, snippet: text, text: text})
+		}
+	}
+	add("url", p.URL)
+	if p.Repo != "" && p.Number > 0 {
+		add("reference", p.Repo+"#"+strconv.Itoa(p.Number))
+	}
+	add("branch", p.HeadBranch)
+	add("title", p.Title)
 	return out
 }
 

@@ -62,10 +62,17 @@ func (t *taskView) applyPull(msg taskPullMsg) {
 	t.pullLoaded = true
 	if msg.err != nil {
 		t.pull, t.pullErr = apiclient.GitHubTaskPull{}, errString(msg.err)
+		t.detail.pullRecord = nil
 		t.leaveAbsentPullTab()
 		return
 	}
 	t.pull, t.pullErr = msg.pull, ""
+	// The copy picker's pull request URL is this record's (#1156); an
+	// unlinked task's answer carries none.
+	t.detail.pullRecord = nil
+	if msg.pull.Linked && !msg.pull.Suppressed {
+		t.detail.pullRecord = msg.pull.Pull
+	}
 	t.leaveAbsentPullTab()
 	t.refreshPullMerge()
 	if t.pullFormPending {

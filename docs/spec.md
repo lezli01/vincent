@@ -19299,6 +19299,16 @@ persisted, sent to the daemon or written to a transcript.
   grown since the popup opened copies it as it is now, because "copy this
   message" means the whole message; and a reference whose records the prune
   took copies the captured text, so a pick can never fail.
+  *Amended 2026-11-25 (issue #1156).* Beside the prose, the picker offers the
+  references of what the surface is about: a task's id, branch, worktree path
+  and pull request (`owner/repo#N`), and in the task workspace that pull
+  request's URL — taken from the daemon's record of it
+  (`GET /v1/tasks/{id}/github/pull`), never built as `github.com/…`, which is
+  wrong on GitHub Enterprise. The board has no record, so it offers the
+  reference only; a link a human removed (suppressed) offers neither. The pull
+  requests board copies its selected row's URL, reference, head branch and
+  title. Every surface with `ctrl+y` hints `ctrl+y copy` in its footer, after
+  the surface's own actions, so a narrow footer drops it first.
 - **A paused pane keeps its place across a rebuild** *(added 2026-09-01, issue
   #291)*. Records carry no id on the wire and none is added; identity is
   client-assigned on ingest and is not an index, so it survives the record cap.
