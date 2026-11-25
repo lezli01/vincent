@@ -769,10 +769,22 @@ func humanBytes(n int64) string {
 // when no restart is under way.
 func (d *daemonView) restartLine() string {
 	switch {
+	case d.restartAsk && !d.svcKnown:
+		return styleWarn.Render("  restart the daemon? checking whether a service runs it… · n keep it")
+	case d.restartAsk && d.viaService():
+		return styleWarn.Render("  restart the daemon through its service (" + d.svc.Name +
+			")? y restart · n keep it · running steps are interrupted and re-run when it is back")
 	case d.restartAsk:
 		return styleWarn.Render("  restart the daemon? y restart · n keep it · running steps are interrupted and re-run when it is back")
 	case d.restarting:
-		return styleDim.Render("  restarting the daemon…")
+		line := "  restarting the daemon…"
+		if d.restartViaService {
+			line = "  restarting the daemon through its service…"
+		}
+		if d.restartIgnored {
+			line += " · already under way, so r was ignored"
+		}
+		return styleDim.Render(line)
 	case d.restartErr != nil:
 		return styleWarn.Render("  could not restart: " + errString(d.restartErr))
 	}

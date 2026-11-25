@@ -11,6 +11,7 @@ import (
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/daemon"
+	"github.com/lezli01/vincent/internal/service"
 )
 
 const (
@@ -34,6 +35,10 @@ type connector struct {
 	startDetached  func() (int, error)
 	startTimeout   time.Duration
 	pollInterval   time.Duration
+	// restartService and serviceTimeout are the daemon screen's restart
+	// through the service manager (#1160, serviceRestartCmd).
+	restartService func(context.Context) error
+	serviceTimeout time.Duration
 }
 
 func defaultConnector() connector {
@@ -45,12 +50,14 @@ func defaultConnector() connector {
 			}
 			return dirs.Data, nil
 		},
-		readRuntime:   daemon.ReadRuntimeInfo,
-		checkHealth:   daemon.CheckHealth,
-		newClient:     apiclient.Discover,
-		startDetached: daemon.StartDetached,
-		startTimeout:  startTimeout,
-		pollInterval:  pollInterval,
+		readRuntime:    daemon.ReadRuntimeInfo,
+		checkHealth:    daemon.CheckHealth,
+		newClient:      apiclient.Discover,
+		startDetached:  daemon.StartDetached,
+		startTimeout:   startTimeout,
+		pollInterval:   pollInterval,
+		restartService: service.Restart,
+		serviceTimeout: serviceRestartTimeout,
 	}
 }
 

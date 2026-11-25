@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/service"
 )
 
 // newTestDaemonView is a view with a deterministic clock and no filesystem
@@ -33,6 +35,8 @@ func newTestDaemonView(lines []string, tailErr error) *daemonView {
 		return filepath.Join(os.TempDir(), "vincent-tui-no-such-fonts"), nil
 	}
 	d.fontEnv = func(string) string { return "" }
+	// Never the developer's real service manager (#1160): no service.
+	d.serviceQuery = func(context.Context) (service.Status, error) { return service.Status{}, nil }
 	return d
 }
 

@@ -53,7 +53,7 @@ var confirmSites = map[string]func(t *testing.T) confirmSite{
 	},
 	"daemon restart": func(*testing.T) confirmSite {
 		d := requestDaemon()
-		d.update(confirmKey("r"))
+		pressRestart(d) // the question, with its service reading landed (#1160)
 		return confirmSite{
 			press: func(k string) { d.update(confirmKey(k)) },
 			open:  func() bool { return d.restartAsk },

@@ -31,7 +31,8 @@ func newServiceCmd() *cobra.Command {
 			"own PATH. If an agent still will not resolve, set agents.<name>.path in\n" +
 			"config.yaml, which is absolute and never consults PATH.",
 	}
-	cmd.AddCommand(newServiceInstallCmd(), newServiceUninstallCmd(), newServiceStatusCmd())
+	cmd.AddCommand(newServiceInstallCmd(), newServiceUninstallCmd(), newServiceRestartCmd(),
+		newServiceStatusCmd())
 	return cmd
 }
 
@@ -77,6 +78,46 @@ func newServiceUninstallCmd() *cobra.Command {
 				return exitError{code: 1}
 			}
 			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "service uninstalled")
+			return nil
+		},
+	}
+	return cmd
+}
+
+// newServiceRestartCmd restarts the daemon through the service manager
+// (#1160). `vincent daemon stop` followed by a start would not: every
+// definition restarts on failure only, so the stop's clean exit leaves the
+// service stopped and the start runs a daemon outside it.
+func newServiceRestartCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "restart",
+		Short: "Restart the daemon through the service manager",
+		Long: "Have the platform service manager stop the daemon and start it again, so\n" +
+			"the new daemon is the service's own process: `launchctl kickstart -k` on\n" +
+			"macOS, `systemctl --user restart` on Linux, and on Windows a graceful stop\n" +
+			"followed by ending and running the Scheduled Task. Running steps are\n" +
+			"interrupted and re-run when the daemon is back (§12.4).\n\n" +
+			"Use it instead of `vincent daemon stop` and a start when the daemon runs as\n" +
+			"a service: the stop exits cleanly, which no service definition restarts,\n" +
+			"and the start would run a daemon outside the service.\n\n" +
+			"It returns once the service manager has started the daemon again; check\n" +
+			"`vincent daemon status` for it serving. With no service installed it\n" +
+			"exits 1.",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			err := service.Restart(cmd.Context())
+			if errors.Is(err, service.ErrNotInstalled) {
+				// Not desired-state like uninstall: there is no service to
+				// restart, and the daemon (if any) was left as it was.
+				_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Error: no vincent service is installed; "+
+					"`vincent service install` registers one")
+				return exitError{code: 1}
+			}
+			if err != nil {
+				_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Error:", err)
+				return exitError{code: 1}
+			}
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "service restarted")
 			return nil
 		},
 	}

@@ -61,6 +61,9 @@ type root struct {
 	connErr     error
 	logPath     string
 	retryIn     time.Duration
+	// restarting is a daemon restart under way, from the confirmed `r` to
+	// the reconnect or the failure that ends it; a second is ignored (#1160).
+	restarting bool
 
 	notes      <-chan apiclient.Note
 	stopStream context.CancelFunc
@@ -403,18 +406,29 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case newTaskFromChatMsg:
 		return m.updateNewTaskFromChat(msg)
 	case connectedMsg:
-		return m.updateConnected(msg)
+		model, cmd := m.updateConnected(msg)
+		return model, tea.Batch(cmd, m.endRestart(nil))
 	case projectListMsg:
 		return m, m.updateProjectList(msg)
 	case restartDaemonMsg:
+		// #1160: one restart at a time. The screen ignores a second `r`, and
+		// this holds for any other route a restart could arrive by.
+		if m.restarting {
+			return m, nil
+		}
+		m.restarting = true
+		if msg.viaService {
+			// The service manager restarts it, so the new daemon stays
+			// under the service (#1160).
+			return m, m.cn.serviceRestartCmd(m.dataDir)
+		}
 		// #1081: stop the daemon, then the connect flow starts a new one.
 		return m, stopDaemonCmd(m.dataDir)
 	case daemonStoppedMsg:
-		cmd := m.deliver(viewDaemon, msg)
 		if msg.err != nil {
-			return m, cmd
+			return m, m.endRestart(msg.err)
 		}
-		return m, tea.Batch(cmd, m.restartConnect())
+		return m, m.restartConnect()
 	case probeFailedMsg:
 		m.phase = phaseStarting
 		m.setDataDir(msg.dataDir)
@@ -424,7 +438,7 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.connErr = msg.err
 		m.logPath = msg.logPath
 		m.setConnected(false)
-		return m, nil
+		return m, m.endRestart(msg.err)
 	case tea.PasteMsg:
 		return m, m.updatePaste(msg.Content)
 	case tea.MouseClickMsg:
@@ -1815,6 +1829,16 @@ func (m *root) activeDraft() (string, bool) {
 
 // restartConnect tears down any live stream and reruns the full connect
 // flow, auto-start included — the retry key on the failure screen.
+// endRestart closes a restart under way, if one is, and tells the daemon
+// screen how it ended (#1160).
+func (m *root) endRestart(err error) tea.Cmd {
+	if !m.restarting {
+		return nil
+	}
+	m.restarting = false
+	return m.deliver(viewDaemon, restartEndedMsg{err: err})
+}
+
 func (m *root) restartConnect() tea.Cmd {
 	if m.stopStream != nil {
 		m.stopStream()

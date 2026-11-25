@@ -543,11 +543,21 @@ user; no elevation needed on any platform. See
 ```sh
 vincent service install      # register and start; idempotent
 vincent service uninstall    # stop and remove
+vincent service restart      # restart the daemon through the service manager
 vincent service status       # installed? running?
 ```
 
 Backends: a launchd user agent (macOS), a systemd user unit (Linux), a Scheduled
 Task (Windows).
+
+`vincent service restart` has the service manager stop the daemon and start it
+again — `launchctl kickstart -k` on macOS, `systemctl --user restart` on Linux,
+and on Windows a graceful stop, then the task ended and run. Use it rather than
+`vincent daemon stop` and a start when the daemon runs as a service: every
+service definition restarts the daemon on failure only, so the stop's clean exit
+leaves the service stopped and the next start runs a daemon outside it. Running
+steps are interrupted and re-run when the daemon is back. It exits 1 when no
+service is installed. The TUI's daemon screen restarts through it too.
 
 ## `vincent project`
 

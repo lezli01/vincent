@@ -11,6 +11,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"strings"
+	"time"
 	"unicode/utf16"
 
 	"github.com/lezli01/vincent/internal/config"
@@ -334,6 +335,57 @@ func stopDaemon(ctx context.Context) {
 		return
 	}
 	_ = daemon.RequestStop(ctx, ri.Port, token)
+}
+
+// restart ends the Scheduled Task and runs it again (#1160), so the new
+// daemon is the task's own process and RestartOnFailure covers it again.
+//
+// The daemon is asked to stop itself first, for the reason uninstall asks:
+// /End is a hard terminate, which would skip §12.4's shutdown and kill running
+// agent processes mid-step. The wait matters as much as the request — with
+// MultipleInstancesPolicy IgnoreNew, a /Run that lands while the old process
+// is still shutting down is silently dropped. /End then covers a daemon that
+// did not exit within the wait, and is a no-op otherwise.
+//
+// None of it needs elevation: the task is registered by and for this user,
+// and an unelevated install leaves the account full control of it (T4.20),
+// which is how install already runs /Run and uninstall /End. A task an
+// elevated process registered is the exception taskOwnerHint explains.
+func restart(ctx context.Context) error {
+	if !taskInstalled(ctx) {
+		if legacyServiceInstalled(ctx) {
+			return errLegacyService
+		}
+		return ErrNotInstalled
+	}
+	stopForRestart(ctx)
+	_, _ = schtasks(ctx, "/End", "/TN", Label)
+	if _, err := schtasks(ctx, "/Run", "/TN", Label); err != nil {
+		return taskOwnerHint(err)
+	}
+	return nil
+}
+
+// restartStopWait bounds the wait for the old daemon to exit — the CLI's
+// `daemon stop` budget.
+const restartStopWait = 30 * time.Second
+
+// stopForRestart asks the daemon to stop and waits for its lock to be
+// released, ignoring every failure: /End follows it either way. A variable so
+// a test does not reach for a real daemon.
+var stopForRestart = func(ctx context.Context) {
+	stopDaemon(ctx)
+	dirs, err := config.ResolveDirs()
+	if err != nil {
+		return
+	}
+	deadline := time.Now().Add(restartStopWait)
+	for time.Now().Before(deadline) && ctx.Err() == nil {
+		if running, err := daemon.ProbeRunning(dirs.Data); err != nil || !running {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 }
 
 func query(ctx context.Context) (Status, error) {
