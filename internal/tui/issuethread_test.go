@@ -49,8 +49,8 @@ func TestIssueCommentKeyWithheldOnAMirroredIssue(t *testing.T) {
 	if _, cmd := v.update(registryKey(t, "W")); cmd != nil {
 		t.Fatal("W did something on a mirrored issue")
 	}
-	if !v.noteBad || !strings.Contains(v.note, "mirrored") {
-		t.Errorf("note = %q, want the refusal", v.note)
+	if !v.status().bad || !strings.Contains(v.status().text, "mirrored") {
+		t.Errorf("note = %q, want the refusal", v.status().text)
 	}
 	if !hasCommentRow(localIssueFixture().liveBindings(bindingsFor(ctxIssue))) {
 		t.Error("W is withheld on a local issue")

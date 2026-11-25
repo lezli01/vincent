@@ -138,8 +138,8 @@ type issueView struct {
 	links *hyperlinkHolder
 	md    mdCache
 
-	note        string
-	noteBad     bool
+	// statusPoster is where the screen's results and notes go (#1164).
+	statusPoster
 	refreshWait bool
 
 	// w is the form and the close/reopen/delete prompt (task 130.12).
@@ -196,7 +196,6 @@ func (v *issueView) open(id int64) tea.Cmd {
 		v.w.form, v.w.act = nil, nil
 	}
 	v.id = id
-	v.note = ""
 	return v.loadCmd()
 }
 
@@ -220,14 +219,14 @@ func (v *issueView) update(msg tea.Msg) (panel, tea.Cmd) {
 		if msg.saved.ID == v.id {
 			v.issue = *msg.saved
 		}
-		v.setNote("saved issue #"+strconv.FormatInt(msg.saved.ID, 10), false)
+		v.status().result("saved issue #"+strconv.FormatInt(msg.saved.ID, 10), false)
 		return v, v.loadCmd()
 	case issueChatOpenedMsg:
 		if msg.issueID != v.id {
 			return v, nil
 		}
 		text, bad := issueChatNote(msg)
-		v.setNote(text, bad)
+		v.status().result(text, bad)
 		if msg.err == nil {
 			return v, v.loadCmd()
 		}
@@ -243,7 +242,7 @@ func (v *issueView) update(msg tea.Msg) (panel, tea.Cmd) {
 			// The issue is gone; its screen has nothing left to show.
 			return v, func() tea.Msg { return selectViewMsg{id: viewIssues} }
 		}
-		v.setNote(actedNote(msg), msg.err != nil)
+		v.status().result(actedNote(msg), msg.err != nil)
 		// A return answers with the handoff, not the issue, so msg.issue is
 		// the zero value there; keep the one shown until loadCmd re-reads it.
 		if msg.err == nil && msg.id == v.id && msg.issue.ID == v.id {
@@ -278,16 +277,16 @@ func (v *issueView) update(msg tea.Msg) (panel, tea.Cmd) {
 		if msg.err != nil {
 			// A 409 here is the remote going live between the read that
 			// offered the key and the post (decision 24's mirrored rule).
-			v.setNote("comment on issue #"+strconv.FormatInt(msg.id, 10)+": "+errString(msg.err), true)
+			v.status().result("comment on issue #"+strconv.FormatInt(msg.id, 10)+": "+errString(msg.err), true)
 			return v, v.loadCmd()
 		}
-		v.setNote("commented on issue #"+strconv.FormatInt(msg.id, 10), false)
+		v.status().result("commented on issue #"+strconv.FormatInt(msg.id, 10), false)
 		return v, v.loadCmd()
 	case openedURLMsg:
 		if msg.err != nil {
-			v.setNote(openFailure(msg), true)
+			v.status().result(openFailure(msg), true)
 		} else {
-			v.note = ""
+			v.status().clear()
 		}
 		return v, nil
 	case noteMsg:
@@ -449,10 +448,6 @@ func (v *issueView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		v.scrollBy(max(v.page()/2, 1))
 		return v, nil
 	case "esc":
-		if v.note != "" {
-			v.note = ""
-			return v, nil
-		}
 		// Back to where the issue was opened from: the list, which kept its
 		// own selection, or the task workspace.
 		back := v.back
@@ -502,7 +497,7 @@ func (v *issueView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	case issueStateKey:
 		act, cmd, note := newIssueStateAction(v.client, v.issue)
 		if note != "" {
-			v.setNote(note, true)
+			v.status().note(note, true)
 		}
 		v.w.act = act
 		return v, cmd
@@ -535,20 +530,20 @@ func (v *issueView) issueOp(key string) (tea.Cmd, bool) {
 	case opKey(keymap.Ready):
 		act, cmd, note := newIssueReady(v.client, v.issue)
 		if note != "" {
-			v.setNote(note, true)
+			v.status().note(note, true)
 		}
 		v.w.act = act
 		return cmd, true
 	case opKey(keymap.Return):
 		act, note := newIssueReturn(v.client, v.issue)
 		if note != "" {
-			v.setNote(note, true)
+			v.status().note(note, true)
 		}
 		v.w.act = act
 		return nil, true
 	case opKey(keymap.Add):
 		if handoffClaimed(v.issue) {
-			v.setNote(inHandoffNote(v.issue), true)
+			v.status().note(inHandoffNote(v.issue), true)
 			return nil, true
 		}
 		return newTaskFromIssueCmd(v.issue), true
@@ -565,10 +560,10 @@ func (v *issueView) issueOp(key string) (tea.Cmd, bool) {
 	case opKey(keymap.Chat):
 		// A chat on this issue's main worktree, or the one already holding
 		// it (task 140.9).
-		return issueChatCmd(v.client, v.issue, v.setNote, viewIssue), true
+		return issueChatCmd(v.client, v.issue, v.status().result, viewIssue), true
 	case opKey(keymap.ChatWith):
 		// The same, with the agent chosen first (task 161).
-		return issueChatWithCmd(v.client, v.issue, v.setNote, viewIssue), true
+		return issueChatWithCmd(v.client, v.issue, v.status().result, viewIssue), true
 	}
 	return nil, false
 }
@@ -687,7 +682,7 @@ func (v *issueView) liveBindings(rows []binding) []binding {
 func (v *issueView) openComment() tea.Cmd {
 	if !v.commentable() {
 		p := issueProvider(&v.issue)
-		v.setNote("this issue is mirrored from "+p+" — comment there; vincent never posts to "+p, true)
+		v.status().note("this issue is mirrored from "+p+" — comment there; vincent never posts to "+p, true)
 		return nil
 	}
 	if v.posting {
@@ -697,7 +692,7 @@ func (v *issueView) openComment() tea.Cmd {
 	cmd, err := editTextCmd(v.w.exec, "issue"+strconv.FormatInt(id, 10)+"-comment", ".md", "",
 		func(text string, err error) tea.Msg { return issueCommentEditedMsg{id: id, text: text, err: err} })
 	if err != nil {
-		v.setNote("comment: "+errString(err), true)
+		v.status().result("comment: "+errString(err), true)
 		return nil
 	}
 	return cmd
@@ -710,21 +705,21 @@ func (v *issueView) postComment(msg issueCommentEditedMsg) tea.Cmd {
 		return nil
 	}
 	if msg.err != nil {
-		v.setNote("comment: "+errString(msg.err), true)
+		v.status().result("comment: "+errString(msg.err), true)
 		return nil
 	}
 	body := strings.TrimSpace(msg.text)
 	if body == "" {
-		v.setNote("empty comment — nothing posted", false)
+		v.status().note("empty comment — nothing posted", false)
 		return nil
 	}
 	if v.client == nil {
-		v.setNote("not connected", true)
+		v.status().result("not connected", true)
 		return nil
 	}
 	client, id := v.client, msg.id
 	v.posting = true
-	v.setNote("posting the comment…", false)
+	v.status().result("posting the comment…", false)
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), actionTimeout)
 		defer cancel()
@@ -834,7 +829,7 @@ func (v *issueView) openTask() tea.Cmd {
 			return func() tea.Msg { return openChatMsg{id: id, projectID: pid, back: viewIssue} }
 		}
 		if mw == nil || mw.OccupantTaskID == nil {
-			v.setNote("the main worktree is free — no task to open · "+opKey(keymap.Chat)+" opens a chat on it", false)
+			v.status().note("the main worktree is free — no task to open · "+opKey(keymap.Chat)+" opens a chat on it", false)
 			return nil
 		}
 		id, state, pid = *mw.OccupantTaskID, "", v.issue.ProjectID
@@ -889,14 +884,12 @@ func issueLaneLabel(iss apiclient.Issue) string {
 func (v *issueView) openSource() tea.Cmd {
 	url := issueURL(v.issue)
 	if url == "" {
-		v.setNote("this issue is local — there is no page to open", true)
+		v.status().note("this issue is local — there is no page to open", true)
 		return nil
 	}
-	v.setNote("opening "+url+"…", false)
+	v.status().result("opening "+url+"…", false)
 	return openURLCmd(url)
 }
-
-func (v *issueView) setNote(text string, bad bool) { v.note, v.noteBad = text, bad }
 
 // issueDoc is one document of the issue the link and copy pickers read: the
 // description, then each comment, named by its author and time (#795).
@@ -939,13 +932,6 @@ func (v *issueView) paneLines(width, height, top int) []string {
 	body := v.pageLines(width)
 	var footer []string
 	tail := 0
-	if v.note != "" {
-		style := styleDim
-		if v.noteBad {
-			style = styleBad
-		}
-		footer = append([]string{""}, styled(wrapText(v.note, width, hanging("  ")), style)...)
-	}
 	if v.w.act != nil {
 		footer, tail = v.w.act.lines(width)
 	}

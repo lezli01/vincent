@@ -171,9 +171,9 @@ type issuesView struct {
 	// draws `done` fourth; hidden lists `state=open` and draws three columns.
 	// Session-only, and kept across a project switch.
 	showDone    bool
-	note        string
-	noteBad     bool
 	refreshWait bool
+	// statusPoster is where the board's results and notes go (#1164).
+	statusPoster
 
 	// w is the form and the close/reopen/delete prompt (task 130.12).
 	w issueWrites
@@ -309,29 +309,29 @@ func (v *issuesView) route(msg tea.Msg) (panel, tea.Cmd) {
 			id, pid := msg.saved.ID, msg.saved.ProjectID
 			return v, func() tea.Msg { return openIssueMsg{id: id, projectID: pid} }
 		}
-		v.setNote("saved issue #"+strconv.FormatInt(msg.saved.ID, 10), false)
+		v.status().result("saved issue #"+strconv.FormatInt(msg.saved.ID, 10), false)
 		return v, v.loadCmd()
 	case issueEditTargetMsg:
 		if msg.err != nil {
-			v.setNote("could not read the issue: "+errString(msg.err), true)
+			v.status().result("could not read the issue: "+errString(msg.err), true)
 			return v, nil
 		}
 		iss := msg.issue
 		return v, v.w.openForm(v.client, &iss, iss.ProjectID)
 	case issueActionTargetMsg:
 		if msg.err != nil {
-			v.setNote("could not read the issue: "+errString(msg.err), true)
+			v.status().result("could not read the issue: "+errString(msg.err), true)
 			return v, nil
 		}
 		act, cmd, note := newIssueStateAction(v.client, msg.issue)
 		if note != "" {
-			v.setNote(note, true)
+			v.status().note(note, true)
 		}
 		v.w.act = act
 		return v, cmd
 	case issueMoveTargetMsg:
 		if msg.err != nil {
-			v.setNote("could not read the issue: "+errString(msg.err), true)
+			v.status().result("could not read the issue: "+errString(msg.err), true)
 			return v, nil
 		}
 		v.w.form, v.w.act = nil, newIssueMove(v.client, msg.issue)
@@ -343,14 +343,14 @@ func (v *issuesView) route(msg tea.Msg) (panel, tea.Cmd) {
 			v.w.act = offer
 			return v, nil
 		}
-		v.setNote(actedNote(msg), msg.err != nil)
+		v.status().result(actedNote(msg), msg.err != nil)
 		return v, v.loadCmd()
 	case issueChatOpenedMsg:
 		// The bar said "opening a chat…"; a refusal stays on it, and a clean
 		// open clears it — the chat workspace is on screen by now.
 		if msg.projectID == v.project.id {
 			text, bad := issueChatNote(msg)
-			v.setNote(text, bad)
+			v.status().result(text, bad)
 			if msg.err == nil {
 				return v, v.loadCmd()
 			}
@@ -370,7 +370,7 @@ func (v *issuesView) route(msg tea.Msg) (panel, tea.Cmd) {
 	case issuesSyncedMsg:
 		if msg.projectID == v.project.id {
 			// A switch the human set is a state, not a failure (#1148).
-			v.setNote(syncedNote(msg), msg.err != nil ||
+			v.status().result(syncedNote(msg), msg.err != nil ||
 				(!msg.status.Enabled && !syncSwitchedOff(msg.status.Reason)))
 			if msg.err == nil {
 				st := msg.status
@@ -384,9 +384,9 @@ func (v *issuesView) route(msg tea.Msg) (panel, tea.Cmd) {
 		return v, nil
 	case openedURLMsg:
 		if msg.err != nil {
-			v.setNote(openFailure(msg), true)
+			v.status().result(openFailure(msg), true)
 		} else {
-			v.note = ""
+			v.status().clear()
 		}
 		return v, nil
 	case noteMsg:
@@ -502,7 +502,7 @@ func (v *issuesView) applyLoaded(msg issuesLoadedMsg) {
 		v.sync, v.syncFor = msg.sync, v.project.id
 		if note, bad, done := syncOutcome(*msg.sync, v.syncAsked); done {
 			v.syncAsked = time.Time{}
-			v.setNote(note, bad)
+			v.status().result(note, bad)
 		}
 	}
 	v.prunePicked()
@@ -604,10 +604,10 @@ func (v *issuesView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		v.filter.Focus()
 		return v, nil
 	case "esc":
-		// One layer per press (§15): a committed filter or a note first.
-		if v.filter.Value() != "" || v.note != "" {
+		// One layer per press (§15): a committed filter first. A note is
+		// gone already — the root drops it on any key (#1164).
+		if v.filter.Value() != "" {
 			v.filter.SetValue("")
-			v.note = ""
 			v.reselect() // the issue that was selected, wherever it now is (#1058)
 			return v, nil
 		}
@@ -634,7 +634,7 @@ func (v *issuesView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		// by id.
 		v.sortOrder = nextSort(issueSorts, v.sortOrder)
 		v.reselect()
-		v.setNote("sorted "+issueSortLabel(v.sortOrder), false)
+		v.status().result("sorted "+issueSortLabel(v.sortOrder), false)
 		return v, nil
 	case copyPickKey:
 		// The selected issue's id, reference and page (#1076).
@@ -651,7 +651,7 @@ func (v *issuesView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	case opKey(keymap.OpenRow):
 		row, ok := v.current()
 		if !ok {
-			v.setNote(noIssueNote("open"), false)
+			v.status().note(noIssueNote("open"), false)
 			return v, nil
 		}
 		id, pid := row.issue.ID, row.issue.ProjectID
@@ -666,12 +666,12 @@ func (v *issuesView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		// issue refuses first (task 137.11): its handoff owns it.
 		if row, ok := v.current(); ok {
 			if handoffClaimed(row.issue) {
-				v.setNote(inHandoffNote(row.issue), true)
+				v.status().note(inHandoffNote(row.issue), true)
 				return v, nil
 			}
 			return v, newTaskFromIssueCmd(row.issue)
 		}
-		v.setNote(noIssueNote("new task"), false)
+		v.status().note(noIssueNote("new task"), false)
 	case issueEditKey:
 		if row, ok := v.current(); ok {
 			return v, issueEditFor(v.client, row.issue.ID)
@@ -692,7 +692,7 @@ func (v *issuesView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		if row, ok := v.current(); ok {
 			act, cmd, note := newIssueReady(v.client, row.issue)
 			if note != "" {
-				v.setNote(note, true)
+				v.status().note(note, true)
 			}
 			v.w.act = act
 			return v, cmd
@@ -701,7 +701,7 @@ func (v *issuesView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		if row, ok := v.current(); ok {
 			act, note := newIssueReturn(v.client, row.issue)
 			if note != "" {
-				v.setNote(note, true)
+				v.status().note(note, true)
 			}
 			v.w.act = act
 		}
@@ -711,12 +711,12 @@ func (v *issuesView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		// A chat on the selected issue's main worktree, or the one already
 		// holding it (task 140.9).
 		if row, ok := v.current(); ok {
-			return v, issueChatCmd(v.client, row.issue, v.setNote, viewIssues)
+			return v, issueChatCmd(v.client, row.issue, v.status().result, viewIssues)
 		}
 	case opKey(keymap.ChatWith):
 		// The same, with the agent chosen first (task 161).
 		if row, ok := v.current(); ok {
-			return v, issueChatWithCmd(v.client, row.issue, v.setNote, viewIssues)
+			return v, issueChatWithCmd(v.client, row.issue, v.status().result, viewIssues)
 		}
 	case issueSelectKey:
 		v.togglePick()
@@ -760,7 +760,7 @@ func (v *issuesView) syncCmd() tea.Cmd {
 	if client == nil || pid == 0 {
 		return nil
 	}
-	v.setNote("asking for a sync…", false)
+	v.status().result("asking for a sync…", false)
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), loadTimeout)
 		defer cancel()
@@ -796,10 +796,10 @@ func syncedNote(msg issuesSyncedMsg) string {
 func (v *issuesView) toggleDone() {
 	v.showDone = !v.showDone
 	if v.showDone {
-		v.setNote("showing the done lane…", false)
+		v.status().result("showing the done lane…", false)
 		return
 	}
-	v.setNote("hiding the done lane…", false)
+	v.status().result("hiding the done lane…", false)
 }
 
 // openSelected hands an imported issue's URL to a browser. A local issue has
@@ -811,10 +811,10 @@ func (v *issuesView) openSelected() tea.Cmd {
 	}
 	url := issueURL(row.issue)
 	if url == "" {
-		v.setNote("issue #"+strconv.FormatInt(row.issue.ID, 10)+" is local — there is no page to open", true)
+		v.status().note("issue #"+strconv.FormatInt(row.issue.ID, 10)+" is local — there is no page to open", true)
 		return nil
 	}
-	v.setNote("opening "+url+"…", false)
+	v.status().result("opening "+url+"…", false)
 	return openURLCmd(url)
 }
 
@@ -842,8 +842,6 @@ func issueURL(iss apiclient.Issue) string {
 	}
 	return strings.TrimSpace(iss.Source.URL)
 }
-
-func (v *issuesView) setNote(text string, bad bool) { v.note, v.noteBad = text, bad }
 
 // noIssueNote is why a key that acts on the selected issue did nothing on
 // a board with no issue to select (#1138), in #1059's "<op>: …" form.
@@ -894,14 +892,6 @@ func (v *issuesView) render(width, height int) string {
 	lines = append(lines, v.bodyNotice(width)...)
 
 	var footer []string
-	if v.note != "" {
-		style := styleDim
-		if v.noteBad {
-			style = styleBad
-		}
-		// The note wraps (#796), and fitFooter counts the lines it takes.
-		footer = styled(wrapText(v.note, width, hanging("  ")), style)
-	}
 	tail := 0
 	if v.w.act != nil {
 		footer, tail = v.w.act.lines(width)

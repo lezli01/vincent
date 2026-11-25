@@ -221,8 +221,8 @@ func TestIssueDetailRebindingAScrollKeyWins(t *testing.T) {
 	}
 	v.w.act = nil
 	v.updateKey(key("G"))
-	if !strings.Contains(v.note, "comment there") {
-		t.Errorf("G bound to comment did not reach the comment action; note %q", v.note)
+	if !strings.Contains(v.status().text, "comment there") {
+		t.Errorf("G bound to comment did not reach the comment action; note %q", v.status().text)
 	}
 	if v.scroll != 3 {
 		t.Errorf("G bound to comment still scrolled, to %d", v.scroll)

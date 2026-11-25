@@ -143,7 +143,7 @@ func TestIssueScreensAgainstTheRealAPI(t *testing.T) {
 	if got := opened(); got[0] != "https://github.com/octo/web/issues/41" {
 		t.Fatalf("o opened %v", got)
 	}
-	h.p.until(5*time.Second, "the hand-off's note to clear", func() bool { return list.note == "" })
+	h.p.until(5*time.Second, "the hand-off's note to clear", func() bool { return list.status().text == "" })
 
 	// And back.
 	h.p.push(h.m.selectProject(apiclient.Project{ID: h.projectID, Name: "live"}, "test"))
@@ -339,7 +339,7 @@ func TestIssueSyncKeyAgainstTheRealAPI(t *testing.T) {
 
 	h.sendKey(keyPress("S"))
 	h.p.until(10*time.Second, "the sync answer", func() bool {
-		return strings.HasPrefix(list.note, "sync requested")
+		return strings.HasPrefix(list.status().text, "sync requested")
 	})
 	want := "POST /v1/projects/" + strconv.FormatInt(h.projectID, 10) + "/issues/sync"
 	if got := rec.matching("POST /v1/projects/"); len(got) != 1 || !strings.HasPrefix(got[0], want) {

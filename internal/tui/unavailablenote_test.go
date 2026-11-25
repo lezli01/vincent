@@ -97,8 +97,8 @@ func TestEmptyIssuesBoardKeysSayWhy(t *testing.T) {
 		if msg := drain(cmd); msg != nil {
 			t.Fatalf("%s produced %#v", k, msg)
 		}
-		if !strings.Contains(v.note, "no issue selected") {
-			t.Errorf("%s on an empty board said %q", k, v.note)
+		if !strings.Contains(v.status().text, "no issue selected") {
+			t.Errorf("%s on an empty board said %q", k, v.status().text)
 		}
 	}
 }
