@@ -97,7 +97,10 @@ func (f *paneFind) bar(width int, note string) string {
 }
 
 // key runs one key on an active search and reports whether it was the
-// search's. commit is told when a query is committed, step when the match
+// search's. Neither pane's moved clears its findShown: the highlight key
+// already changes with the match, and an empty findShown is how the render
+// knows no highlight is drawn — clearing it on esc left the last match
+// reversed after the search had ended (#1154). commit is told when a query is committed, step when the match
 // moved, so the pane can scan and scroll.
 func (f *paneFind) key(msg tea.KeyPressMsg, commit, moved func()) bool {
 	if f.typing {
@@ -154,7 +157,6 @@ func (d *detail) findKey(msg tea.KeyPressMsg) bool {
 				// A reader jumping to a match is not following the tail.
 				d.following, d.findJump = false, true
 			}
-			d.findShown = ""
 		})
 }
 
@@ -177,8 +179,5 @@ func (p *diffPane) findKey(msg tea.KeyPressMsg) bool {
 			p.findLines, p.findShown = lines, ""
 			p.find.scan(lines)
 		},
-		func() {
-			p.findJump = true
-			p.findShown = ""
-		})
+		func() { p.findJump = true })
 }

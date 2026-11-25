@@ -494,6 +494,8 @@ func (d *detail) open(id int64, stateHint string) tea.Cmd {
 	d.tab = tabOutput
 	d.actions.clear()
 	d.form, d.repair, d.followUp = nil, nil, nil
+	// A search belongs to the task it was typed on (#1154).
+	d.find.end()
 	d.diff.openTask(id)
 	return tea.Batch(d.loadCmd(), d.syncStream())
 }
@@ -513,6 +515,7 @@ func (d *detail) deselect() {
 	d.resetOutput()
 	d.buffer = nil
 	d.liveRun, d.liveTail = 0, nil
+	d.find.end() // #1154, as open
 	d.actions.clear()
 	d.form, d.repair, d.followUp = nil, nil, nil
 	d.syncStream()
