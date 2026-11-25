@@ -68,6 +68,51 @@ func (s *Store) LatestStepStatuses(ctx context.Context, ids []int64) (map[int64]
 	return out, nil
 }
 
+// TaskAgents returns, for each of ids whose attempts ran on an agent, the
+// distinct adapter names those attempts used, in the order each first ran
+// (issue #1155). Tasks with no agent attempt are absent from the map.
+//
+// It is what lets the board's filter find a task by the agent that worked
+// on it: a task's agent is resolved per step (§8.6), so no column on the
+// task says it, and the step rows are the record of what actually ran. One
+// query for the page, like LatestStepStatuses, because `GET /v1/tasks` must
+// never fan out per row (§18).
+func (s *Store) TaskAgents(ctx context.Context, ids []int64) (map[int64][]string, error) {
+	out := make(map[int64][]string, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	inList := placeholders(len(ids))
+	args := make([]any, 0, len(ids))
+	for _, id := range ids {
+		args = append(args, id)
+	}
+	//nolint:gosec // G202: inList is placeholders(); the ids bind as arguments
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT task_id, agent FROM step_runs
+		WHERE task_id IN `+inList+` AND agent IS NOT NULL AND agent != ''
+		GROUP BY task_id, agent
+		ORDER BY task_id, MIN(id)`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("read task agents: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var (
+			taskID int64
+			name   string
+		)
+		if err := rows.Scan(&taskID, &name); err != nil {
+			return nil, fmt.Errorf("scan task agent: %w", err)
+		}
+		out[taskID] = append(out[taskID], name)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read task agents: %w", err)
+	}
+	return out, nil
+}
+
 // RunningStepRunID resolves the running step run of task taskID at step
 // stepID, or ErrStepNotRunning when the task has none.
 //

@@ -253,11 +253,11 @@ column with more cards than fit counts the rest on its top edge — `▲2 ▼5`.
 | `←` `→` | Cross to the next column that has a card |
 | `pgup` `pgdown` `home` `end` | Move further within the column |
 | `enter` | Open the task |
-| `/` | Filter by id, title, state, issue, workflow, step, branch or pull request number |
+| `/` | Filter by id, title, state, issue, workflow, step, branch, pull request number, or the agent the task ran on or was set to |
 | `H` | Show only what needs you |
 
 The filter box's top edge counts the tasks, says how many are running against the
-concurrency cap, names an order `z` chose (`newest first`), and shows any agent
+concurrency cap, names an order `z` chose (`recently updated first`), and shows any agent
 that needs a look. A terminal too narrow for
 all four columns shows the ones around your selection, with `‹` and `›` where more
 are hidden. From 170 columns a preview of the selected task sits on the right: its
@@ -395,7 +395,7 @@ are queued and have finished.
 | `f` | Fold the issue group under the cursor, or open the one the cursor rests on |
 | `C` | Fold every group |
 | `O` | Open every group |
-| `z` | Cycle the order: by state (the board's own), newest, oldest, title. Any order but the board's own is named on the Tasks title after the filter, and dropped there first when the title runs out of room |
+| `z` | Cycle the order: by state (the board's own), recently updated, least recently updated, title. The time orders read the time each card's age is printed from. Any order but the board's own is named on the Tasks title after the filter, and dropped there first when the title runs out of room |
 | `L` | Show or hide a fan-out's lanes under its card — on a lane, its own lanes, or back to its parent. Hinted only on a fan-out; `loading lanes…` shows while they arrive, and on any other card it says so |
 
 ### Fan-out lanes on the board

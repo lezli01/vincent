@@ -466,6 +466,12 @@ type listTaskResponse struct {
 	// attempt said nothing — which is deliberate, so a finished step's line
 	// does not linger beside the next one.
 	StatusMessage *string `json:"status_message"`
+	// Agents is every distinct adapter the task's attempts ran on, in the
+	// order each first ran, and absent when none has (issue #1155). A task's
+	// agent is resolved per step (§8.6), so nothing on the task row says it;
+	// a board's filter matches these, plus agent_override, without fetching
+	// step rows.
+	Agents []string `json:"agents,omitempty"`
 }
 
 func toStepRunResponse(r *store.StepRun, summary snapshotSummary) stepRunResponse {
@@ -1758,6 +1764,11 @@ func (s *Server) toListResponse(ctx context.Context, tasks []store.Task) ([]list
 	if err != nil {
 		return nil, err
 	}
+	// The agents the attempts ran on (issue #1155): one query for the page.
+	agents, err := s.deps.Store.TaskAgents(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
 	projects, err := s.deps.Store.ListProjects(ctx)
 	if err != nil {
 		return nil, err
@@ -1815,6 +1826,7 @@ func (s *Server) toListResponse(ctx context.Context, tasks []store.Task) ([]list
 		row.Loop = s.loopRollup(ctx, t, summary)
 		row.ProjectName = names[t.ProjectID]
 		row.StatusMessage = nilIfEmpty(statuses[t.ID])
+		row.Agents = agents[t.ID]
 		if chatID, ok := sources[t.ID]; ok {
 			row.SourceChatID = &chatID
 		}

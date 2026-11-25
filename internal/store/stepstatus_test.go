@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -296,5 +298,59 @@ func TestMigrateAddsStatusToPreexistingRows(t *testing.T) {
 	}
 	if runs[0].ResultSummary != "all green" {
 		t.Errorf("the migration disturbed an existing column: %q", runs[0].ResultSummary)
+	}
+}
+
+// TaskAgents is what the board's filter matches an agent against (#1155):
+// every distinct adapter a task's attempts ran on, in the order it first ran
+// one, for the whole page in one query. A command step names no agent and
+// contributes nothing.
+func TestTaskAgents(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	task := testTask(t, s)
+	var more [2]*Task
+	for i := range more {
+		more[i] = newTask(task.ProjectID, "t"+strconv.Itoa(i), TaskRunning)
+		if err := s.CreateTask(ctx, more[i], nil); err != nil {
+			t.Fatalf("CreateTask: %v", err)
+		}
+	}
+	other, silent := more[0], more[1]
+
+	for i, a := range []string{"claude", "", "codex", "claude"} {
+		r := &StepRun{
+			TaskID: task.ID, StepIndex: i, StepID: "s", StepType: "agent",
+			Attempt: 1, State: StepSucceeded, Agent: a,
+		}
+		if a == "" {
+			r.StepType = "command"
+		}
+		if err := s.CreateStepRun(ctx, r); err != nil {
+			t.Fatalf("CreateStepRun: %v", err)
+		}
+	}
+	if err := s.CreateStepRun(ctx, &StepRun{
+		TaskID: other.ID, StepIndex: 0, StepID: "s", StepType: "agent",
+		Attempt: 1, State: StepRunning, Agent: "cursor",
+	}); err != nil {
+		t.Fatalf("CreateStepRun: %v", err)
+	}
+
+	got, err := s.TaskAgents(ctx, []int64{task.ID, other.ID, silent.ID})
+	if err != nil {
+		t.Fatalf("TaskAgents: %v", err)
+	}
+	if want := []string{"claude", "codex"}; !slices.Equal(got[task.ID], want) {
+		t.Errorf("agents = %v, want %v: distinct, in first-use order", got[task.ID], want)
+	}
+	if want := []string{"cursor"}; !slices.Equal(got[other.ID], want) {
+		t.Errorf("other agents = %v, want %v", got[other.ID], want)
+	}
+	if a, ok := got[silent.ID]; ok {
+		t.Errorf("silent agents = %v, want absent: it ran nothing", a)
+	}
+	if got, err := s.TaskAgents(ctx, nil); err != nil || len(got) != 0 {
+		t.Errorf("TaskAgents(nil) = %v, %v; want an empty map", got, err)
 	}
 }

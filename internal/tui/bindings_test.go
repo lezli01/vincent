@@ -495,7 +495,7 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		"z": func(t *testing.T) {
 			b := taskBoardFixture()
 			b.update(keyPress("z"))
-			if b.sortOrder != "newest" {
+			if b.sortOrder != "updated" {
 				t.Fatalf("z left the order at %q", b.sortOrder)
 			}
 		},

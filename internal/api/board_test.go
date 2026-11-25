@@ -207,3 +207,40 @@ func TestSnapshotCacheToleratesUnparsableSnapshot(t *testing.T) {
 		t.Errorf("got %+v, want an empty summary", got)
 	}
 }
+
+// A list row names every agent the task's attempts ran on (#1155), so a
+// board's filter can find a task by the agent that worked on it without
+// fetching step rows. A row that ran no agent leaves the field off.
+func TestTaskListCarriesAgents(t *testing.T) {
+	h := newActionHarness(t)
+	task := queuedTask(t, h)
+
+	if rows := listTasks(t, h, ""); len(rows) != 1 || rows[0].Agents != nil {
+		t.Fatalf("rows = %+v, want one row with no agents before any attempt", rows)
+	}
+	for i, a := range []string{"claude", "codex", "claude"} {
+		run := &store.StepRun{
+			TaskID: task.ID, StepIndex: 0, StepID: "run", StepType: "agent",
+			Attempt: i + 1, State: store.StepFailed, Agent: a,
+		}
+		if err := h.store.CreateStepRun(t.Context(), run); err != nil {
+			t.Fatalf("CreateStepRun: %v", err)
+		}
+	}
+	rows := listTasks(t, h, "")
+	if len(rows) != 1 {
+		t.Fatalf("listed %d tasks, want 1", len(rows))
+	}
+	if got := rows[0].Agents; len(got) != 2 || got[0] != "claude" || got[1] != "codex" {
+		t.Errorf("agents = %v, want [claude codex]", got)
+	}
+
+	_, body := h.doJSON(t, http.MethodGet, "/v1/tasks", nil)
+	var raw []map[string]json.RawMessage
+	if err := json.Unmarshal(body, &raw); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got := string(raw[0]["agents"]); got != `["claude","codex"]` {
+		t.Errorf("wire agents = %s, want the snake_case array", got)
+	}
+}
