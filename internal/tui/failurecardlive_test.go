@@ -68,7 +68,7 @@ func TestFailureCardFromRealServer(t *testing.T) {
 		StatusMessage: "tests look fine", StartedAt: now, FinishedAt: &now,
 	}, "check_failed", "")
 	got := h.overviewOf(t, checked.ID, "FAIL TestThing")
-	for _, want := range []string{"✗ Step 1 implement · attempt 1 · check failed  check_failed", "last status before the failure  “tests look fine”", "E      edit retry"} {
+	for _, want := range []string{"✗ Step 1 implement · attempt 1 · check failed", "last status before the failure  “tests look fine”", "E      edit retry"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("check_failed card misses %q:\n%s", want, got)
 		}
@@ -104,7 +104,7 @@ func TestFailureCardFromRealServer(t *testing.T) {
 	dirty := h.createParkedTask(t, "dirty")
 	h.blockWith(t, dirty.ID, nil, "worktree_dirty", "README.md is modified in the worktree")
 	got = h.overviewOf(t, dirty.ID, "README.md is modified in the worktree")
-	if !strings.Contains(got, "worktree has uncommitted changes  worktree_dirty") {
+	if !strings.Contains(got, "Step 1 · worktree has uncommitted changes") {
 		t.Errorf("worktree_dirty card misses its headline:\n%s", got)
 	}
 }

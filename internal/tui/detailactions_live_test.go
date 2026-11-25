@@ -19,6 +19,7 @@ import (
 	"github.com/lezli01/vincent/internal/agent/claude"
 	"github.com/lezli01/vincent/internal/api"
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/chatrun"
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/daemon"
 	"github.com/lezli01/vincent/internal/events"
@@ -54,8 +55,18 @@ type actionLiveHarness struct {
 	projectID int64
 }
 
-func newActionLiveHarness(t *testing.T) *actionLiveHarness {
+// withChatRunner wires a real chat runner behind the handlers, so a chat's
+// first message is sent rather than refused with "no chat runner is wired".
+type harnessOpts struct{ chatRunner bool }
+
+func withChatRunner(o *harnessOpts) { o.chatRunner = true }
+
+func newActionLiveHarness(t *testing.T, opts ...func(*harnessOpts)) *actionLiveHarness {
 	t.Helper()
+	var o harnessOpts
+	for _, opt := range opts {
+		opt(&o)
+	}
 	const token = "action-token"
 	fake := agenttest.BuildFakeAgent(t)
 
@@ -93,7 +104,15 @@ func newActionLiveHarness(t *testing.T) *actionLiveHarness {
 		}
 	})
 
-	s := api.New(api.Deps{
+	var chats *chatrun.Runner
+	if o.chatRunner {
+		t.Setenv("FAKEAGENT_SESSION_DIR", t.TempDir())
+		chats = chatrun.New(chatrun.Deps{
+			Store: st, Config: config.Default, Worktrees: worktree.NewManager(git, dataDir), Agents: agents,
+			DataDir: dataDir, Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		})
+	}
+	deps := api.Deps{
 		Token:       token,
 		Config:      config.Default,
 		StartedAt:   time.Now(),
@@ -108,7 +127,11 @@ func newActionLiveHarness(t *testing.T) *actionLiveHarness {
 		Worktrees:   worktree.NewManager(git, dataDir),
 		Runner:      runner,
 		WakeRunner:  sched.Wake,
-	})
+	}
+	if chats != nil {
+		deps.Chats = chats
+	}
+	s := api.New(deps)
 	ts := httptest.NewServer(s.Handler())
 	t.Cleanup(ts.Close)
 
@@ -118,6 +141,10 @@ func newActionLiveHarness(t *testing.T) *actionLiveHarness {
 	ctx := testCtx(t)
 	runner.Start(ctx)
 	sched.Start(ctx)
+	if chats != nil {
+		chats.Start(ctx)
+		t.Cleanup(chats.Stop)
+	}
 	// Cleanups run last-first, so this stops admission before the runner
 	// waits on its actors — the daemon's order. The other way round, an
 	// admission's wg.Add races runner.Stop's wg.Wait.

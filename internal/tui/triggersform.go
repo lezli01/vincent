@@ -107,7 +107,6 @@ func (v *triggersView) openForm() tea.Cmd {
 }
 
 func (v *triggersView) openFormOn(id, file, version string) tea.Cmd {
-	v.err, v.note = "", ""
 	v.form = &trigFormLayer{
 		id: id, file: file, version: version,
 		loading: true, editing: -1, rowErr: map[string]string{},
@@ -391,12 +390,13 @@ func (v *triggersView) updateFormKey(msg tea.KeyPressMsg) tea.Cmd {
 	f := v.form
 	switch {
 	case f.confirm != nil:
-		switch msg.String() {
-		case "y", "Y":
+		yes, no := confirmAnswer(msg.String())
+		switch {
+		case yes:
 			c := f.confirm
 			f.confirm = nil
 			return v.formSend(c.row, c.value, c.op)
-		case "n", "N", "esc":
+		case no:
 			f.confirm = nil
 		}
 		return nil

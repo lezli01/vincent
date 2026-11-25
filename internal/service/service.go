@@ -30,7 +30,8 @@ const (
 // ErrUnsupported is returned on a platform with no backend.
 var ErrUnsupported = errors.New("service management is not supported on this platform")
 
-// ErrNotInstalled is returned by Uninstall when there is nothing to remove.
+// ErrNotInstalled is returned by Uninstall when there is nothing to remove,
+// and by Restart when there is nothing to restart.
 var ErrNotInstalled = errors.New("no vincent service is installed")
 
 // Status describes the installed service.
@@ -123,3 +124,17 @@ func Uninstall(ctx context.Context) error { return uninstall(ctx) }
 
 // Query reports what is installed.
 func Query(ctx context.Context) (Status, error) { return query(ctx) }
+
+// Restart has the service manager stop the daemon and start it again, so the
+// new daemon is the service's own process — supervised, with the unit's
+// environment — rather than one a client started beside it (#1160). It
+// returns ErrNotInstalled when no vincent service is registered.
+//
+// It is a verb of its own rather than a stop followed by the TUI's auto-start
+// because every definition restarts the daemon on failure only: a daemon asked
+// to stop exits 0 and is left stopped, so a stop-then-start from a client
+// takes a service-managed daemon out of supervision until the next login.
+//
+// It returns once the manager has been told to start the daemon, not once the
+// daemon answers; a caller that needs it serving polls for health itself.
+func Restart(ctx context.Context) error { return restart(ctx) }

@@ -354,6 +354,13 @@ func TestCommandsAgainstLiveDaemon(t *testing.T) {
 			t.Errorf("service status = %q, want the not-installed line", out)
 		}
 
+		// Restarting nothing is a failure that says so (#1160): unlike
+		// uninstall there is no desired state it already meets.
+		out, code = runVincent(t, dataDir, cfgDir, "service", "restart")
+		if code != 1 || !strings.Contains(out, "no vincent service is installed") {
+			t.Errorf("service restart with nothing installed: code %d, out %q", code, out)
+		}
+
 		// Uninstalling nothing is success, matching `daemon stop`.
 		out, code = runVincent(t, dataDir, cfgDir, "service", "uninstall")
 		if code != 0 {

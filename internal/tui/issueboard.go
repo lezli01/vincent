@@ -116,11 +116,9 @@ func (v *issuesView) laneLines(sec int, issues []apiclient.Issue, x, top, w, h i
 
 	var body []string
 	if len(issues) == 0 {
-		none := "no issues"
-		if strings.TrimSpace(v.filter.Value()) != "" {
-			none = "none match"
+		if none := v.emptyLaneText(); none != "" {
+			body = append(body, styleDim.Render(none))
 		}
-		body = append(body, styleDim.Render(none))
 	}
 	cardW := w - 4
 	for _, iss := range issues[start:end] {
@@ -132,6 +130,27 @@ func (v *issuesView) laneLines(sec int, issues []apiclient.Issue, x, top, w, h i
 		body = append(body, styleDim.Render(cue))
 	}
 	return drawBox(title, right, body, w, h, edgesRounded, styleDim)
+}
+
+// emptyLaneText is what an empty column says. One message per board
+// (#1161): a project with no issues says "no issues" in every column under
+// bodyNotice's "No issues yet", filter or not, and a filter that hides every
+// issue is said once above the board, leaving the columns blank. Only a
+// filter that keeps some issues elsewhere has a column say "none match".
+func (v *issuesView) emptyLaneText() string {
+	switch {
+	case len(v.issues) == 0 || strings.TrimSpace(v.filter.Value()) == "":
+		return "no issues"
+	case v.filterHidesAll():
+		return ""
+	}
+	return "none match"
+}
+
+// filterHidesAll reports a typed filter that keeps none of the project's
+// issues.
+func (v *issuesView) filterHidesAll() bool {
+	return len(v.issues) > 0 && strings.TrimSpace(v.filter.Value()) != "" && len(v.filtered()) == 0
 }
 
 // issueLaneTitle capitalizes a section's label for its column.
@@ -341,8 +360,8 @@ func (v *issuesView) boardSummary() string {
 
 // boardSummaryFit is boardSummary in at most room cells (0 is no limit).
 // The issue source's health leads (#1069): a failing import looked like a
-// healthy one. When the whole does not fit, "updated" goes first; then a
-// healthy source's line goes, and an unhealthy one moves out of the label
+// healthy one. When the whole does not fit, "updated" goes first; then the
+// active sort's name (#1155); then a healthy source's line goes, and an unhealthy one moves out of the label
 // into syncLine, a line of its own inside the box — so the sync health is
 // never lost exactly when the source is failing, and the issue count stays
 // (review finding 7).
@@ -370,10 +389,20 @@ func (v *issuesView) boardSummaryFit(room int) (label, syncLine string) {
 	if syncBad {
 		syncStyle = styleBad
 	}
+	// The order `z` chose, while one is in force (#1155). It gives way
+	// after "updated" and before the sync line and the count.
+	sorted := ""
+	if v.sortOrder != "" {
+		sorted = issueSortLabel(v.sortOrder)
+	}
+	withSort := true
 	compose := func(withSync, withUpdated bool) string {
-		ps := parts
+		ps := append([]string(nil), parts...)
+		if withSort && sorted != "" {
+			ps = append(ps, sorted)
+		}
 		if withUpdated && updated != "" {
-			ps = append(append([]string(nil), parts...), updated)
+			ps = append(ps, updated)
 		}
 		out := styleDim.Render(strings.Join(ps, " · "))
 		if withSync && syncText != "" {
@@ -388,6 +417,10 @@ func (v *issuesView) boardSummaryFit(room int) (label, syncLine string) {
 	if out := compose(true, true); fits(out) {
 		return out, ""
 	}
+	if out := compose(true, false); fits(out) {
+		return out, ""
+	}
+	withSort = false
 	if out := compose(true, false); fits(out) {
 		return out, ""
 	}

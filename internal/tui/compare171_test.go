@@ -75,29 +75,29 @@ func TestCompareSplitView(t *testing.T) {
 	}
 }
 
-// TestCompareKeepAsksAndRefuses: keep asks first, any key but y declines,
-// and keeping is not offered while a side works or once one was kept.
+// TestCompareKeepAsksAndRefuses: keep asks first, n declines, and keeping is not offered while a side works or once one was kept.
 func TestCompareKeepAsksAndRefuses(t *testing.T) {
 	v := compareFixture()
 	v.updateKey(tea.KeyPressMsg{Code: ']', Text: "]"})
-	if v.confirm != 1 || !strings.Contains(v.note, "keep right (codex)? the left side (claude)") {
-		t.Fatalf("confirm %d note %q", v.confirm, v.note)
+	// The question is the screen's own, not a status message (#1164).
+	if v.confirm != 1 || !strings.Contains(ansi.Strip(v.render(140, 30)), "keep right (codex)? (y/n) · the left side (claude)") {
+		t.Fatalf("confirm %d question %q", v.confirm, v.question)
 	}
-	if _, cmd := v.updateKey(tea.KeyPressMsg{Code: 'n', Text: "n"}); cmd != nil || v.confirm != -1 || v.note != "nothing kept" {
-		t.Fatalf("n: confirm %d note %q", v.confirm, v.note)
+	if _, cmd := v.updateKey(tea.KeyPressMsg{Code: 'n', Text: "n"}); cmd != nil || v.confirm != -1 || v.status().text != "nothing kept" {
+		t.Fatalf("n: confirm %d note %q", v.confirm, v.status().text)
 	}
 
 	v.sides[1].chat.State = "running"
 	v.updateKey(tea.KeyPressMsg{Code: '[', Text: "["})
-	if v.confirm != -1 || !v.noteBad || !strings.Contains(v.note, "must finish") {
-		t.Fatalf("while running: confirm %d note %q", v.confirm, v.note)
+	if v.confirm != -1 || !v.status().bad || !strings.Contains(v.status().text, "must finish") {
+		t.Fatalf("while running: confirm %d note %q", v.confirm, v.status().text)
 	}
 
 	v = compareFixture()
 	v.cmp.KeptChatID = i64(12)
 	v.updateKey(tea.KeyPressMsg{Code: '[', Text: "["})
-	if v.confirm != -1 || v.note != "a side was already kept" {
-		t.Fatalf("kept: confirm %d note %q", v.confirm, v.note)
+	if v.confirm != -1 || v.status().text != "a side was already kept" {
+		t.Fatalf("kept: confirm %d note %q", v.confirm, v.status().text)
 	}
 	got := ansi.Strip(v.render(140, 30))
 	if !strings.Contains(got, "✓ kept #12") || !strings.Contains(got, "discarded — archived, branch deleted") {
@@ -138,8 +138,8 @@ func TestCompareKeepSendsAndRereads(t *testing.T) {
 	if reread := v.applyKept(msg); reread == nil {
 		t.Fatal("a keep did not read the pair again")
 	}
-	if v.note != "kept chat 13; chat 12 archived, its branch deleted" || v.busy {
-		t.Fatalf("note %q busy %v", v.note, v.busy)
+	if v.status().text != "kept chat 13; chat 12 archived, its branch deleted" || v.busy {
+		t.Fatalf("note %q busy %v", v.status().text, v.busy)
 	}
 	mu.Lock()
 	defer mu.Unlock()

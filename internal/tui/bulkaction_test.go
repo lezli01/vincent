@@ -140,14 +140,14 @@ func TestBulkArchiveAsksOnceAndSendsOneCallPerTask(t *testing.T) {
 		t.Fatalf("result = %+v, want all three accepted", msg)
 	}
 	bar.applyBulkResult(msg)
-	if bar.status == "" || bar.statusBad {
-		t.Fatalf("status = %q (bad=%v), want a plain report", bar.status, bar.statusBad)
+	if bar.status().text == "" || bar.status().bad {
+		t.Fatalf("status = %q (bad=%v), want a plain report", bar.status().text, bar.status().bad)
 	}
-	if !strings.Contains(bar.status, "3 of 3") {
-		t.Errorf("status = %q, want it to say how many of how many moved", bar.status)
+	if !strings.Contains(bar.status().text, "3 of 3") {
+		t.Errorf("status = %q, want it to say how many of how many moved", bar.status().text)
 	}
-	if !strings.Contains(bar.status, "branches deleted") {
-		t.Errorf("status = %q, want the branch cleanup named (§10)", bar.status)
+	if !strings.Contains(bar.status().text, "branches deleted") {
+		t.Errorf("status = %q, want the branch cleanup named (§10)", bar.status().text)
 	}
 }
 
@@ -175,8 +175,8 @@ func TestBulkArchiveReAsksForTheDirtyOnesOnly(t *testing.T) {
 	if !strings.Contains(prompt, "1 of 3 selected tasks") {
 		t.Fatalf("re-ask = %q, want it scoped to the refusals", prompt)
 	}
-	if !strings.Contains(bar.status, "2 of 3") {
-		t.Errorf("status = %q, want what the first pass did to survive the re-ask", bar.status)
+	if !strings.Contains(bar.status().text, "2 of 3") {
+		t.Errorf("status = %q, want what the first pass did to survive the re-ask", bar.status().text)
 	}
 
 	cmd, _ = bar.handleKey("y", srv.client(), target)
@@ -206,12 +206,12 @@ func TestBulkReportNamesTheFirstRefusal(t *testing.T) {
 	msg := runBulk(t, cmd)
 	bar.applyBulkResult(msg)
 
-	if !bar.statusBad {
-		t.Errorf("status %q is not marked bad, though two tasks refused", bar.status)
+	if !bar.status().bad {
+		t.Errorf("status %q is not marked bad, though two tasks refused", bar.status().text)
 	}
 	for _, want := range []string{"1 of 3", "#5: the task is running", "and 1 more failed"} {
-		if !strings.Contains(bar.status, want) {
-			t.Errorf("status = %q, want %q in it", bar.status, want)
+		if !strings.Contains(bar.status().text, want) {
+			t.Errorf("status = %q, want %q in it", bar.status().text, want)
 		}
 	}
 }

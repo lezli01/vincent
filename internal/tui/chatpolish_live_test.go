@@ -120,7 +120,7 @@ func TestChatShellAndImageLive(t *testing.T) {
 	v.composer.SetValue("a draft that stays")
 	l.press("alt+x")
 	if !v.shell.prompt {
-		t.Fatalf("alt+x opened no prompt (note %q)", v.note)
+		t.Fatalf("alt+x opened no prompt (note %q)", v.status().text)
 	}
 	v.paste("git --version")
 	l.press("enter")
@@ -160,7 +160,7 @@ func TestChatShellAndImageLive(t *testing.T) {
 	l.press("ctrl+v")
 	l.until("the image chip", func() bool { return strings.Contains(v.composer.Value(), "[image 1]") })
 	if got := v.composer.Value(); got != "see [image 1]" {
-		t.Fatalf("the draft after the paste: %q (note %q)", got, v.note)
+		t.Fatalf("the draft after the paste: %q (note %q)", got, v.status().text)
 	}
 	images, err := v.client.ChatImages(t.Context(), v.chatID)
 	if err != nil || len(images) != 1 || images[0].Chip != "[image 1]" {
@@ -171,7 +171,7 @@ func TestChatShellAndImageLive(t *testing.T) {
 	withClipImage(t, []byte("plain text"), nil)
 	before := v.composer.Value()
 	l.press("ctrl+v")
-	l.until("the refusal", func() bool { return v.noteBad && strings.Contains(v.note, "image") })
+	l.until("the refusal", func() bool { return v.status().bad && strings.Contains(v.status().text, "image") })
 	if v.composer.Value() != before {
 		t.Fatalf("a refused image changed the draft to %q", v.composer.Value())
 	}

@@ -206,27 +206,10 @@ func TestIssuesListProseWraps(t *testing.T) {
 		t.Errorf("the list error lost its end:\n%s", strings.Join(lines, "\n"))
 	}
 	assertNoEllipsis(t, lines)
-
-	noted := issuesFixture()
-	noted.setNote("issue #3 is local — there is no page to open, and this note goes on long enough to need a second line", true)
-	lines = renderedLines(noted, w, h)
-	if !shows(lines, "second line") || len(lines) > h {
-		t.Errorf("the note lost its end or overflowed (%d lines):\n%s", len(lines), strings.Join(lines, "\n"))
-	}
-	assertNoEllipsis(t, lines)
 }
 
-// F6: a long note wraps rather than losing its end.
-func TestIssueDetailNoteWraps(t *testing.T) {
-	v := longFixtureIssue()
-	note := "comment on issue #5: the daemon refused the request because the remote is live and noteendmarker"
-	v.setNote(note, true)
-	lines := renderedLines(v, 80, 24)
-	assertNoEllipsis(t, lines)
-	if !shows(lines, "noteendmarker") {
-		t.Errorf("the note lost its end:\n%s", strings.Join(lines, "\n"))
-	}
-}
+// A long note is no longer the view's to wrap: it is the one status line's
+// (#1164), cut from the right with its start kept (msgline_test.go).
 
 // F7: ctrl+l lists the links in the comments and the source URL, not only
 // the description's.

@@ -88,3 +88,56 @@ func TestIssueSyncHealthSurvivesNarrowWidths(t *testing.T) {
 		}
 	}
 }
+
+// #1148: a sync `S` asked for on one project is that project's. After a
+// switch the next project's first listing must not report it as its own.
+func TestSyncAskedDoesNotSurviveAProjectSwitch(t *testing.T) {
+	now := time.Date(2026, 11, 24, 12, 0, 0, 0, time.UTC)
+	v := issuesFixture()
+	v.now = func() time.Time { return now }
+	v.syncAsked = now.Add(-time.Second)
+	v.setProject(projectSel{id: 2, name: "web"})
+	synced := now
+	v.applyLoaded(issuesLoadedMsg{showDone: v.showDone, stamp: v.stamps.next(2), sync: &apiclient.IssueSyncStatus{
+		Enabled: true, Provider: "github", Source: "octo/web", OK: true, LastSyncedAt: &synced,
+	}})
+	if v.status().text != "" {
+		t.Errorf("the next project reports a sync nobody asked for: %q", v.status().text)
+	}
+}
+
+// #1148: a source turned off on purpose — the provider's `enabled: false`
+// or `poll_interval: 0` — is a state, not a failure: the edge says so
+// without the failure tone. Real failures keep it.
+func TestSyncSwitchedOffIsNotAFailure(t *testing.T) {
+	now := time.Date(2026, 11, 24, 12, 0, 0, 0, time.UTC)
+	for _, s := range []apiclient.IssueSyncStatus{
+		{Provider: "github", Source: "octo/web", Reason: "github_disabled"},
+		{Provider: "jira", Source: "example.atlassian.net/PLAT", Reason: "disabled"},
+		{Provider: "github", Source: "octo/web", Reason: "poll_disabled"},
+	} {
+		text, bad := syncSummary(s, now)
+		if bad {
+			t.Errorf("%s is drawn as a failure: %q", s.Reason, text)
+		}
+		if !strings.Contains(text, syncReason(s.Reason)) {
+			t.Errorf("%s is not said: %q", s.Reason, text)
+		}
+	}
+	failed := apiclient.IssueSyncStatus{Provider: "github", Source: "octo/web", Reason: "github_disabled", WritesFailed: 1}
+	if _, bad := syncSummary(failed, now); !bad {
+		t.Error("a failed write-back under a switched-off source lost its failure tone")
+	}
+}
+
+// #1148: `S` on a source switched off on purpose answers that import is
+// off — a state, not a failed request.
+func TestSyncRequestOnASwitchedOffSourceIsNotAFailure(t *testing.T) {
+	v := issuesFixture()
+	v.update(issuesSyncedMsg{projectID: v.project.id, status: apiclient.IssueSyncStatus{
+		Provider: "github", Source: "octo/web", Reason: "github_disabled",
+	}})
+	if !strings.Contains(v.status().text, "import is off") || v.status().bad {
+		t.Errorf("note %q (bad %v)", v.status().text, v.status().bad)
+	}
+}

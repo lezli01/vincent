@@ -88,8 +88,8 @@ func TestDetailFollowsUpFinishedTaskLive(t *testing.T) {
 	}
 
 	// The cursor starts on the run-form chooser, which defaults to `agent`.
-	// One row down is the prompt: enter opens it, ctrl+s keeps it, ctrl+s
-	// again starts the run.
+	// One row down is the prompt: enter opens it, and ctrl+s keeps it and
+	// starts the run (#1172).
 	const prompt = "rebase this branch onto main"
 	h.press(t, "j")
 	h.press(t, "enter")
@@ -101,7 +101,6 @@ func TestDetailFollowsUpFinishedTaskLive(t *testing.T) {
 	if form.prompt != prompt {
 		t.Fatalf("form prompt = %q, want %q", form.prompt, prompt)
 	}
-	h.pressCtrlS(t)
 
 	h.p.until(60*time.Second, "the follow-up to be admitted", func() bool {
 		return h.state(t, task.ID) != store.TaskDone
@@ -218,7 +217,7 @@ func TestDetailHoldsAFollowUpPausedLive(t *testing.T) {
 	h.press(t, "j")
 	h.press(t, "enter")
 	h.typeText(t, prompt)
-	h.pressCtrlS(t)
+	h.press(t, "esc") // leaves the field; ctrl+s would start it (#1172)
 	for range int(fuPaused - fuBody) {
 		h.press(t, "j")
 	}

@@ -197,7 +197,7 @@ func (t *taskView) liveBindings(rows []binding) []binding {
 		// While a question is pending, enter opens the answer on every tab
 		// (#1062): the tab's own enter — unfold, the output link — cannot be
 		// reached, and the footer's `enter answer` says what it does.
-		if b.key == "enter" && t.detail.form != nil {
+		if b.key == answerBinding.key && t.detail.form != nil {
 			continue
 		}
 		if b.context == ctxTaskOverview {
@@ -244,8 +244,8 @@ func (t *taskView) updatePullWriteKey(msg tea.KeyPressMsg) (cmd tea.Cmd, handled
 func (t *taskView) refuseInFlight(writes ...pullWrite) bool {
 	for _, w := range writes {
 		if t.pullTab.inflight[w] {
-			t.pullTab.note, t.pullTab.noteBad = "still waiting for the daemon to answer the last "+
-				strings.TrimSuffix(w.verb(), " on")+" — nothing was sent", true
+			t.status().note("still waiting for the daemon to answer the last "+
+				strings.TrimSuffix(w.verb(), " on")+" — nothing was sent", true)
 			return true
 		}
 	}
@@ -294,7 +294,6 @@ func (t *taskView) askCloseOrReopen() {
 	if w == pullWriteReopen {
 		text = "reopen " + t.pullSubject() + "? (y/n)"
 	}
-	t.pullTab.note, t.pullTab.noteBad = "", false
 	t.pullTab.confirm = &pullConfirm{write: w, text: text}
 }
 
@@ -312,7 +311,6 @@ func (t *taskView) askRerun() {
 			names = append(names, r.Name)
 		}
 	}
-	t.pullTab.note, t.pullTab.noteBad = "", false
 	t.pullTab.confirm = &pullConfirm{
 		write: pullWriteRerun,
 		runID: run.RunID,
@@ -321,13 +319,17 @@ func (t *taskView) askRerun() {
 	}
 }
 
-// updatePullConfirmKey answers the inline prompt. `y` sends; every other key
-// declines and is spent on declining, as the takeover's unlink prompt does —
-// a stray `q` or digit must neither send nor do what it does elsewhere.
+// updatePullConfirmKey answers the inline prompt by the shared rule
+// (#1162): `y` sends, `n` or esc declines, and any other key leaves the
+// question up — a stray `q` or digit must neither send, nor decline, nor do
+// what it does elsewhere.
 func (t *taskView) updatePullConfirmKey(msg tea.KeyPressMsg) tea.Cmd {
 	c := t.pullTab.confirm
-	t.pullTab.confirm = nil
-	if msg.String() != "y" {
+	yes, no := confirmAnswer(msg.String())
+	if yes || no {
+		t.pullTab.confirm = nil
+	}
+	if !yes {
 		return nil
 	}
 	switch c.write {
@@ -343,7 +345,7 @@ func (t *taskView) updatePullConfirmKey(msg tea.KeyPressMsg) tea.Cmd {
 func (t *taskView) pullWriteCmd(w pullWrite, call func(ctx context.Context, client *apiclient.Client, msg *pullWriteMsg) error) tea.Cmd {
 	client, id := t.detail.client, t.detail.taskID
 	if client == nil || id == 0 {
-		t.pullTab.note, t.pullTab.noteBad = "not connected — nothing was sent", true
+		t.status().result("not connected — nothing was sent", true)
 		return nil
 	}
 	t.pullTab.inflight[w] = true
@@ -413,7 +415,7 @@ func (t *taskView) applyPullWrite(msg pullWriteMsg) tea.Cmd {
 	}
 	t.pullTab.inflight[msg.write] = false
 	if msg.err != nil {
-		t.pullTab.note, t.pullTab.noteBad = pullWriteFailure(msg), true
+		t.status().result(pullWriteFailure(msg), true)
 		if msg.write == pullWriteMerge {
 			t.pullMerge = nil
 		}
@@ -425,24 +427,25 @@ func (t *taskView) applyPullWrite(msg pullWriteMsg) tea.Cmd {
 		t.dropEmptyPopup()
 		return nil
 	}
+	var note string
 	switch msg.write {
 	case pullWriteMerge:
 		t.pullMerge = nil
-		t.pullTab.note = "merged " + msg.subject + " (" + msg.method + ")"
+		note = "merged " + msg.subject + " (" + msg.method + ")"
 	case pullWriteClose:
-		t.pullTab.note = "closed " + msg.subject + " without merging"
+		note = "closed " + msg.subject + " without merging"
 	case pullWriteReopen:
-		t.pullTab.note = "reopened " + msg.subject
+		note = "reopened " + msg.subject
 	case pullWriteComment:
 		t.pullComment = nil
-		t.pullTab.note = "commented on " + msg.subject
+		note = "commented on " + msg.subject
 		if msg.url != "" {
-			t.pullTab.note += " — " + msg.url
+			note += " — " + msg.url
 		}
 	case pullWriteRerun:
-		t.pullTab.note = "re-run requested for Actions run " + strconv.FormatInt(msg.runID, 10)
+		note = "re-run requested for Actions run " + strconv.FormatInt(msg.runID, 10)
 	}
-	t.pullTab.noteBad = false
+	t.status().result(note, false)
 	t.dropEmptyPopup()
 	switch msg.write {
 	case pullWriteMerge, pullWriteClose, pullWriteReopen:

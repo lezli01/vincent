@@ -329,3 +329,24 @@ func TestFooterAttentionHiddenInATextField(t *testing.T) {
 		t.Errorf("a text field's footer offers ! next attention: %q", ansi.Strip(line))
 	}
 }
+
+// #1139: an open root popup owns every key but ctrl+c, so `!` types into the
+// palette's query rather than jumping — the footer must not offer it there.
+func TestFooterAttentionHiddenUnderAPopup(t *testing.T) {
+	m := connectedRoot(t)
+	m.views[viewHome].(*shell).board.tasks = []apiclient.Task{task(2, stateAwaitingInput)}
+	if got, _ := footerText(m); !strings.Contains(got, "next attention (1)") {
+		t.Fatalf("the board's footer drops the attention count: %q", got)
+	}
+	m.Update(key(":"))
+	if m.palette == nil {
+		t.Fatal("`:` did not open the palette")
+	}
+	if got, _ := footerText(m); strings.Contains(got, "next attention") {
+		t.Errorf("the footer under the palette offers ! next attention: %q", got)
+	}
+	m.Update(key("!"))
+	if got := m.palette.input.Value(); got != "!" {
+		t.Errorf("! under the palette = query %q, want it typed", got)
+	}
+}

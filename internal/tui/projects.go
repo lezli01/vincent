@@ -122,9 +122,10 @@ type projectsView struct {
 
 	form    *projectForm
 	confirm *deletePrompt
-	// err is a failure that belongs to the view rather than a form row —
-	// including the 409 no confirmation can resolve.
-	err string
+	// statusPoster is where a failure that belongs to the view rather than
+	// a form row goes — including the 409 no confirmation can resolve
+	// (#1164).
+	statusPoster
 
 	// stamps orders the view's loads. It is seq-only: every stamp carries
 	// project 0 (task 132.5).
@@ -316,8 +317,9 @@ func (p *projectsView) update(msg tea.Msg) (panel, tea.Cmd) {
 		return p, nil
 	case openProjectAddMsg:
 		// #1082: with no project registered, @ lands here with the form open.
-		p.form = newProjectForm(p.client, nil)
-		return p, nil
+		// Through openAdd, as `a` does (#1161): a form opened without its
+		// load offers only "(none)" for the default workflow.
+		return p, p.openAdd()
 	case pfWorkflowsMsg:
 		if p.form != nil && msg.err == nil {
 			p.form.workflows = msg.entries
@@ -399,18 +401,15 @@ func (p *projectsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		p.filter.Focus()
 		return p, nil
 	case "esc":
-		// One layer per press (§15): a committed filter or an error note
-		// clears first; with nothing left, the takeover closes.
-		if p.filter.Value() != "" || p.err != "" {
+		// One layer per press (§15): a committed filter clears first; with
+		// nothing left, the takeover closes.
+		if p.filter.Value() != "" {
 			p.filter.SetValue("")
-			p.err = ""
 			return p, nil
 		}
 		return p, backToTab
 	case opKey(keymap.Add):
-		p.err = ""
-		p.form = newProjectForm(p.client, nil)
-		return p, p.form.loadCmd()
+		return p, p.openAdd()
 	case "tab", "shift+tab":
 		// Two sections, one cursor: tab moves it between the table and the
 		// "needs you" list, the way the daemon and triggers takeovers move
@@ -421,7 +420,6 @@ func (p *projectsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		return p, p.pick()
 	case "e":
 		if pr, ok := p.current(); ok {
-			p.err = ""
 			p.form = newProjectForm(p.client, &pr)
 			return p, p.form.loadCmd()
 		}
@@ -467,6 +465,14 @@ func (p *projectsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 // pick is enter (task 132 decision 42): on a project row, that project; on
 // a "needs you" row, the task and its project. Either way the root does the
 // selecting, through selectProject.
+// openAdd opens the add form and fetches the workflow registry its default
+// picker offers. Both ways in — `a` here and @ with nothing registered —
+// come through it (#1161), so neither can show the form without its load.
+func (p *projectsView) openAdd() tea.Cmd {
+	p.form = newProjectForm(p.client, nil)
+	return p.form.loadCmd()
+}
+
 func (p *projectsView) pick() tea.Cmd {
 	if p.inAttention {
 		attn := p.attention()
@@ -524,7 +530,6 @@ func (p *projectsView) askDelete() {
 	if !ok {
 		return
 	}
-	p.err = ""
 	p.confirm = &deletePrompt{
 		id:   pr.ID,
 		name: pr.Name,
@@ -534,20 +539,22 @@ func (p *projectsView) askDelete() {
 
 func (p *projectsView) updateConfirm(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	c := p.confirm
-	switch msg.String() {
-	case "y", "Y":
+	// The shared rule (#1162): a stray key leaves the question up.
+	yes, no := confirmAnswer(msg.String())
+	switch {
+	case yes:
 		p.confirm = nil
 		return p, p.deleteCmd(c.id, c.force)
-	default:
+	case no:
 		p.confirm = nil
-		return p, nil
 	}
+	return p, nil
 }
 
 func (p *projectsView) deleteCmd(id int64, force bool) tea.Cmd {
 	client := p.client
 	if client == nil {
-		p.err = "not connected"
+		p.status().result("not connected", true)
 		return nil
 	}
 	return func() tea.Msg {
@@ -565,7 +572,6 @@ func (p *projectsView) deleteCmd(id int64, force bool) tea.Cmd {
 // "yes" that cannot work.
 func (p *projectsView) applyDeleted(msg projectDeletedMsg) tea.Cmd {
 	if msg.err == nil {
-		p.err = ""
 		return p.loadCmd()
 	}
 	text := errString(msg.err)
@@ -578,7 +584,7 @@ func (p *projectsView) applyDeleted(msg projectDeletedMsg) tea.Cmd {
 		}
 		return nil
 	}
-	p.err = text
+	p.status().result(text, true)
 	return nil
 }
 

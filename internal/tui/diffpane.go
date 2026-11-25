@@ -219,6 +219,18 @@ func newDiffPane() diffPane {
 	return diffPane{vp: vp, open: map[string]bool{}}
 }
 
+// newTaskDiffPane is the task Diff's pane: the chat diff's, less the
+// viewport's d/u half-page pair (#1212). On a task `d` switches the diff's
+// scope and never reaches the pane, and a lone `u` paging up half a screen
+// with nothing paging down would be a key nobody could guess. ctrl+d/ctrl+u
+// stay the half page; pgup/pgdown and f/b the page.
+func newTaskDiffPane() diffPane {
+	p := newDiffPane()
+	p.vp.KeyMap.HalfPageDown.SetKeys("ctrl+d")
+	p.vp.KeyMap.HalfPageUp.SetKeys("ctrl+u")
+	return p
+}
+
 // open points the pane at a task, discarding another task's diff.
 func (p *diffPane) openTask(taskID int64) {
 	if p.taskID == taskID {
@@ -228,6 +240,8 @@ func (p *diffPane) openTask(taskID int64) {
 	// Another task's attempt is no scope for this one, nor its size.
 	p.stepRun, p.stepLabel = 0, ""
 	p.whole, p.wholeSeen = [2]int{}, false
+	// So is its search (#1154); a reload or a scope change keeps it.
+	p.find.end()
 	p.reset()
 }
 
@@ -439,8 +453,8 @@ func splitDiff(text string) []string {
 
 // updateKey is the pane's own keyboard: the fold tree is what ↑/↓ walk, and
 // the fold keys act on the row under the cursor — a lane or a file, whichever
-// it is on. Line-level scrolling stays on the viewport's pager keys (pgup/pgdn,
-// u/f, b) and the wheel — with everything collapsed there is usually nothing to
+// it is on. Line-level scrolling stays on the viewport's pager keys (pgup/pgdn
+// and f/b, ctrl+d/ctrl+u and — in the chat diff — d/u) and the wheel — with everything collapsed there is usually nothing to
 // scroll, and a reader who has opened a long file wants a page at a time anyway.
 // shift+←/→ fall through to the viewport, which pans sideways to the end of a
 // line wider than the pane (newDiffPane).

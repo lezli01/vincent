@@ -82,8 +82,8 @@ func TestPullWriteRoundTripsAgainstTheRealHandlers(t *testing.T) {
 	}
 	liveWriteKey(t, h, tv, "ctrl+r")
 	liveWriteKey(t, h, tv, "y")
-	if tv.pullTab.noteBad || tv.pullTab.note != "re-run requested for Actions run 5150" {
-		t.Fatalf("re-run note = %q (bad=%v)", tv.pullTab.note, tv.pullTab.noteBad)
+	if tv.status().bad || tv.status().text != "re-run requested for Actions run 5150" {
+		t.Fatalf("re-run note = %q (bad=%v)", tv.status().text, tv.status().bad)
 	}
 	if calls := ghLiveCalls(t, argv); !strings.Contains(calls, "run rerun 5150") {
 		t.Fatalf("gh was not asked to re-run 5150:\n%s", calls)
@@ -94,8 +94,8 @@ func TestPullWriteRoundTripsAgainstTheRealHandlers(t *testing.T) {
 	for _, key := range []string{"m", "right", "right", "y"} {
 		liveWriteKey(t, h, tv, key)
 	}
-	if tv.pullTab.noteBad || tv.pullTab.note != "merged octo/repo#412 (squash)" {
-		t.Fatalf("merge note = %q (bad=%v)", tv.pullTab.note, tv.pullTab.noteBad)
+	if tv.status().bad || tv.status().text != "merged octo/repo#412 (squash)" {
+		t.Fatalf("merge note = %q (bad=%v)", tv.status().text, tv.status().bad)
 	}
 	if calls := ghLiveCalls(t, argv); !strings.Contains(calls, "pr merge 412 -R octo/repo --squash --match-head-commit "+head) {
 		t.Fatalf("gh was not asked for the pinned merge:\n%s", calls)
@@ -111,10 +111,10 @@ func TestPullWriteRoundTripsAgainstTheRealHandlers(t *testing.T) {
 	// the daemon's message for it rather than anything gh said.
 	h.p.push(tv.mergePullCmd("merge", head))
 	h.p.until(15*time.Second, "the refused merge to answer", func() bool {
-		return tv.pullTab.noteBad
+		return tv.status().bad
 	})
 	want := "could not merge octo/repo#412: " + github.Message(github.ReasonNotMergeable)
-	if tv.pullTab.note != want {
-		t.Fatalf("refusal note = %q, want %q", tv.pullTab.note, want)
+	if tv.status().text != want {
+		t.Fatalf("refusal note = %q, want %q", tv.status().text, want)
 	}
 }

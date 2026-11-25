@@ -343,7 +343,7 @@ func (v *chatView) applyDraftSaved(msg chatDraftSavedMsg) tea.Cmd {
 		// stash that is not retried is gone (review F2).
 		v.draft.failed = true
 		v.draft.stashDirty = v.draft.stashDirty || stashSent
-		v.note, v.noteBad = "the draft was not saved: "+errString(msg.err), true
+		v.status().result("the draft was not saved: "+errString(msg.err), true)
 		return nil
 	}
 	if at := msg.updatedAt; at != nil && (v.draft.writtenAt == nil || at.After(*v.draft.writtenAt)) {
@@ -393,15 +393,15 @@ func (v *chatView) flushDraftSync() {
 // takes the stash back.
 func (v *chatView) toggleStash() tea.Cmd {
 	if v.chat == nil || !v.draft.loaded {
-		v.note, v.noteBad = "this chat has not loaded", true
+		v.status().note("this chat has not loaded", true)
 		return nil
 	}
 	if chatstate.Terminal(chatstate.State(v.chat.State)) {
-		v.note, v.noteBad = "this chat has ended — it keeps no draft", true
+		v.status().note("this chat has ended — it keeps no draft", true)
 		return nil
 	}
 	if v.editingQueued != 0 {
-		v.note, v.noteBad = "finish editing the queued message first", true
+		v.status().note("finish editing the queued message first", true)
 		return nil
 	}
 	v.endRecall()
@@ -411,16 +411,17 @@ func (v *chatView) toggleStash() tea.Cmd {
 		replaced := v.draft.stash != ""
 		v.draft.stash, v.draft.stashDirty = text, true
 		v.composer.SetValue("")
-		v.note, v.noteBad = "draft stashed — "+opKey(keymap.Stash)+" on an empty composer brings it back", false
+		note := "draft stashed — " + opKey(keymap.Stash) + " on an empty composer brings it back"
 		if replaced {
-			v.note += " (the previous stash was replaced)"
+			note += " (the previous stash was replaced)"
 		}
+		v.status().result(note, false)
 	case v.draft.stash != "":
 		v.composer.SetValue(v.draft.stash)
 		v.draft.stash, v.draft.stashDirty = "", true
-		v.note, v.noteBad = "stash restored", false
+		v.status().result("stash restored", false)
 	default:
-		v.note, v.noteBad = "nothing to stash", false
+		v.status().note("nothing to stash", false)
 		return nil
 	}
 	return v.flushDraft()
@@ -435,6 +436,19 @@ type chatHistoryPicker struct {
 	items   []apiclient.ChatPrompt
 	cursor  int
 	err     string
+	// drawn is the rows the last render drew, for a click (#1144).
+	drawn []clickRow
+}
+
+func (p *chatHistoryPicker) clickRows() []clickRow { return p.drawn }
+
+// pointAt is a click on a row (#1144).
+func (p *chatHistoryPicker) pointAt(i int) bool {
+	if i < 0 || i >= len(p.items) {
+		return false
+	}
+	p.cursor = i
+	return true
 }
 
 // chatHistoryRows is how many prompts the picker shows at once.
@@ -445,7 +459,7 @@ const chatHistoryLimit = 100
 
 func (v *chatView) openHistory() tea.Cmd {
 	if v.chat == nil {
-		v.note, v.noteBad = "this chat has not loaded", true
+		v.status().note("this chat has not loaded", true)
 		return nil
 	}
 	v.history = chatHistoryPicker{open: true}
@@ -541,6 +555,7 @@ func (v *chatView) renderHistory(width int) []string {
 	if len(v.history.items) == 0 && !v.history.loading {
 		out = append(out, "   "+styleDim.Render("no earlier prompts"))
 	}
+	v.history.drawn = v.history.drawn[:0]
 	start := 0
 	if v.history.cursor >= chatHistoryRows {
 		start = v.history.cursor - chatHistoryRows + 1
@@ -554,6 +569,7 @@ func (v *chatView) renderHistory(width int) []string {
 		if i == v.history.cursor {
 			cursor = " ▸ "
 		}
+		v.history.drawn = append(v.history.drawn, drawnRow(row, i))
 		out = append(out, cursor+row)
 	}
 	out = append(out, " "+styleDim.Render("enter inserts · esc closes · type to narrow"))

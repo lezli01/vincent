@@ -66,6 +66,16 @@ type Task struct {
 	// it. Nil when the newest attempt said nothing.
 	StatusMessage *string `json:"status_message"`
 
+	// Agents is every distinct adapter the task's attempts ran on, in the
+	// order each first ran; empty before any agent attempt (issue #1155).
+	// The list row carries it so a board's filter can match an agent without
+	// fetching step rows; GET /v1/tasks/{id} does not, its steps[] say it.
+	Agents []string `json:"agents,omitempty"`
+	// AgentOverride is the task-level agent selection (§8.6), nil when the
+	// task set none. Both the list row and the detail carry it; it lives on
+	// Task, not TaskDetail, so the board can filter on it too (issue #1155).
+	AgentOverride *string `json:"agent_override"`
+
 	// ParentTaskID, ParentStepIndex, LaneID and LaneOrder identify a fan-out
 	// lane (§7.6, task 014); all nil for a root task. ParentStepIndex is the
 	// parent's `fan_out` step the lane belongs to.
@@ -492,7 +502,7 @@ type TaskDetail struct {
 	Task
 	Description string `json:"description"`
 	// BaseBranch and the three overrides have always been on the wire; only
-	// this struct dropped them. `vincent workflow render --task` binds a real
+	// this struct dropped them (AgentOverride is promoted from Task). `vincent workflow render --task` binds a real
 	// task's §8.4 context and its §8.6 level-2 override from exactly these
 	// four, and re-deriving either client-side is what task 048 declined to
 	// do.
@@ -502,7 +512,6 @@ type TaskDetail struct {
 	// nil before the worktree exists (issue #430).
 	BaseSHA        string       `json:"base_sha,omitempty"`
 	BaseRefresh    *BaseRefresh `json:"base_refresh"`
-	AgentOverride  *string      `json:"agent_override"`
 	ModelOverride  *string      `json:"model_override"`
 	EffortOverride *string      `json:"effort_override"`
 	// Restricted and MaxTaskCostUSD are the create-time limits (task 096

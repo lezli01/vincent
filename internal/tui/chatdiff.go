@@ -27,7 +27,8 @@ import (
 // the cursors are this view's.
 //
 // Nothing here follows the event stream. The diff routes run git per call,
-// so the diff is read when the pane opens, on a scope switch, on `r`, after
+// so the diff is read when the pane opens, on a scope switch, on ctrl+r
+// (diffReloadKey, the task Diff's key since #1163), after
 // a reject, and when a turn ends while the pane is open; the Details pane's
 // `changes` row is read on open, when a turn ends and after a reject
 // (decision 10).
@@ -124,6 +125,9 @@ func (v *chatView) closeDiff() {
 	// A question about a hunk the pane no longer shows is not left armed
 	// for the next time it opens.
 	v.diff.rejectAsk = nil
+	// Nor is a search (#1163, as the task Diff's ends with its task, #1154):
+	// a scope switch or a reload keeps it, leaving the pane does not.
+	v.diff.pane.find.end()
 	v.composer.Focus()
 	v.bodyDirty = true
 }
@@ -267,10 +271,10 @@ func (v *chatView) diffTarget() (diffHunkRef, bool) {
 		return ref, true
 	}
 	if f, known := d.files[at]; known && !f.Rejectable {
-		v.note, v.noteBad = chatDiffFileNote(f), false
+		v.status().note(chatDiffFileNote(f), false)
 		return diffHunkRef{}, false
 	}
-	v.note, v.noteBad = "no hunk selected — ] and [ move between the hunks", false
+	v.status().note("no hunk selected — ] and [ move between the hunks", false)
 	return diffHunkRef{}, false
 }
 
@@ -284,13 +288,19 @@ func (v *chatView) askRejectHunk() {
 	v.diff.rejectAsk = &ref
 }
 
-// answerRejectHunk answers the question: y rejects the hunk asked about,
-// anything else keeps it.
+// answerRejectHunk answers the question by the shared rule (#1162): y
+// rejects the hunk asked about, n or esc keeps it, and any other key leaves
+// the question up. The key that opened the pane still closes it, question
+// and all (updateDiffKey checks it first).
 func (v *chatView) answerRejectHunk(key string) tea.Cmd {
+	yes, no := confirmAnswer(key)
+	if !yes && !no {
+		return nil
+	}
 	ref := *v.diff.rejectAsk
 	v.diff.rejectAsk = nil
-	if key != "y" && key != "Y" {
-		v.note, v.noteBad = "kept the hunk", false
+	if no {
+		v.status().result("kept the hunk", false)
 		return nil
 	}
 	if v.client == nil || v.diff.busy {
@@ -345,21 +355,20 @@ func (v *chatView) acceptHunkCmd() tea.Cmd {
 // is told (decision 7), and re-reads the diff when the refusal is that the
 // hunk is no longer the one on screen.
 func (v *chatView) diffRefused(err error) tea.Cmd {
-	v.noteBad = true
 	var apiErr *apiclient.Error
 	if !errors.As(err, &apiErr) || apiErr.Status != http.StatusConflict {
-		v.note = errString(err)
+		v.status().result(errString(err), true)
 		return nil
 	}
 	switch apiErr.Code {
 	case apiclient.CodeChatTurnLive:
-		v.note = "a turn is running — wait for it to end, or cancel it first"
+		v.status().result("a turn is running — wait for it to end, or cancel it first", true)
 	case apiclient.CodeChatHunkStale:
-		v.note = "the diff changed under that hunk — it has been read again"
+		v.status().result("the diff changed under that hunk — it has been read again", true)
 		return v.diffFetchCmd()
 	default:
 		// chat_hunk_conflict and chat_hunk_not_rejectable say it themselves.
-		v.note = sanitizeText(apiErr.Message)
+		v.status().result(sanitizeText(apiErr.Message), true)
 	}
 	return nil
 }
@@ -372,12 +381,12 @@ func (v *chatView) applyHunkRejected(msg chatHunkRejectedMsg) tea.Cmd {
 	if msg.err != nil {
 		return v.diffRefused(msg.err)
 	}
-	v.note, v.noteBad = "hunk rejected — a note for the agent opens your draft", false
+	v.status().result("hunk rejected — a note for the agent opens your draft", false)
 	var save tea.Cmd
 	if msg.res != nil {
 		save = v.adoptRejectDraft(msg.res.Draft, msg.res.Note)
 		if !msg.res.NoteAdded {
-			v.note, v.noteBad = "hunk rejected — "+cmp.Or(sanitizeText(msg.res.Warning), "no note was added to the draft"), true
+			v.status().result("hunk rejected — "+cmp.Or(sanitizeText(msg.res.Warning), "no note was added to the draft"), true)
 		}
 	}
 	// The worktree changed: the diff and the `changes` row are both stale.
@@ -424,7 +433,7 @@ func (v *chatView) applyHunkMarked(msg chatHunkMarkedMsg) tea.Cmd {
 	if msg.err != nil {
 		return v.diffRefused(msg.err)
 	}
-	v.note = ""
+	v.status().clear()
 	if !v.diff.pane.setHunkAccepted(msg.path, msg.id, msg.accepted) {
 		// The diff was re-read meanwhile and the hunk is gone; the daemon's
 		// marks are the truth, so read them.
@@ -442,11 +451,29 @@ func (v *chatView) updateDiffKey(msg tea.KeyPressMsg) tea.Cmd {
 		v.closeDiff()
 		return nil
 	}
-	// A pending reject owns the keyboard until it is answered (#1055).
+	// A pending reject owns the keyboard until it is answered (#1055) —
+	// ahead of a committed search, whose n and esc would otherwise take the
+	// answers (#1163, under #1162's rule that a pending y/n owns them).
 	if v.diff.rejectAsk != nil {
 		return v.answerRejectHunk(msg.String())
 	}
+	// The task Diff's search, run on the same pane type (#1163): its own
+	// keys first, so n, N and esc walk and end it while it runs.
+	if v.diff.pane.findKey(msg) {
+		return nil
+	}
 	switch msg.String() {
+	case opKey(keymap.Filter):
+		v.diff.pane.find.open()
+		return nil
+	case copyPickKey:
+		// The hunk and the file's diff, as the task Diff offers them
+		// (#1076, #1163).
+		if items := v.diff.pane.diffCopyItems(); len(items) > 0 {
+			return openCopyItems(items)
+		}
+		v.status().note("nothing to copy — open a file or move to a hunk with ]", false)
+		return nil
 	case "esc":
 		v.closeDiff()
 		return nil
@@ -472,9 +499,10 @@ func (v *chatView) updateDiffKey(msg tea.KeyPressMsg) tea.Cmd {
 			v.diff.scope = apiclient.ChatDiffScopeBase
 		}
 		v.diff.loaded, v.diff.unavailable, v.diff.err = false, "", ""
-		v.note = ""
+		v.status().clear()
 		return v.diffFetchCmd()
-	case "r":
+	case diffReloadKey:
+		// ctrl+r, the task Diff's key (#1163): `r` was this pane's alone.
 		return tea.Batch(v.diffFetchCmd(), v.diffStatCmd())
 	}
 	return v.diff.pane.updateKey(msg)

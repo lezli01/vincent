@@ -362,13 +362,7 @@ func (v *pullRequestsView) footerLines(width int) []string {
 		// Wrapped, so a long consequence never pushes its keys off the
 		// line (#804 PL-6).
 		out := append([]string{""}, pullStyleLines(styleWarn, wrapText(v.confirm.text, width, wrapOpts{prefix: "  ", indent: 2}))...)
-		return append(out, styleDim.Render("  y unlink · any other key cancels"))
-	case v.note != "":
-		style := styleDim
-		if v.noteBad {
-			style = styleBad
-		}
-		return append([]string{""}, pullStyleLines(style, wrapText(v.note, width, wrapOpts{prefix: "  ", indent: 2}))...)
+		return append(out, styleDim.Render("  y unlink · n keep the link"))
 	}
 	return nil
 }

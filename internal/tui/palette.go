@@ -62,6 +62,10 @@ type paletteEntry struct {
 	// item is a task, chat or issue row (#1080): listed only once something
 	// is typed, and run by its action.
 	item bool
+	// keywords are words the row is found by without drawing them: the
+	// spellings somebody looking for it types that its label does not carry
+	// (#1158).
+	keywords string
 }
 
 func newPalette(entries []paletteEntry) *palette {
@@ -129,7 +133,11 @@ func paletteEntries(ctx bindingContext, target taskActions, editable, connected,
 			out = append(out, paletteEntry{
 				group: "screens", label: b.label, key: b.key,
 				nav: true, navTarget: b.navTarget, global: true,
+				keywords: screenKeywords[b.navTarget],
 			})
+		}
+		if b.nav && b.navTarget == viewSettings {
+			out = append(out, keyBindingsPaletteEntry())
 		}
 	}
 	rows := withoutGitHub(bindingsFor(ctx), github)
@@ -157,8 +165,34 @@ func paletteEntries(ctx bindingContext, target taskActions, editable, connected,
 	return out
 }
 
+// screenKeywords are the words a screen is looked for by that its label does
+// not say (#1159): "pr" is how a pull request is spelled in a hurry, and
+// without it `:pr` led with "approve the gate", which holds the letters
+// mid-word.
+var screenKeywords = map[viewID]string{
+	viewPullRequests: "pr prs",
+}
+
+// keyBindingsPaletteLabel is the key-bindings screen's palette row.
+const keyBindingsPaletteLabel = "key bindings — rebind any key, or put one back on its default"
+
+// keyBindingsPaletteEntry opens Settings on its key-bindings screen (#1158).
+// The screen (#1079) was reachable only through Settings' own search, so
+// `:key` and `:bind` listed nothing that changes a key. It sits right after
+// the Settings row, ahead of every panel row whose label happens to say
+// "key", and carries the other words it is looked for by; it runs through
+// the message the triggers banner opens a setting with, so it works from
+// any screen, and while the config has not loaded yet.
+func keyBindingsPaletteEntry() paletteEntry {
+	return paletteEntry{
+		group: "screens", label: keyBindingsPaletteLabel, global: true,
+		keywords: "keys keybindings keybinds keymap bind rebind shortcuts",
+		action:   func() tea.Msg { return openConfigKeyMsg{path: tuiKeysPath} },
+	}
+}
+
 // matches filters entries against the typed query, case-insensitive, over
-// label, group and key.
+// label, group, key and keywords.
 func (p *palette) matches() []paletteEntry {
 	q := strings.ToLower(strings.TrimSpace(p.input.Value()))
 	if q == "" {
@@ -171,30 +205,41 @@ func (p *palette) matches() []paletteEntry {
 		return out
 	}
 	// The whole query as typed wins: where some row contains it, those rows
-	// are the answer, as they always were. Otherwise fuzzy, best first
-	// (#1080) — word order, a typo, letters in order — with ties in the
-	// list's own order, so the sections stay together where scores agree.
-	var exact []paletteEntry
+	// are the answer, as they always were. Otherwise fuzzy (#1080) — word
+	// order, a typo, letters in order. Either way best first, with ties in
+	// the list's own order, so the sections stay together where scores
+	// agree: a row where the query starts a word ranks above one that only
+	// holds it mid-word (#1159: `:arch` had put "Search all chats" above
+	// "archived tasks"), and a row found by scattered letters ranks below
+	// every other.
+	words := strings.Fields(q)
+	type scored struct {
+		e         paletteEntry
+		s         int
+		scattered bool
+	}
+	var exact, hits []scored
 	for _, e := range p.entries {
-		if strings.Contains(strings.ToLower(e.label+" "+e.group+" "+e.key), q) {
-			exact = append(exact, e)
+		hay := e.label + " " + e.group + " " + e.key + " " + e.keywords
+		s, scattered := fuzzyScore(hay, words)
+		if strings.Contains(strings.ToLower(hay), q) {
+			exact = append(exact, scored{e, s, false})
+		} else if s > 0 {
+			hits = append(hits, scored{e, s, scattered})
 		}
 	}
 	if len(exact) > 0 {
-		return exact
+		hits = exact
 	}
-	words := strings.Fields(q)
-	type scored struct {
-		e paletteEntry
-		s int
-	}
-	var hits []scored
-	for _, e := range p.entries {
-		if s := fuzzyScore(e.label+" "+e.group+" "+e.key, words); s > 0 {
-			hits = append(hits, scored{e, s})
+	slices.SortStableFunc(hits, func(a, b scored) int {
+		if a.scattered != b.scattered {
+			if a.scattered {
+				return 1
+			}
+			return -1
 		}
-	}
-	slices.SortStableFunc(hits, func(a, b scored) int { return b.s - a.s })
+		return b.s - a.s
+	})
 	out := make([]paletteEntry, len(hits))
 	for i, h := range hits {
 		out[i] = h.e
@@ -265,6 +310,9 @@ const paletteReserve = 2
 // focused entry's whole label — a row cuts a long label with "…", and the
 // reserve is where it is read in full.
 func (p *palette) render(w, h int) string {
+	if p.jump {
+		return p.renderJump(w, h)
+	}
 	inner := max(w-2, 10)
 	lines := make([]string, 0, h)
 	p.input.SetWidth(max(inner-1, 1))
@@ -328,6 +376,50 @@ func (p *palette) render(w, h int) string {
 	return frame("commands", strings.Join(lines, "\n"), w, h, true)
 }
 
+// renderJump draws the screens menu (#1166). It is not the palette with its
+// search line emptied: at 80x24 that had read "go to press a screen's
+// letter" with the cursor over the placeholder, put two screens under
+// "▼ 2 more" while the focused-label reserve held two rows, one of them
+// empty, and carried the palette's own title. So: its own title, one line
+// of instruction where the prompt was, no section header (the title is the
+// section), the reserve only where every screen still fits beside it, and
+// the box as tall as what it holds, never taller than the shared popup box.
+func (p *palette) renderJump(w, h int) string {
+	inner := max(w-2, 10)
+	lines := []string{styleDim.Render(" press a screen's letter — or ↑/↓ and enter")}
+	m := p.entries
+	if len(m) == 0 {
+		return frame("screens", strings.Join(lines, "\n"), w, min(h, len(lines)+2), true)
+	}
+	cursor := min(p.cursor, len(m)-1)
+	rows := make([]string, 0, len(m))
+	entryRow := make([]int, 0, len(m))
+	for i, e := range m {
+		mark, style := "  ", styleDim
+		if i == cursor {
+			mark, style = styleFocus.Render("› "), styleTitle
+		}
+		entryRow = append(entryRow, len(rows))
+		rows = append(rows, mark+paletteRow(e, style, inner-2))
+	}
+	list := h - 2 - len(lines)
+	reserve := list >= len(rows)+paletteReserve+1
+	if reserve {
+		list -= paletteReserve + 1
+	}
+	shown, page := popupWindow(rows, entryRow, cursor, list)
+	p.page = page
+	p.listTop = 1 + len(lines)
+	lines = append(lines, shown...)
+	if reserve {
+		lines = append(lines, styleDim.Render(strings.Repeat("─", inner)))
+		for _, l := range wrapText(m[cursor].label, inner-1, wrapOpts{prefix: " ", indent: 1, maxLines: paletteReserve}) {
+			lines = append(lines, styleTitle.Render(l))
+		}
+	}
+	return frame("screens", strings.Join(lines, "\n"), w, min(h, len(lines)+2), true)
+}
+
 // paletteRow is one entry after the cursor mark: the label, then its key at
 // the right edge. The budget is measured in cells (task 135.10 decision 4):
 // the key is never cut, and when it leaves the label no room the label
@@ -373,8 +465,14 @@ var screenLetters = map[viewID]string{
 	viewArchivedChats: "A", viewTriggers: "T",
 }
 
+// keyBindingsLetter is the key-bindings screen's letter in the screens menu
+// (#1166). It is not a viewID — the screen is Settings opened on tui.keys —
+// so it has no place in screenLetters.
+const keyBindingsLetter = "k"
+
 // newGoToMenu is the screens menu: the palette's screen rows, each on its
-// letter.
+// letter — the key-bindings row too (#1166), which the palette lists among
+// its screens since #1158, on k.
 func newGoToMenu(github bool) *palette {
 	var entries []paletteEntry
 	for _, b := range withoutGitHub(registry(), github) {
@@ -385,10 +483,13 @@ func newGoToMenu(github bool) *palette {
 			group: "screens", label: b.label, nav: true, navTarget: b.navTarget,
 			global: true, letter: screenLetters[b.navTarget],
 		})
+		if b.navTarget == viewSettings {
+			kb := keyBindingsPaletteEntry()
+			kb.letter = keyBindingsLetter
+			entries = append(entries, kb)
+		}
 	}
 	p := newPalette(entries)
 	p.jump = true
-	p.input.SetPlaceholder("press a screen's letter — or ↑/↓ and enter")
-	p.input.SetPrompt("go to ")
 	return p
 }

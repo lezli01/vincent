@@ -165,7 +165,7 @@ func (v *chatView) openShellPrompt() {
 		return
 	}
 	if !v.shellAvailable() {
-		v.note, v.noteBad = "this chat has ended — no command runs here", true
+		v.status().note("this chat has ended — no command runs here", true)
 		return
 	}
 	v.hideInline("")
@@ -265,7 +265,7 @@ func (v *chatView) applyShellStarted(msg chatShellStartedMsg) tea.Cmd {
 	}
 	v.shell.busy = false
 	if msg.err != nil {
-		v.note, v.noteBad = "shell: "+errString(msg.err), true
+		v.status().result("shell: "+errString(msg.err), true)
 		return nil
 	}
 	if msg.run != nil {
@@ -303,15 +303,15 @@ func (v *chatView) toggleShellAttachAt(y int) tea.Cmd {
 	a := anchorAt(v.anchors, y)
 	run, ok := v.shellRun(a.shell)
 	if !ok {
-		v.note, v.noteBad = "move the cursor onto a shell command's card to attach it", false
+		v.status().note("move the cursor onto a shell command's card to attach it", false)
 		return nil
 	}
 	switch {
 	case run.AttachedTurn != nil:
-		v.note, v.noteBad = fmt.Sprintf("already sent with turn %d", *run.AttachedTurn), false
+		v.status().note(fmt.Sprintf("already sent with turn %d", *run.AttachedTurn), false)
 		return nil
 	case run.State == apiclient.ChatShellRunning:
-		v.note, v.noteBad = "the command is still running — attach it once it ends", false
+		v.status().note("the command is still running — attach it once it ends", false)
 		return nil
 	}
 	client, id, attach := v.client, v.chatID, !run.Attach
@@ -331,7 +331,7 @@ func (v *chatView) applyShellAttached(msg chatShellAttachedMsg) {
 		return
 	}
 	if msg.err != nil {
-		v.note, v.noteBad = "shell: "+errString(msg.err), true
+		v.status().result("shell: "+errString(msg.err), true)
 		return
 	}
 	if msg.run != nil {
@@ -470,6 +470,5 @@ func chatShellMark(r apiclient.ChatShellRun) string {
 
 // shellPromptLine is the prompt as drawn over the composer.
 func (v *chatView) shellPromptLine(width int) string {
-	return ansi.Truncate(styleKey.Render("$ ")+v.shell.buf.View()+
-		styleDim.Render("  enter run · esc cancel"), width, "…")
+	return lineField(styleKey.Render("$ "), &v.shell.buf, "  enter run · esc cancel", width)
 }

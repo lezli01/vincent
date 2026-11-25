@@ -156,8 +156,8 @@ type chatsView struct {
 	ticking bool
 	frame   int
 
-	note    string
-	noteBad bool
+	// statusPoster is where the board's results and notes go (#1164).
+	statusPoster
 
 	width, height int
 
@@ -406,7 +406,7 @@ func (v *chatsView) updateMsg(msg tea.Msg) (panel, tea.Cmd) {
 	case chatArchivedMsg:
 		return v, v.applyArchived(msg)
 	case deleteResultMsg:
-		v.note, v.noteBad = msg.summary(), msg.bad()
+		v.status().result(msg.summary(), msg.bad())
 		v.delPrompt = msg.forceOffer()
 		return v, v.loadCmd()
 	case chatCreatedMsg:
@@ -557,10 +557,10 @@ func (v *chatsView) applyArchived(msg chatArchivedMsg) tea.Cmd {
 			}
 			return nil
 		}
-		v.note, v.noteBad = errString(msg.err), true
+		v.status().result(errString(msg.err), true)
 		return nil
 	}
-	v.note, v.noteBad = "chat archived", false
+	v.status().result("chat archived", false)
 	return v.loadCmd()
 }
 
@@ -672,7 +672,6 @@ func (v *chatsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	if v.filtering {
 		return v, v.updateFilter(msg)
 	}
-	v.note = ""
 	if v.archived {
 		switch msg.String() {
 		case "tab":
@@ -773,9 +772,10 @@ func (v *chatsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		// project registered" only once a listing has said so; before that
 		// the selection is still resolving (review F9).
 		if v.project.id == 0 {
-			v.note, v.noteBad = "no project is selected yet — try again once the header names one", true
 			if v.noProjects {
-				v.note = "register a project first — the project overview adds one"
+				v.status().note("register a project first — the project overview adds one", true)
+			} else {
+				v.status().note("no project is selected yet — try again once the header names one", true)
 			}
 			return v, nil
 		}
@@ -796,7 +796,7 @@ func (v *chatsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 			// the task owns: the daemon refuses its archive (task 119), and
 			// closing it is how it ends.
 			if c.LinkedTaskID != nil {
-				v.note, v.noteBad = linkedChatDecline(c), true
+				v.status().note(linkedChatDecline(c), true)
 				return v, nil
 			}
 			// A terminal chat has nothing left to archive and no worktree to
@@ -805,7 +805,7 @@ func (v *chatsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 			// the task owns now (§5.5). The daemon refuses it too (409); this
 			// is what stops the question being asked at all (issue #298).
 			if chatstate.Terminal(chatstate.State(c.State)) {
-				v.note, v.noteBad = chatArchiveDecline(c.State), true
+				v.status().note(chatArchiveDecline(c.State), true)
 				return v, nil
 			}
 			v.confirm = &archivePrompt{
@@ -841,7 +841,7 @@ func (v *chatsView) askDelete() {
 	if chatstate.State(c.State) == chatstate.HandedOff {
 		// The daemon refuses this too (409). Saying so here is what stops the
 		// question being asked at all — the same shape `a` takes above.
-		v.note, v.noteBad = "this chat was handed off to a task, which owns its worktree and branch; delete that task", true
+		v.status().note("this chat was handed off to a task, which owns its worktree and branch; delete that task", true)
 		return
 	}
 	v.delPrompt = &rowDeletePrompt{ids: []int64{c.ID}, chats: true}
@@ -852,21 +852,23 @@ func (v *chatsView) askDelete() {
 // not be cancelled *or* confirmed by a stray key.
 func (v *chatsView) answerDelete(key string) tea.Cmd {
 	p := v.delPrompt
-	switch key {
-	case "b":
+	// `b` is this question's third answer; yes and no are the shared rule's
+	// (#1162).
+	yes, no := confirmAnswer(key)
+	switch {
+	case key == "b":
 		if p.force {
 			return nil // a force delete never deletes a branch (task 153)
 		}
 		v.delPrompt = nil
-		v.note, v.noteBad = "deleting…", false
+		v.status().result("deleting…", false)
 		return dispatchDelete(v.client, p.ids, deleteAsk{chats: true, archived: v.archived, branch: true})
-	case "y":
+	case yes:
 		v.delPrompt = nil
-		v.note, v.noteBad = "deleting…", false
+		v.status().result("deleting…", false)
 		return dispatchDelete(v.client, p.ids, deleteAsk{chats: true, archived: v.archived, force: p.force})
-	case "n", "esc":
+	case no:
 		v.delPrompt = nil
-		v.note, v.noteBad = "", false
 	}
 	return nil
 }
@@ -903,7 +905,7 @@ func (v *chatsView) cycleScope() {
 	for i, sc := range chatScopes {
 		if sc == v.scope {
 			v.scope = chatScopes[(i+1)%len(chatScopes)]
-			v.note, v.noteBad = "listing "+chatScopeLabel(v.scope)+"…", false
+			v.status().result("listing "+chatScopeLabel(v.scope)+"…", false)
 			return
 		}
 	}
@@ -941,16 +943,19 @@ func (v *chatsView) liveBindings(rows []binding) []binding {
 	return out
 }
 
+// updateConfirm answers the archive question by the shared rule (#1162): a
+// key that is neither yes nor no leaves it up.
 func (v *chatsView) updateConfirm(msg tea.KeyPressMsg) tea.Cmd {
-	switch msg.String() {
-	case "y", "Y":
+	yes, no := confirmAnswer(msg.String())
+	switch {
+	case yes:
 		p := *v.confirm
 		v.confirm = nil
 		return v.archiveCmd(p.id, p.force)
-	default:
+	case no:
 		v.confirm = nil
-		return nil
 	}
+	return nil
 }
 
 func (v *chatsView) updateFilter(msg tea.KeyPressMsg) tea.Cmd {
@@ -976,7 +981,7 @@ func (v *chatsView) updateFilter(msg tea.KeyPressMsg) tea.Cmd {
 func (v *chatsView) archiveCmd(id int64, force bool) tea.Cmd {
 	client := v.client
 	if client == nil {
-		v.note, v.noteBad = "not connected", true
+		v.status().result("not connected", true)
 		return nil
 	}
 	return func() tea.Msg {

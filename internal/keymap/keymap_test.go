@@ -127,6 +127,11 @@ func TestCatalogIsWellFormed(t *testing.T) {
 		if e.why == "" {
 			t.Errorf("exception on %q records no decision", e.key)
 		}
+		// #1208: a pair exception travels with its ops, so it may not let
+		// them share a fixed key, which would then travel too.
+		if e.anyKey && e.anyFixed {
+			t.Errorf("exception on %q is a pair exception and shares fixed keys", e.key)
+		}
 	}
 	for _, f := range FixedKeys() {
 		if _, err := ParseKey(f.Key); err != nil {
@@ -394,7 +399,7 @@ func TestUpgradeYieldsProject(t *testing.T) {
 // operations on the chats board and the chat, every one a Typing hatch on an
 // alt key, so the composer never types them and ctrl+p stays the palette.
 func TestChatSwitchOps(t *testing.T) {
-	want := map[Op]string{NextChat: "alt+n", PrevChat: "alt+shift+n"}
+	want := map[Op]string{NextChat: "alt+.", PrevChat: "alt+,"}
 	for i, op := range ChatJumps {
 		want[op] = "alt+" + string(rune('1'+i))
 	}
@@ -442,5 +447,117 @@ func TestChatSwitchOps(t *testing.T) {
 	}
 	if km.Key(NextChat) != "ctrl+right" || km.Key(Chat1) != "f17" {
 		t.Errorf("rebound next_chat=%q chat_1=%q", km.Key(NextChat), km.Key(Chat1))
+	}
+}
+
+// #1157: no default sits on a macOS Option dead key, and the new keys parse
+// as the strings Bubble Tea prints.
+func TestDefaultsOffTheDeadKeys(t *testing.T) {
+	want := map[Op]string{
+		NextChat: "alt+.", PrevChat: "alt+,", NextItem: "alt+.", PrevItem: "alt+,",
+		Conversation: "alt+o", ExportChat: "alt+w",
+	}
+	km := Default()
+	for op, key := range want {
+		if got := km.Key(op); got != key {
+			t.Errorf("%s defaults to %q, want %q", op, got, key)
+		}
+		if got, err := ParseKey(key); err != nil || got != key {
+			t.Errorf("ParseKey(%q) = %q, %v", key, got, err)
+		}
+	}
+	dead := map[string]bool{"alt+e": true, "alt+i": true, "alt+n": true, "alt+u": true, "alt+`": true}
+	for _, info := range Catalog() {
+		if dead[info.Default] {
+			t.Errorf("%s defaults to %s, an Option dead key on macOS", info.Op, info.Default)
+		}
+	}
+}
+
+// #1157: overrides name operations, so a tui.keys written for the old
+// defaults keeps them.
+func TestOldDefaultsStillBind(t *testing.T) {
+	old := map[string]string{
+		"next_chat": "alt+n", "prev_chat": "alt+shift+n",
+		"conversation": "alt+i", "export_chat": "alt+e",
+	}
+	km, err := Build(old)
+	if err != nil {
+		t.Fatalf("the old defaults, as overrides, were refused: %v", err)
+	}
+	for op, key := range old {
+		if got := km.Key(Op(op)); got != key {
+			t.Errorf("%s is %q, want the override %q", op, got, key)
+		}
+	}
+	for _, o := range []map[string]string{{"next_item": "alt+n"}, {"prev_item": "alt+shift+n"}} {
+		if _, err := Build(o); err != nil {
+			t.Errorf("%v refused: %v", o, err)
+		}
+	}
+}
+
+// #1208: next_chat and next_item, and prev_chat and prev_item, are a pair
+// exception — each pair may share whatever key it is bound to, because a
+// chat answers one of the two and a task or an issue the other. Everything
+// else about the key stays scoped: a third operation on it still clashes, a
+// fixed key is not shared, and the pair split across two keys still works.
+func TestNextPrevPairSharesAnyKey(t *testing.T) {
+	for _, o := range []map[string]string{
+		{"next_chat": "alt+n", "next_item": "alt+n"},
+		{"prev_chat": "alt+shift+n", "prev_item": "alt+shift+n"},
+		{"next_chat": "alt+n", "next_item": "alt+n", "prev_chat": "alt+shift+n", "prev_item": "alt+shift+n"},
+		{"next_chat": "alt+n"},
+		{"next_item": "alt+n", "prev_item": "alt+shift+n"},
+		{"next_chat": "alt+n", "next_item": "f17"},
+	} {
+		km, err := Build(o)
+		if err != nil {
+			t.Errorf("Build(%v) refused: %v", o, err)
+			continue
+		}
+		for op, key := range o {
+			if got := km.Key(Op(op)); got != key {
+				t.Errorf("Build(%v): %s is %q, want %q", o, op, got, key)
+			}
+		}
+		lenient, warnings, err := BuildLenient(o)
+		if err != nil {
+			t.Errorf("BuildLenient(%v) refused: %v", o, err)
+			continue
+		}
+		if len(warnings) != 0 {
+			t.Errorf("BuildLenient(%v) warned: %v", o, warnings)
+		}
+		for op, key := range o {
+			if got := lenient.Key(Op(op)); got != key {
+				t.Errorf("BuildLenient(%v): %s is %q, want %q", o, op, got, key)
+			}
+		}
+	}
+	for _, c := range []struct {
+		overrides map[string]string
+		want      []string
+	}{
+		{map[string]string{"next_chat": "alt+n", "next_item": "alt+n", "refresh": "alt+n"}, []string{"refresh", `"alt+n"`}},
+		{map[string]string{"next_chat": "alt+n", "prev_item": "alt+n"}, []string{"next_chat", "prev_item", `"alt+n"`}},
+		{map[string]string{"next_chat": "alt+n", "prev_chat": "alt+n"}, []string{"next_chat", "prev_chat", `"alt+n"`}},
+		// The pair is excepted from each other, never from a fixed key.
+		{map[string]string{"next_chat": "ctrl+o", "next_item": "ctrl+o"}, []string{`"ctrl+o"`}},
+	} {
+		if _, err := Build(c.overrides); err == nil {
+			t.Errorf("Build(%v) accepted", c.overrides)
+		} else {
+			for _, w := range c.want {
+				if !strings.Contains(err.Error(), w) {
+					t.Errorf("Build(%v): error %q does not name %q", c.overrides, err, w)
+				}
+			}
+		}
+		if c.overrides["refresh"] != "" || c.overrides["prev_item"] != "" || c.overrides["prev_chat"] != "" {
+			if _, _, err := BuildLenient(c.overrides); err == nil {
+				t.Errorf("BuildLenient(%v) accepted two overrides' clash", c.overrides)
+			}
+		}
 	}
 }

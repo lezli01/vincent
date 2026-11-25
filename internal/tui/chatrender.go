@@ -9,8 +9,6 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
-
-	"github.com/lezli01/vincent/internal/reasons"
 )
 
 // The chat workspace's rendering: history, live tail, composer.
@@ -518,24 +516,15 @@ func (v *chatView) bodyLinesAt(width int) ([]string, []lineAnchor) {
 			// Wrapped, never clipped (issue #801 F3): the message is the
 			// one account of what went wrong, and its tail — "retrying
 			// later is safe" — is usually the part worth reading. The
-			// reason is humanised through the one catalogue of them.
-			// The code stays beside its title: it is what the logs, the
-			// API and the troubleshooting guide's headings are keyed by.
-			text := t.FailReason
-			if title := reasons.Explain(t.FailReason).Title; title != t.FailReason {
-				text = title + " (" + t.FailReason + ")"
-			}
-			if t.ErrorMessage != "" {
-				text += ": " + t.ErrorMessage
-			}
-			for _, l := range wrapText(text, max(width-1, 1), wrapOpts{indent: 2}) {
+			// reason is humanised through failedTurnText.
+			for _, l := range wrapText(failedTurnText(*t), max(width-1, 1), wrapOpts{indent: 2}) {
 				lines = append(lines, " "+styleBad.Render(l))
 				pad(1)
 			}
 			// What it means and what to do (#1070), on the newest turn
 			// only: an older failure has been moved past.
 			if last := v.failedTurn(); last != nil && last.Seq == t.Seq {
-				more := reasons.Explain(t.FailReason).Meaning
+				more := failedTurnMeaning(t.FailReason)
 				if more != "" {
 					more += " "
 				}
@@ -615,11 +604,14 @@ func (v *chatView) noteLines(width int) []string {
 		text, style, keys = v.compactQuestion(), styleWarn, chatCloseAnswers
 	case v.raising && v.chat != nil:
 		text, style, keys = v.raiseQuestion(), styleWarn, chatCloseAnswers
-	case v.note != "":
-		text = v.note
-		if v.noteBad {
-			style = styleBad
-		}
+	case v.clearingQueue && v.chat != nil:
+		// Keys first (#1162): the question is short, so they lead.
+		text, style = v.clearQueueQuestion(), styleWarn
+	case v.editingQueued != 0:
+		// A mode, not a message (#1164): it holds while the queued message
+		// is in the composer, where a status note would go with the first
+		// key typed into it.
+		text = chatQueueEditNote
 	case v.formAway != nil:
 		// Persistent while the question is away (issue #801 F7): it is the
 		// only thing on screen saying the agent is waiting, and how to answer.

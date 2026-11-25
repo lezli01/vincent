@@ -382,9 +382,6 @@ func (w *workflowsView) statusLines() []string {
 		}
 		out = append(out, styleBad.Render(note))
 	}
-	if w.err != "" {
-		out = append(out, styleBad.Render(" ⚠ "+w.err))
-	}
 	return out
 }
 

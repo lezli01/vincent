@@ -24,7 +24,8 @@ import (
 // when the human is most lost.
 //
 // A confirmation or a status — `cancel #42? … (y/n)`, a failed retry — is
-// the exception (task 135.10 decision 2): it leads the line and is cut from
+// the exception (task 135.10 decision 2; the status is the TUI's one status
+// line since #1164, msgline.go): it leads the line and is cut from
 // the right, since its start is what it says, and the hints follow it while
 // there is room, dropped into `+N` when there is not. The line stays one row.
 //
@@ -87,6 +88,17 @@ type attentionTally struct {
 func (t attentionTally) total() int { return t.here + t.elsewhere }
 
 func buildFooter(width int, panelRows []binding, bar *actionBar, target taskActions, attention attentionTally, retry, textField bool) (string, []footerHit) {
+	status := ""
+	if bar != nil {
+		status = bar.status().shown()
+	}
+	return buildFooterStatus(width, panelRows, bar, target, attention, retry, textField, status)
+}
+
+// buildFooterStatus is buildFooter with the status line given rather than
+// read from the bar: the root passes its own (#1164), which every screen
+// shows, bar or no bar. status is styled already; "" shows none.
+func buildFooterStatus(width int, panelRows []binding, bar *actionBar, target taskActions, attention attentionTally, retry, textField bool, status string) (string, []footerHit) {
 	pinnedSegs := footerPinnedSegs(textField)
 	var pinned strings.Builder
 	for _, s := range pinnedSegs {
@@ -102,7 +114,7 @@ func buildFooter(width int, panelRows []binding, bar *actionBar, target taskActi
 		rest = []footerSeg{{text: strings.TrimPrefix(bar.render(target), " ")}}
 	} else {
 		hints = footerHintSegs(panelRows)
-		rest = footerRestSegs(bar, target, attention, retry, textField)
+		rest = footerRestSegs(bar, target, attention, retry, textField, status)
 	}
 
 	if width > 0 {
@@ -127,7 +139,7 @@ func buildFooter(width int, panelRows []binding, bar *actionBar, target taskActi
 		return footerLead(rest[0].text, avail, width, pinned.String(), pinnedSegs)
 	}
 	lead := ""
-	if n := len(rest); n > 0 && bar != nil && bar.status != "" && rest[n-1].key == "" && !rest[n-1].counts {
+	if n := len(rest); n > 0 && status != "" && rest[n-1].key == "" && !rest[n-1].counts {
 		lead, rest = rest[n-1].text, rest[:n-1]
 	}
 	leadW := 0
@@ -229,6 +241,17 @@ func footerMainHints(hints []footerSeg) []footerSeg {
 	return out
 }
 
+// footerLeadRoom is how many cells buildFooterStatus gives a leading status
+// at width before it cuts it with "…" — the budget the root measures a
+// result against when it decides on a row of its own (#1207).
+func footerLeadRoom(width int, textField bool) int {
+	pw := 0
+	for _, s := range footerPinnedSegs(textField) {
+		pw += ansi.StringWidth(s.text)
+	}
+	return width - pw - 2 - 1
+}
+
 // footerLeadFloor is the fewest cells left beside a leading status that are
 // worth giving to hints; under it the status has the left of the line alone.
 const footerLeadFloor = 8
@@ -301,6 +324,38 @@ func buildPromptFooter(width int, keys promptAnswers, textField bool) (string, [
 	pad := max(width-lw-pw, 2)
 	hits = append(hits, pinnedHits(lw+pad, pinnedSegs)...)
 	return line + strings.Repeat(" ", pad) + pinned.String(), hits
+}
+
+// buildPopupFooter is the footer under a root popup (#1180): the popup's
+// hinted registry rows on the left and ctrl+c quit on the right, the one
+// root key a popup lets through. The palette, help and `q` are not pinned —
+// each would be typed into the popup's query or swallowed. No `+N`: the
+// palette lists none of a popup's keys. The line carries no click targets,
+// since a click on the footer reaches nothing while a popup is open.
+func buildPopupFooter(width int, rows []binding) string {
+	var quit []footerSeg
+	for _, s := range footerPinnedSegs(true) {
+		if s.key == "ctrl+c" {
+			quit = append(quit, s)
+		}
+	}
+	pinned := ""
+	for _, s := range quit {
+		pinned += s.text
+	}
+	segs := footerHintSegs(rows)
+	if width <= 0 {
+		line, _ := composeFooter(segs)
+		return line + "  " + pinned
+	}
+	pw := ansi.StringWidth(pinned)
+	avail := width - pw - 2
+	if avail <= 0 {
+		return " " + pinned
+	}
+	line, _, _ := footerFit(segs, 0, avail)
+	pad := max(width-ansi.StringWidth(line)-pw, 2)
+	return line + strings.Repeat(" ", pad) + pinned
 }
 
 // footerSep joins two segments. Its width is the per-gap cost every budget
@@ -516,6 +571,97 @@ var footerActionOps = []struct {
 	{apiclient.ActionArchive, keymap.Archive, ""},
 }
 
+// footerStateLead is which of a task's actions lead its footer segments in
+// each state (#1152): the ones that move a task in that state on — the
+// answer it waits on, the verdict at a gate, the recovery keys of a blocked
+// task, a finished task's next step. The rest follow in footerActionOps'
+// §6 order. Lead is position, and position is what the width keeps:
+// footerAdmitActions gives places up from the end, so a narrow line sheds
+// the other actions first. It reorders the task's own segments only; the
+// surface's hints keep their registry priority (task 094: priority means
+// priority), and they are budgeted after these anyway.
+var footerStateLead = map[string][]string{
+	stateAwaitingInput: {apiclient.ActionAnswer},
+	stateAwaitingGate:  {apiclient.ActionApprove, apiclient.ActionReject},
+	stateBlocked:       {apiclient.ActionRetry, apiclient.ActionRepair},
+	stateDone:          {apiclient.ActionFollowUp, apiclient.ActionArchive},
+	stateAborted:       {apiclient.ActionFollowUp, apiclient.ActionArchive},
+	statePaused:        {apiclient.ActionResume},
+}
+
+// footerAnswerKey is the key the footer's answer segment names, or "" when
+// there is none: the workspace's enter, or — where the answer is a screen
+// away — the board's open key (#1152). Never under a bulk selection: a
+// question belongs to one task.
+func footerAnswerKey(t taskActions) string {
+	if t.bulk() || !t.has(apiclient.ActionAnswer) {
+		return ""
+	}
+	if t.answerOpens {
+		return opKey(keymap.OpenRow)
+	}
+	return answerBinding.key
+}
+
+// footerTaskActionSegs is the task's §6 action segments, its state's lead
+// first (footerStateLead) and the rest in footerActionOps order.
+func footerTaskActionSegs(target taskActions) []footerSeg {
+	type staged struct {
+		action string
+		seg    footerSeg
+	}
+	var all []staged
+	if key := footerAnswerKey(target); key != "" {
+		label := "answer"
+		if target.answerOpens {
+			label = "open to answer"
+		}
+		// Never droppable: it is the one way on for a task waiting on a
+		// question, and a short line sheds the other actions instead.
+		all = append(all, staged{apiclient.ActionAnswer, footerSeg{
+			text: styleAsk.Render(key + " " + label), key: key, counts: true,
+		}})
+	}
+	for _, o := range footerActionOps {
+		if !target.has(o.action) || (o.label != "" && target.bulk()) {
+			continue
+		}
+		if o.op == keymap.EditRetry && !target.editRetry {
+			continue // nothing to edit here, or no editor (#1059)
+		}
+		key := opKey(o.op)
+		if key == "" {
+			// Unbound on a lenient load (task 128): no key to show.
+			continue
+		}
+		label := o.label
+		if label == "" {
+			label = actionLabel(target, o.action)
+		}
+		all = append(all, staged{o.action, footerSeg{
+			text: styleKey.Render(key) + " " + label, key: key, counts: true, droppable: true,
+		}})
+	}
+	// Under a selection the state is only the cursor row's, and the marked
+	// tasks may be in any: §6 order alone.
+	lead := footerStateLead[target.state]
+	if target.bulk() {
+		lead = nil
+	}
+	rank := func(action string) int {
+		if i := slices.Index(lead, action); i >= 0 {
+			return i
+		}
+		return len(lead)
+	}
+	sort.SliceStable(all, func(i, j int) bool { return rank(all[i].action) < rank(all[j].action) })
+	out := make([]footerSeg, len(all))
+	for i, s := range all {
+		out[i] = s.seg
+	}
+	return out
+}
+
 // footerAdmitActions drops droppable segments from the end — `!` first, then
 // `T`, then the task actions in reverse order — until the segments right of
 // the hints fit avail with every hint withheld, the widest `+N` the line can
@@ -562,7 +708,7 @@ func footerAdmitActions(rest []footerSeg, countable, avail int) []footerSeg {
 // footerRestSegs is everything to the right of the hints: the task's valid
 // actions, the answer/attention/retry extras, and the action bar's last
 // status.
-func footerRestSegs(bar *actionBar, target taskActions, attention attentionTally, retry, textField bool) []footerSeg {
+func footerRestSegs(bar *actionBar, target taskActions, attention attentionTally, retry, textField bool, status string) []footerSeg {
 	segs := make([]footerSeg, 0, 8)
 	if target.bulk() {
 		// The way out of a selection leads it (#1073): esc clears it, and
@@ -572,38 +718,18 @@ func footerRestSegs(bar *actionBar, target taskActions, attention attentionTally
 		})
 	}
 	if bar != nil && (target.id != 0 || target.bulk()) {
-		for _, o := range footerActionOps {
-			if !target.has(o.action) || (o.label != "" && target.bulk()) {
-				continue
-			}
-			if o.op == keymap.EditRetry && !target.editRetry {
-				continue // nothing to edit here, or no editor (#1059)
-			}
-			key := opKey(o.op)
-			if key == "" {
-				// Unbound on a lenient load (task 128): no key to show.
-				continue
-			}
-			label := o.label
-			if label == "" {
-				label = actionLabel(target, o.action)
-			}
-			segs = append(segs, footerSeg{
-				text: styleKey.Render(key) + " " + label, key: key, counts: true, droppable: true,
-			})
-		}
-		if target.has(apiclient.ActionAnswer) {
-			segs = append(segs, footerSeg{text: styleAsk.Render("enter answer"), key: "enter", counts: true})
-		}
+		segs = append(segs, footerTaskActionSegs(target)...)
 		// `T` has no actionOrder row because it posts to no §6 endpoint that
 		// hands back the task, and it is on the line anyway: a locked task
 		// offers `c cancel` or nothing, and the chat holding the lock is the
 		// one thing that explains why (task 119).
 		// `Q` beside it on a stopped task (#1087), and only while no chat
 		// holds the task: then the key reopens that chat, which `T` says.
+		// Named diagnose, as the card, the question and the keymap name it
+		// (#1153): one name everywhere.
 		if target.offersDiagnose() && target.openChatID == 0 && opKey(keymap.Diagnose) != "" {
 			segs = append(segs, footerSeg{
-				text: styleKey.Render(opKey(keymap.Diagnose)) + " ask why", key: opKey(keymap.Diagnose), counts: true, droppable: true,
+				text: styleKey.Render(opKey(keymap.Diagnose)) + " diagnose", key: opKey(keymap.Diagnose), counts: true, droppable: true,
 			})
 		}
 		if target.offersChat() && opKey(keymap.Chat) != "" {
@@ -633,13 +759,10 @@ func footerRestSegs(bar *actionBar, target taskActions, attention attentionTally
 		// speaks for it.
 		segs = append(segs, footerSeg{text: styleKey.Render("r") + " retry", key: "r", global: true})
 	}
-	if bar != nil && bar.status != "" {
-		style := styleDim
-		if bar.statusBad {
-			style = styleBad
-		}
-		// Unclickable text, and nothing the palette can reach: never counted.
-		segs = append(segs, footerSeg{text: style.Render(bar.status)})
+	if status != "" {
+		// The status line (#1164). Unclickable text, and nothing the palette
+		// can reach: never counted.
+		segs = append(segs, footerSeg{text: status})
 	}
 	return segs
 }

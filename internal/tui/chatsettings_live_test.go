@@ -210,8 +210,8 @@ func TestChatModeToggleSaysWhyLive(t *testing.T) {
 	if _, cmd := v.updateKey(registryKey(t, "shift+tab")); cmd != nil || v.raising {
 		t.Fatal("shift+tab on a codex chat tried to change its mode")
 	}
-	if !strings.Contains(v.note, "codex cannot keep a resumed turn restricted") {
-		t.Errorf("shift+tab on codex said %q", v.note)
+	if !strings.Contains(v.status().text, "codex cannot keep a resumed turn restricted") {
+		t.Errorf("shift+tab on codex said %q", v.status().text)
 	}
 
 	// A chat on a restricted task: the first raise asks and the daemon
@@ -221,14 +221,14 @@ func TestChatModeToggleSaysWhyLive(t *testing.T) {
 	_, cmd := v.updateKey(keyPress("y"))
 	v.updateMsg(runCmd(t, cmd, 30*time.Second))
 	want := fmt.Sprintf("task #%d runs restricted", task.ID)
-	if !strings.Contains(v.note, want) {
-		t.Errorf("the refused raise said %q, want %q", v.note, want)
+	if !strings.Contains(v.status().text, want) {
+		t.Errorf("the refused raise said %q, want %q", v.status().text, want)
 	}
 	if _, cmd := v.updateKey(registryKey(t, "shift+tab")); cmd != nil || v.raising {
 		t.Fatal("shift+tab asked again on a chat the daemon said can never run full-auto")
 	}
-	if !strings.Contains(v.note, want) {
-		t.Errorf("the second shift+tab said %q, want %q", v.note, want)
+	if !strings.Contains(v.status().text, want) {
+		t.Errorf("the second shift+tab said %q, want %q", v.status().text, want)
 	}
 	if got, _ := st.GetChat(ctx, linked.ID); got.PermissionMode != "restricted" {
 		t.Fatalf("the linked chat is %q, want restricted", got.PermissionMode)

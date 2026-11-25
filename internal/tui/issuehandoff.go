@@ -341,11 +341,12 @@ func (f *handoffForm) updateKey(msg tea.KeyPressMsg) (cmd tea.Cmd, closed bool) 
 		return nil, false
 	}
 	if f.discard {
-		f.discard = false
-		if s := msg.String(); s == "y" || s == "Y" {
-			return nil, true
+		// The shared rule (#1162): any key but yes or no leaves it up.
+		yes, no := confirmAnswer(msg.String())
+		if yes || no {
+			f.discard = false
 		}
-		return nil, false
+		return nil, yes
 	}
 	switch msg.String() {
 	case "esc":
@@ -432,7 +433,7 @@ func (f *handoffForm) render(width, height int) string {
 	case f.busy:
 		lines = append(lines, "  "+styleDim.Render("starting the handoff…"))
 	case f.discard:
-		lines = append(lines, "  "+styleWarn.Render("Discard this handoff? y discards · any other key keeps it"))
+		lines = append(lines, "  "+styleWarn.Render("Discard this handoff? y discards · n keeps it"))
 	default:
 		lines = append(lines, "  "+styleDim.Render("↑/↓ move · space toggles · ←/→ workflow · ctrl+s hands off · esc closes"))
 	}
@@ -474,7 +475,7 @@ func (v *issuesView) togglePick() {
 		return
 	}
 	if !handoffPending(iss) {
-		v.setNote(notPendingNote(iss), true)
+		v.status().note(notPendingNote(iss), true)
 		return
 	}
 	if v.picked == nil {
@@ -514,7 +515,7 @@ func (v *issuesView) pickAll() {
 		v.picked[row.issue.ID] = true
 	}
 	if len(v.picked) == 0 {
-		v.setNote("no pending hand-off issue is showing", true)
+		v.status().note("no pending hand-off issue is showing", true)
 	}
 }
 
@@ -554,7 +555,7 @@ func (v *issuesView) handoffTargets() ([]int64, string) {
 func (v *issuesView) startHandoff() tea.Cmd {
 	ids, note := v.handoffTargets()
 	if note != "" {
-		v.setNote(note, true)
+		v.status().note(note, true)
 		return nil
 	}
 	return handoffWorkflowsCmd(v.client, v.project.id, ids)
@@ -567,12 +568,12 @@ func (v *issuesView) openHandoff(msg handoffWorkflowsMsg) {
 		return
 	}
 	if msg.err != nil {
-		v.setNote("could not list the workflows: "+errString(msg.err), true)
+		v.status().result("could not list the workflows: "+errString(msg.err), true)
 		return
 	}
 	names := handoffWorkflowNames(msg.workflows)
 	if len(names) == 0 {
-		v.setNote(v.project.name+" has no `role: handoff` workflow — add one to hand issues off", true)
+		v.status().result(v.project.name+" has no `role: handoff` workflow — add one to hand issues off", true)
 		return
 	}
 	v.handoff = newHandoffForm(v.client, msg.projectID, msg.issueIDs, names)
@@ -592,7 +593,7 @@ func (v *issuesView) handoffCreated(msg handoffCreatedMsg) tea.Cmd {
 	n := len(v.handoff.issueIDs)
 	v.handoff, v.picked = nil, nil
 	h := msg.handoff
-	v.setNote("started handoff "+handoffRef(h.ID)+" as task #"+strconv.FormatInt(h.TaskID, 10)+
+	v.status().result("started handoff "+handoffRef(h.ID)+" as task #"+strconv.FormatInt(h.TaskID, 10)+
 		" with "+plural(n, "issue", "issues"), false)
 	return v.loadCmd()
 }

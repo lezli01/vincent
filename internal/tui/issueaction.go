@@ -187,10 +187,12 @@ func (a *issueAction) updateKey(msg tea.KeyPressMsg) (cmd tea.Cmd, done bool) {
 	case iaBusy:
 		return nil, false
 	case iaConfirm:
-		if s := msg.String(); s == "y" || s == "Y" {
+		// The shared rule (#1162): a stray key leaves the question up.
+		yes, no := confirmAnswer(msg.String())
+		if yes {
 			return a.run(), false
 		}
-		return nil, true
+		return nil, no
 	case iaDuplicate:
 		if a.pick == nil {
 			// Still listing; esc gives up.
@@ -356,7 +358,7 @@ func (a *issueAction) lines(width int) (out []string, tail int) {
 			out = append(out, prose(l, styleWarn)...)
 		}
 		keys = len(out)
-		out = append(out, prose("y confirms · any other key cancels", styleDim)...)
+		out = append(out, prose("y confirms · n cancels", styleDim)...)
 	case iaBusy:
 		out = append(out, prose(a.action+"…", styleDim)...)
 	case iaDuplicate:

@@ -279,9 +279,10 @@ type newTask struct {
 	// err is a failure that belongs to no single row.
 	err        string
 	submitting bool
-	// wideText, wideListW, wideFormEnd and wfHits are the last wide
-	// render's layout, which a click is read against (#1065).
-	wideText               []string
+	// shownText is the last render as text, at any width (#1144);
+	// wideListW, wideFormEnd and wfHits are the last wide render's layout.
+	// A click is read against them (#1065).
+	shownText              []string
 	wideListW, wideFormEnd int
 	wfHits                 []ntWorkflowHit
 	touched                bool
@@ -1147,15 +1148,18 @@ func (n *newTask) abandon() (panel, tea.Cmd) {
 	return n, nil
 }
 
+// updateConfirm answers "discard this draft?" by the shared rule (#1162):
+// a key that is neither yes nor no leaves it up.
 func (n *newTask) updateConfirm(msg tea.KeyPressMsg) (panel, tea.Cmd) {
-	switch msg.String() {
-	case "y", "Y":
+	yes, no := confirmAnswer(msg.String())
+	switch {
+	case yes:
 		n.reset()
 		return n, backToTab
-	default:
+	case no:
 		n.mode = ntNavigating
-		return n, nil
 	}
+	return n, nil
 }
 
 // editDescription opens $EDITOR on the draft description, seeded with

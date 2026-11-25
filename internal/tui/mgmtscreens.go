@@ -103,9 +103,6 @@ func (p *projectsView) wideNotices(width int) []string {
 	if p.loadErr != nil {
 		out = append(out, styleBad.Render(ansi.Truncate(" ⚠ refresh failed: "+errString(p.loadErr), width, "…")))
 	}
-	if p.err != "" {
-		out = append(out, styleBad.Render(ansi.Truncate(" ⚠ "+p.err, width, "…")))
-	}
 	if p.confirm != nil {
 		out = append(out, styleWarn.Render(" "+p.confirm.text+" ")+styleKey.Render("y")+styleDim.Render("/")+styleKey.Render("n"))
 	}
@@ -187,7 +184,7 @@ func (p *projectsView) attentionPane(w, h int) []string {
 		body = append(body, mgmtCard([]string{
 			toneBlue.Bold(true).Render(oneLine(t.ProjectName) + " #" + strconv.FormatInt(t.ID, 10)),
 			ansi.Truncate(oneLine(t.Title), max(inner-4, 1), "…"),
-			style.Render(status),
+			style.Render(fitCardStatus(status, max(inner-4, 1))),
 		}, inner, attentionCardH, p.inAttention && i == p.attnCursor)...)
 	}
 	title := styleWarn.Bold(true).Render(attentionBadge + " Needs you, across projects")
@@ -236,12 +233,6 @@ func (v *triggersView) renderWide(width, height int) string {
 	lines = append(lines, v.bannerLines(width)...)
 	if v.loadErr != nil {
 		lines = append(lines, " "+styleBad.Render("could not read the triggers: "+errString(v.loadErr)))
-	}
-	if v.note != "" {
-		lines = append(lines, " "+styleOK.Render(v.note))
-	}
-	if v.err != "" {
-		lines = append(lines, " "+styleBad.Render("⚠ "+v.err))
 	}
 	lines = truncateRows(lines, width)
 	h := max(height-len(lines), 4)
@@ -349,6 +340,30 @@ func (v *pullRequestsView) movePullColumn(delta int) {
 	}
 }
 
+// wheelPullLane is one wheel notch on the wide layout (#1143): it walks the
+// column under the pointer, not rows(), whose order interleaves the two
+// columns and so made a notch hop between them. A notch over the other
+// column crosses to it at the same height first, as movePullColumn does; one
+// outside both (the preview, the filter box) walks the selection's own.
+func (v *pullRequestsView) wheelPullLane(x, delta int) {
+	cols := v.pullLaneRows()
+	c, p := pullPosition(cols, v.cursor)
+	for n := range pullColumnCount {
+		if x >= v.laneEdges[n] && x < v.laneEdges[n+1] {
+			if n != c {
+				if len(cols[n]) == 0 {
+					return
+				}
+				c, p = n, min(p, len(cols[n])-1)
+			}
+			break
+		}
+	}
+	if len(cols[c]) > 0 {
+		v.cursor = cols[c][min(max(p+delta, 0), len(cols[c])-1)]
+	}
+}
+
 // renderWide is the pull requests by whether a task claims them, with the
 // selected one previewed.
 func (v *pullRequestsView) renderWide(width, height int) string {
@@ -362,18 +377,13 @@ func (v *pullRequestsView) renderWide(width, height int) string {
 		}
 	case v.confirm != nil:
 		lines = append(lines, styleWarn.Render(ansi.Truncate(" "+v.confirm.text+" (y/n)", width, "…")))
-	case v.note != "":
-		style := styleDim
-		if v.noteBad {
-			style = styleBad
-		}
-		lines = append(lines, style.Render(ansi.Truncate(" "+v.note, width, "…")))
 	}
 	h := max(height-len(lines), 4)
 	paneW := min(width*30/100, 58)
 	laneW := (width - paneW) / pullColumnCount
 	cols := v.pullLaneRows()
 	v.hits = nil
+	v.laneEdges = [pullColumnCount + 1]int{0, laneW, width - paneW}
 	left := v.pullLane(toneCyan.Bold(true).Render(ic("▶ Linked to a task")), rows, cols[pullColumnLinked], 0, len(lines), laneW, h)
 	right := v.pullLane(styleDim.Render(ic("○ Unclaimed")), rows, cols[pullColumnUnclaimed], laneW, len(lines), width-paneW-laneW, h)
 	return strings.Join(append(lines, joinColumns(joinColumns(left, right), v.pullPreview(paneW, h))...), "\n")

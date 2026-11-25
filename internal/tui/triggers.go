@@ -145,8 +145,9 @@ type triggersView struct {
 	// (decision 27). It is deliberately a field and never a tuiState member.
 	samples map[string]string
 
-	note string
-	err  string
+	// statusPoster is where the screen's results, errors and notes go
+	// (#1164); it replaced the view's own note and err lines.
+	statusPoster
 
 	// onScreen is whether the view is the active one: the tick re-arms only
 	// while it is.
@@ -321,7 +322,7 @@ func (v *triggersView) update(msg tea.Msg) (panel, tea.Cmd) {
 		return v, v.applyWritten(msg)
 	case triggerEditedMsg:
 		if msg.err != nil {
-			v.err = "editor: " + errString(msg.err)
+			v.status().result("editor: "+errString(msg.err), true)
 		}
 		// The daemon's watcher reloads the registry after a save, and
 		// nothing announces it on the stream: re-read now, and once more
@@ -404,14 +405,13 @@ func (v *triggersView) applyLedger(msg triggerLedgerMsg) {
 func (v *triggersView) applyWritten(msg triggerWrittenMsg) tea.Cmd {
 	if msg.err != nil {
 		if isStale(msg.err) {
-			v.err = msg.id + " changed on disk since it was read — re-read it; try again"
+			v.status().result(msg.id+" changed on disk since it was read — re-read it; try again", true)
 		} else {
-			v.err = errString(msg.err)
+			v.status().result(errString(msg.err), true)
 		}
-		v.note = ""
 		return v.loadCmd()
 	}
-	v.err, v.note = "", msg.done
+	v.status().result(msg.done, false)
 	if msg.deleted && v.selectedID == msg.id {
 		v.selectedID = ""
 	}
@@ -458,7 +458,6 @@ func (v *triggersView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	case "space", " ":
 		return v, v.toggle()
 	case opKey(keymap.Refresh):
-		v.err, v.note = "", ""
 		return v, v.loadCmd()
 	case opKey(keymap.Filter):
 		v.filtering = true
@@ -473,10 +472,10 @@ func (v *triggersView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	case "B":
 		return v, func() tea.Msg { return openConfigKeyMsg{path: triggersEnabledKey} }
 	case "esc":
-		// One layer per press (§15): a note or a committed filter clears
-		// first; with nothing left, the takeover closes.
-		if v.err != "" || v.note != "" || v.filter.Value() != "" {
-			v.err, v.note = "", ""
+		// One layer per press (§15): a committed filter clears first; with
+		// nothing left, the takeover closes. A note is gone already — the
+		// root drops it on any key (#1164).
+		if v.filter.Value() != "" {
 			v.filter.SetValue("")
 			v.restoreSelection()
 			return v, nil
@@ -497,7 +496,6 @@ func (v *triggersView) updateLedgerKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	case "tab", "esc":
 		v.focus = trigFocusList
 	case opKey(keymap.Refresh):
-		v.err, v.note = "", ""
 		return v, v.loadCmd()
 	}
 	return v, nil
@@ -511,10 +509,9 @@ func (v *triggersView) openDelivery() tea.Cmd {
 	}
 	d := v.ledger[v.ledgerCursor]
 	if d.TaskID == nil {
-		v.err = "this delivery was " + d.Outcome + " and touched no task"
+		v.status().note("this delivery was "+d.Outcome+" and touched no task", true)
 		return nil
 	}
-	v.err = ""
 	// The trigger's project, as the daemon resolved its source.project: an
 	// open follows it there (task 132.6). An invalid file resolves to none,
 	// and the root then asks the task.
@@ -547,12 +544,13 @@ func (v *triggersView) updateFilter(msg tea.KeyPressMsg) tea.Cmd {
 }
 
 func (v *triggersView) updateConfirm(msg tea.KeyPressMsg) tea.Cmd {
-	switch msg.String() {
-	case "y", "Y":
+	yes, no := confirmAnswer(msg.String())
+	switch {
+	case yes:
 		c := v.confirm
 		v.confirm = nil
 		return c.run()
-	case "n", "N", "esc":
+	case no:
 		v.confirm = nil
 	}
 	// Any other key leaves the question standing: a write that starts agents
@@ -692,7 +690,6 @@ func (v *triggersView) editCmd() tea.Cmd {
 	if !ok || s.File == "" {
 		return nil
 	}
-	v.err, v.note = "", ""
 	return openEditorPath(v.exec, s.File, func(err error) tea.Msg { return triggerEditedMsg{err: err} })
 }
 
@@ -706,10 +703,9 @@ func (v *triggersView) toggle() tea.Cmd {
 		return nil
 	}
 	if !s.Valid {
-		v.err = s.ID + " does not validate, so it cannot be switched — fix it with e first"
+		v.status().note(s.ID+" does not validate, so it cannot be switched — fix it with e first", true)
 		return nil
 	}
-	v.err, v.note = "", ""
 	if s.Enabled {
 		return v.patchEnabledCmd(s, false)
 	}
@@ -746,7 +742,7 @@ func (v *triggersView) enableWarning(s apiclient.TriggerSummary) []string {
 func (v *triggersView) patchEnabledCmd(s apiclient.TriggerSummary, on bool) tea.Cmd {
 	client := v.client
 	if client == nil {
-		v.err = "not connected"
+		v.status().result("not connected", true)
 		return nil
 	}
 	value, done := "false", "disabled "+s.ID
@@ -770,7 +766,6 @@ func (v *triggersView) askDelete() {
 	if !ok {
 		return
 	}
-	v.err, v.note = "", ""
 	client := v.client
 	v.confirm = &triggerConfirm{
 		question: "delete trigger " + s.ID + "?",
@@ -780,7 +775,7 @@ func (v *triggersView) askDelete() {
 		},
 		run: func() tea.Cmd {
 			if client == nil {
-				v.err = "not connected"
+				v.status().result("not connected", true)
 				return nil
 			}
 			return func() tea.Msg {

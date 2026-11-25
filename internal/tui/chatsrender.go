@@ -257,12 +257,5 @@ func (v *chatsView) footerLines(width int) []string {
 		// a long question loses its `(y/n)` (#801 F2).
 		return append([]string{""}, wrapStatus(v.confirm.text, width, styleWarn)...)
 	}
-	if v.note != "" {
-		style := styleDim
-		if v.noteBad {
-			style = styleWarn
-		}
-		return []string{"", " " + style.Render(v.note)}
-	}
 	return nil
 }

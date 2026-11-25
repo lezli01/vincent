@@ -182,3 +182,25 @@ func TestParentOverviewNamesTheLaneItWaitsOn(t *testing.T) {
 		t.Errorf("overview misses %q:\n%s", want, got)
 	}
 }
+
+// #1147: on a narrow card the `(L)` hint stays whole; the done count goes
+// first, then what the lanes need gives way with "…".
+func TestParentCardKeepsTheLaneHintOnANarrowCard(t *testing.T) {
+	b := taskBoardFixture()
+	parent := task(31, stateAwaitingChildren, withLanes(4, 1,
+		map[string]int{stateBlocked: 1, stateAwaitingGate: 2, stateDone: 1}))
+	parent.ProjectID = 1
+	b.tasks = append(b.tasks, parent)
+	for _, w := range []int{120, 100, 80} {
+		got := ansi.Strip(b.renderCards(w, 40))
+		if !strings.Contains(got, "(L)") {
+			t.Errorf("at %d columns the (L) hint is cut:\n%s", w, got)
+		}
+	}
+	for w := 12; w <= 60; w++ {
+		card := ansi.Strip(strings.Join(b.taskCard(parent, false, w), "\n"))
+		if !strings.Contains(card, "(L)") {
+			t.Errorf("a %d-wide card cuts the (L) hint:\n%s", w, card)
+		}
+	}
+}

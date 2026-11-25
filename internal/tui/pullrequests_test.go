@@ -223,11 +223,11 @@ func TestPullRequestsOpenReportsAFailingOpener(t *testing.T) {
 		t.Fatalf("opened %v, want the row's URL", *opened)
 	}
 	v.applyOpened(msg.(openedURLMsg))
-	if !v.noteBad || !strings.Contains(v.note, "could not open") {
-		t.Fatalf("a failed open left note %q (bad=%v), want a visible failure", v.note, v.noteBad)
+	if !v.status().bad || !strings.Contains(v.status().text, "could not open") {
+		t.Fatalf("a failed open left note %q (bad=%v), want a visible failure", v.status().text, v.status().bad)
 	}
-	if !strings.Contains(v.render(120, 24), "could not open") {
-		t.Error("the failure is not on screen")
+	if !strings.Contains(buildFooterStatusLine(v.status()), "could not open") {
+		t.Error("the failure is not on the status line")
 	}
 }
 

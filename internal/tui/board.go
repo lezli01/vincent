@@ -141,6 +141,11 @@ type (
 		// whose forms need the task's steps and belong to the workspace
 		// (review finding 6). Empty for a plain open.
 		then keymap.Op
+		// keepTab is the workspace tab a step to the neighbouring task was
+		// pressed on (#1157), with keep set: the next task opens on it when
+		// its strip has it, and where a fresh open lands otherwise.
+		keepTab taskViewTab
+		keep    bool
 	}
 )
 
@@ -244,12 +249,10 @@ type board struct {
 	// cardPerRow is how many cards a row of the wide archive last held, for the
 	// arrow keys (archivegrid.go).
 	cardPerRow int
-	// delPrompt is the delete confirmation, and delNote is what the sweep
-	// reported. They are the board's own rather than the action bar's,
-	// because delete is not a §6 action (task 092).
-	delPrompt  *rowDeletePrompt
-	delNote    string
-	delNoteBad bool
+	// delPrompt is the delete confirmation: the board's own rather than the
+	// action bar's, because delete is not a §6 action (task 092). What the
+	// sweep reported goes to the status line (#1164).
+	delPrompt *rowDeletePrompt
 
 	// actions drives §15's action keys against the row under the cursor.
 	// The shell shares one instance between board and detail — a pending
@@ -319,6 +322,13 @@ func newBoard() *board {
 		group:       defaultGrouping(),
 		configGroup: defaultGrouping(),
 	}
+	// The table's page keys are the ones the registry names (#1165). Its own
+	// f/b and d/u paged the narrow archive unannounced, where `f` is the fold
+	// key on the wide one; `g` was taken from it the same way (task 009).
+	b.tbl.KeyMap.PageDown.SetKeys("pgdown")
+	b.tbl.KeyMap.PageUp.SetKeys("pgup")
+	b.tbl.KeyMap.HalfPageDown.SetKeys("ctrl+d")
+	b.tbl.KeyMap.HalfPageUp.SetKeys("ctrl+u")
 	b.applyStyles()
 	b.reload = b.rescope
 	return b
@@ -575,6 +585,8 @@ func (b *board) scheduleRefresh() tea.Cmd {
 }
 
 func (b *board) update(msg tea.Msg) (panel, tea.Cmd) {
+	// A key's "not available" note is dropped by the root on the next key
+	// or click (#1164), which is what moves the cursor off its row (#1138).
 	p, cmd := b.route(msg)
 	if b.archived {
 		return p, tea.Batch(cmd, b.previewCmd())
@@ -674,7 +686,7 @@ func (b *board) route(msg tea.Msg) (panel, tea.Cmd) {
 		b.refreshPending = false
 		return b, b.loadCmd()
 	case deleteResultMsg:
-		b.delNote, b.delNoteBad = msg.summary(), msg.bad()
+		b.actions.setStatus(msg.summary(), msg.bad())
 		// Refusals a force delete would take are re-asked by force (task
 		// 153), the way an archive's dirty worktree is re-asked with it.
 		b.delPrompt = msg.forceOffer()
@@ -942,7 +954,6 @@ func (b *board) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 			// everywhere it appears, and on an archived board that is the
 			// window; skip is a §6 action and an archived task offers none.
 			b.cycleWindow()
-			b.delNote = ""
 			return b, b.loadCmd()
 		case ">":
 			if b.nextPage(len(b.tasks)) {
@@ -1007,20 +1018,23 @@ func (b *board) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		// Cycles the order (#1075); the cursor stays on its task, as `g`'s
 		// regrouping leaves it.
 		b.sortOrder = nextSort(boardSorts, b.sortOrder)
-		b.actions.setStatus("sorted by "+valueOr(b.sortOrder, "state"), false)
+		b.actions.setStatus("sorted "+boardSortLabel(b.sortOrder), false)
 		return b, nil
 	case copyPickKey:
 		// The selected task's id, branch, worktree path and pull request
 		// (#1076).
 		if t, ok := b.taskByID(b.selectedIDOrCursor()); ok {
-			return b, openCopyItems(taskCopyItems(t))
+			return b, openCopyItems(taskCopyItems(t, nil))
 		}
 		return b, nil
 	case opKey(keymap.AttentionFilter):
 		// The cursor is not touched, for `g`'s reason: selectedID names the
 		// task under it, and the next render puts the cursor back on it when
-		// it is still listed.
-		b.attentionOnly = !b.attentionOnly
+		// it is still listed. Not on the archive (#1165): an archived task
+		// never needs a human, so the filter could only empty the board.
+		if !b.archived {
+			b.attentionOnly = !b.attentionOnly
+		}
 		return b, nil
 	case "g":
 		// Cycles the grouping for the session (§15, task 009); the config
@@ -1075,7 +1089,7 @@ func (b *board) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		}
 	}
 	if msg.String() == opKey(keymap.Diagnose) {
-		if cmd := diagnoseCmd(b.client, b.target(), b.actions); cmd != nil {
+		if cmd, handled := diagnoseCmd(b.target(), b.actions); handled {
 			return b, cmd
 		}
 	}
@@ -1128,7 +1142,7 @@ func (b *board) workspaceOpKey(key string) (tea.Cmd, bool) {
 			// One task, never the selection: these forms are written for
 			// one task, so the cursor's is what the refusal is about.
 			t.marked = nil
-			b.actions.setStatus(unavailableText(w.name, t), false)
+			b.actions.setNote(unavailableText(w.name, t))
 			return nil, true
 		}
 		tk, _ := b.taskByID(t.id)
@@ -2160,8 +2174,8 @@ func (b *board) agentsSummary() string {
 }
 
 // liveBindings offers the archived board's `<`/`>` only where a page lies
-// that way (#804 AR-11). The live board has none of its own: the home
-// shell's liveBindings is the one consulted there.
+// that way (#804 AR-11). On the live board it drops L where L does nothing;
+// the root consults the home shell's liveBindings, which calls this (#1151).
 func (b *board) liveBindings(rows []binding) []binding {
 	if !b.archived {
 		// L is hinted only where it does something (#1072): a fan-out, or
@@ -2187,7 +2201,6 @@ func (b *board) askDelete() {
 		ids = []int64{id}
 	}
 	b.delPrompt = &rowDeletePrompt{ids: ids}
-	b.delNote = ""
 }
 
 // answerDelete resolves the confirmation. Anything that is not one of the
@@ -2195,21 +2208,23 @@ func (b *board) askDelete() {
 // delete must not be cancelled *or* confirmed by a stray key.
 func (b *board) answerDelete(key string) tea.Cmd {
 	p := b.delPrompt
-	switch key {
-	case "b":
+	// `b` is this question's third answer; yes and no are the shared rule's
+	// (#1162).
+	yes, no := confirmAnswer(key)
+	switch {
+	case key == "b":
 		if p.force {
 			return nil // a force delete never deletes a branch (task 153)
 		}
 		b.delPrompt = nil
-		b.delNote, b.delNoteBad = "deleting…", false
+		b.actions.setStatus("deleting…", false)
 		return dispatchDelete(b.client, p.ids, deleteAsk{archived: b.archived, branch: true})
-	case "y":
+	case yes:
 		b.delPrompt = nil
-		b.delNote, b.delNoteBad = "deleting…", false
+		b.actions.setStatus("deleting…", false)
 		return dispatchDelete(b.client, p.ids, deleteAsk{archived: b.archived, force: p.force})
-	case "n", "esc":
+	case no:
 		b.delPrompt = nil
-		b.delNote, b.delNoteBad = "", false
 	}
 	return nil
 }
@@ -2228,8 +2243,8 @@ func (b *board) statusLines() []string {
 	return b.liveStatusLines()
 }
 
-// archivedStatus is the archived board's own lines: the confirmation while one
-// is up, then the sweep's report. The window and page it is showing are the
+// archivedStatus is the archived board's own line: the confirmation while one
+// is up; the sweep's report is the status line's (#1164). The window and page it is showing are the
 // header's (#804 AR-9), so with neither there is no line. The
 // question and the report are wrapped to the board's width rather than cut:
 // both run past 80 columns, and what a cut loses is the answer keys and the
@@ -2238,11 +2253,6 @@ func (b *board) archivedStatus() []string {
 	switch {
 	case b.delPrompt != nil:
 		return wrapStatus(b.delPrompt.question(), b.width, styleAsk)
-	case b.delNote != "":
-		if b.delNoteBad {
-			return wrapStatus(b.delNote, b.width, styleBad)
-		}
-		return wrapStatus(b.delNote, b.width, lipgloss.NewStyle())
 	default:
 		return nil
 	}
@@ -2376,3 +2386,10 @@ func (b *board) selectedIDOrCursor() int64 {
 	id, _ := b.selected()
 	return id
 }
+
+// setStatusHolder hands the root's status line to the board's action bar
+// (#1164): the archived board is a view of its own, with its own bar.
+func (b *board) setStatusHolder(h *statusHolder) { b.actions.setStatusHolder(h) }
+
+// status is the line the board posts to.
+func (b *board) status() *statusHolder { return b.actions.status() }

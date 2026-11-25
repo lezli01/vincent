@@ -89,7 +89,7 @@ func TestPaletteBoxIsSizedAndAnchoredUnderTheChrome(t *testing.T) {
 	}
 	// A status line moves the box down rather than being covered.
 	m := phaseRoot(t, phaseConnected, 80, 24)
-	m.selNotice = "switched to `api`"
+	m.keysNotice = "switched to `api`" // a banner: the status line under the header
 	m.palette = newPalette(paletteEntries(ctxTasks, taskActions{}, false, true, false, nil, nil))
 	frame := content(m)
 	row, _ := popupTop(t, frame, "commands")
@@ -308,33 +308,42 @@ func TestCopyOnAViewWithoutANoteSaysSoOnTheStatusLine(t *testing.T) {
 	if copied != "https://example.com/a" {
 		t.Fatalf("copied %q", copied)
 	}
-	line, ok := m.statusLine()
-	if !ok || !strings.Contains(ansi.Strip(line), "copied") {
-		t.Fatalf("no copied notice on the status line: %q", ansi.Strip(line))
+	if got := rootFooter(m); !strings.Contains(got, "copied") {
+		t.Fatalf("no copied result on the status line: %q", got)
 	}
+	// A copy is a result (#1164): it stays past the next key.
 	m.Update(specialKey(tea.KeyDown))
-	if line, ok := m.statusLine(); ok {
-		t.Errorf("the notice outlived the next key: %q", ansi.Strip(line))
+	if got := rootFooter(m); !strings.Contains(got, "copied") {
+		t.Errorf("the result did not outlive the next key: %q", got)
 	}
 
-	// A failure is a warning carrying the error.
-	m.Update(clipboardResultMsg{label: "link [1]", err: errors.New("nothing to copy")})
-	line, _ = m.statusLine()
-	if got := ansi.Strip(line); !strings.Contains(got, "⚠") || !strings.Contains(got, "nothing to copy") {
-		t.Errorf("failure notice: %q", got)
+	// A failure is an error carrying its cause, and stays too.
+	m.Update(clipboardResultMsg{label: "link [1]", err: errors.New("no clipboard helper")})
+	if got := rootFooter(m); !strings.Contains(got, "no clipboard helper") || !m.status.bad {
+		t.Errorf("failure: %q (bad=%v)", got, m.status.bad)
+	}
+	// Nothing to copy is a hint: a note the next key takes away.
+	m.Update(clipboardResultMsg{label: "link [1]", err: errNothingToCopy})
+	if got := rootFooter(m); !strings.Contains(got, "nothing to copy") {
+		t.Errorf("hint: %q", got)
+	}
+	m.Update(specialKey(tea.KeyDown))
+	if m.status.text != "" {
+		t.Errorf("the hint outlived the next key: %q", m.status.text)
 	}
 }
 
-func TestViewsWithTheirOwnCopyNoteGetNoRootNotice(t *testing.T) {
-	for _, id := range []viewID{viewTask, viewChat} {
-		m := phaseRoot(t, phaseConnected, 80, 24)
+// #1164: every view's copy is said once, on the one status line.
+func TestEveryViewSaysACopyOnTheOneLine(t *testing.T) {
+	for _, id := range []viewID{viewHome, viewTask, viewChat, viewIssue, viewIssues} {
+		m := phaseRoot(t, phaseConnected, 120, 30)
 		m.active = id
-		if _, ok := m.views[id].(clipboardNoter); !ok {
-			t.Fatalf("view %d does not note a copy itself", id)
-		}
 		m.Update(clipboardResultMsg{label: "markdown"})
-		if line, ok := m.statusLine(); ok {
-			t.Errorf("view %d: a root notice beside the view's own: %q", id, ansi.Strip(line))
+		if got := rootFooter(m); !strings.Contains(got, "markdown copied") {
+			t.Errorf("view %d: footer %q", id, got)
+		}
+		if got := ansi.Strip(content(m)); strings.Count(got, "markdown copied") != 1 {
+			t.Errorf("view %d: the copy is said %d times", id, strings.Count(got, "markdown copied"))
 		}
 	}
 }
@@ -343,18 +352,17 @@ func TestMouseToggleSaysWhatItDid(t *testing.T) {
 	m := phaseRoot(t, phaseConnected, 80, 24)
 	k := opKey(keymap.Mouse)
 	m.Update(key(k))
-	line, _ := m.statusLine()
-	if got := ansi.Strip(line); m.mouseOn || !strings.Contains(got, "mouse off") || !strings.Contains(got, k+" turns it back on") {
-		t.Errorf("after one press: mouse %v, notice %q", m.mouseOn, got)
+	if got := m.status.text; m.mouseOn || !strings.Contains(got, "mouse off") || !strings.Contains(got, k+" turns it back on") {
+		t.Errorf("after one press: mouse %v, status %q", m.mouseOn, got)
 	}
 	m.Update(key(k))
-	line, _ = m.statusLine()
-	if got := ansi.Strip(line); !m.mouseOn || !strings.Contains(got, "mouse on") {
-		t.Errorf("after two presses: mouse %v, notice %q", m.mouseOn, got)
+	if got := m.status.text; !m.mouseOn || !strings.Contains(got, "mouse on") {
+		t.Errorf("after two presses: mouse %v, status %q", m.mouseOn, got)
 	}
+	// What a key did is a result (#1164): the next key leaves it.
 	m.Update(specialKey(tea.KeyDown))
-	if line, ok := m.statusLine(); ok {
-		t.Errorf("the notice outlived the next key: %q", ansi.Strip(line))
+	if !strings.Contains(m.status.text, "mouse on") {
+		t.Errorf("the result did not outlive the next key: %q", m.status.text)
 	}
 }
 

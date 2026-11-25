@@ -273,8 +273,8 @@ func TestIssueStateKeyOffersOnlyAvailableActions(t *testing.T) {
 	v := issueFixture()
 	v.issue.AvailableActions = nil
 	v.update(registryKey(t, "X"))
-	if v.w.act != nil || !strings.Contains(v.note, "no state change") {
-		t.Fatalf("X with no available action: act=%v note=%q", v.w.act, v.note)
+	if v.w.act != nil || !strings.Contains(v.status().text, "no state change") {
+		t.Fatalf("X with no available action: act=%v note=%q", v.w.act, v.status().text)
 	}
 	v.issue.AvailableActions = []string{"reopen"}
 	v.update(registryKey(t, "X"))
@@ -339,5 +339,31 @@ func TestNewIssueTitleTakesTextAtOnce(t *testing.T) {
 	}
 	if got := v.w.form.title.Value(); got != "Crash on start" {
 		t.Fatalf("title = %q, want what was typed", got)
+	}
+}
+
+// #1142: tab and ↓ leave the title field with what was typed and move to
+// the next row, as they do on the rows. shift+tab and ↑ leave it too; the
+// title is the top row a cursor lands on, so they stay there.
+func TestIssueTitleTabAndDownMoveOn(t *testing.T) {
+	for key, want := range map[string]ifRow{"tab": ifBody, "down": ifBody, "shift+tab": ifTitle, "up": ifTitle} {
+		t.Run(key, func(t *testing.T) {
+			v := issuesFixture()
+			v.update(registryKey(t, "n"))
+			for _, r := range "Crash" {
+				v.update(keyPress(string(r)))
+			}
+			v.update(keyPress(key))
+			f := v.w.form
+			if f.editing || f.cursor != want {
+				t.Fatalf("after %s: editing=%v cursor=%s, want %s and not editing", key, f.editing, f.cursor.label(), want.label())
+			}
+			if got := f.title.Value(); got != "Crash" {
+				t.Fatalf("title = %q, want what was typed", got)
+			}
+			if f.title.Focused() {
+				t.Fatal("the title kept its focus")
+			}
+		})
 	}
 }

@@ -606,13 +606,21 @@ func openAttentionChat(t attentionTarget, back viewID) tea.Cmd {
 
 // liveBindings drops the registry rows whose keys are inert in the shell's
 // current state, so the footer never offers a press that does nothing. The
-// board's fold keys are the only ones: with `group_by: []` the table has no
+// board's fold keys are the shell's own: with `group_by: []` the table has no
 // groups at all (task 054 decision 5).
 //
 // The timeline's fold rows carry the same marker but not the same condition —
 // a loop's iterations and a `fan_out`'s rounds are tiers whatever the board is
 // grouped by — so the drop is scoped to the surface the decision was about.
+//
+// The board's own filter runs first whenever the board has the keys (#1151):
+// the root consults only this method on the home screen, so a filter left on
+// the board alone — L hinted only where it does something (#1072) — never
+// reached the footer or the palette.
 func (s *shell) liveBindings(rows []binding) []binding {
+	if s.boardOnly || s.focus == panelTasks {
+		rows = s.board.liveBindings(rows)
+	}
 	if len(s.board.group) > 0 {
 		return rows
 	}
@@ -811,7 +819,18 @@ func (s *shell) tasksTitle(budget int) string {
 			title += sep + skippedLabel
 		}
 	}
-	return title + suffix
+	title += suffix
+	// The order `z` chose is named last and dropped whole when the budget
+	// has no room for it (#1155): it explains the order rows are in, but a
+	// filter or selection hiding or holding rows matters more, and a label
+	// cut mid-word says nothing.
+	if o := s.board.sortOrder; o != "" {
+		sorted := " — " + boardSortLabel(o)
+		if budget < 0 || ansi.StringWidth(title+sorted) <= budget {
+			title += sorted
+		}
+	}
+	return title
 }
 
 // tasksTitleSuffix is the indicators the Tasks title carries after its name
@@ -1044,3 +1063,11 @@ func overlay(bg, fg string, x, y int) string {
 	}
 	return strings.Join(bgLines, "\n")
 }
+
+// setStatusHolder hands the root's status line to the one action bar both
+// sub-models drive (#1164), so the task workspace, which shares the bar,
+// posts there too.
+func (s *shell) setStatusHolder(h *statusHolder) { s.bar.setStatusHolder(h) }
+
+// status is the line the bar posts to.
+func (s *shell) status() *statusHolder { return s.bar.status() }

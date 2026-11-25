@@ -99,21 +99,22 @@ func (f *configForm) value() string {
 // update routes a keypress. It returns a command when the form asks the
 // daemon for something, and reports whether the form is done with itself.
 func (f *configForm) update(msg tea.KeyPressMsg, client *apiclient.Client) (cmd tea.Cmd, done bool) {
-	if msg.String() == "esc" {
-		if f.confirming {
+	if msg.String() == "esc" && !f.confirming {
+		return nil, true
+	}
+	if f.confirming {
+		// The shared rule (#1162): y applies, n or esc goes back, and any
+		// other key leaves the question up.
+		yes, no := confirmAnswer(msg.String())
+		switch {
+		case yes:
+			f.confirming = false
+			return f.save(client), false
+		case no:
 			// Back to the field, not out of the form: someone who reads the
 			// confirmation and changes their mind about the *value* should
 			// not have to reopen the editor.
 			f.confirming = false
-			return nil, false
-		}
-		return nil, true
-	}
-	if f.confirming {
-		switch msg.String() {
-		case "y", "Y":
-			f.confirming = false
-			return f.save(client), false
 		}
 		return nil, false
 	}

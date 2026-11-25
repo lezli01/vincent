@@ -47,8 +47,8 @@ func TestPullRequestsEnterOnUnclaimedAndWidePicker(t *testing.T) {
 	v := pullRequestsFixture(testPull(12, "unclaimed"))
 	v.loaded = true
 	v.updateKey(tea.KeyPressMsg{Code: tea.KeyEnter})
-	if !strings.Contains(v.note, "creates one from it") || !strings.Contains(v.note, "l links") {
-		t.Fatalf("enter on an unclaimed pull request said %q", v.note)
+	if !strings.Contains(v.status().text, "creates one from it") || !strings.Contains(v.status().text, "l links") {
+		t.Fatalf("enter on an unclaimed pull request said %q", v.status().text)
 	}
 	v.termW = 200
 	if !v.wide() {
@@ -63,5 +63,62 @@ func TestPullRequestsEnterOnUnclaimedAndWidePicker(t *testing.T) {
 	}
 	if got := ansi.Strip(v.render(200, 40)); !strings.Contains(got, "enter link") {
 		t.Errorf("the wide layout does not draw the picker:\n%s", got)
+	}
+}
+
+// #1143: in the wide layout the wheel walks the column under the pointer.
+// Rows interleave Linked and Unclaimed, so a notch that stepped through
+// rows() hopped between the columns.
+func TestPullRequestsWideWheelFollowsPointerColumn(t *testing.T) {
+	v := pullRequestsFixture(
+		testPull(11, "linked one", claimedBy(7, "auto")),
+		testPull(12, "unclaimed one"),
+		testPull(13, "linked two", claimedBy(8, "human")),
+		testPull(14, "unclaimed two"),
+	)
+	m := connectedRoot(t)
+	m.views[viewPullRequests] = v
+	m.switchNow(viewPullRequests)
+	m.Update(tea.WindowSizeMsg{Width: 200, Height: 40})
+	if !v.wide() {
+		t.Fatal("the fixture is not wide at 200 columns")
+	}
+	at := func(title string) (int, int) {
+		screen := strings.Split(ansi.Strip(m.View().Content), "\n")
+		for i, line := range screen {
+			if n := strings.Index(line, title); n >= 0 {
+				return ansi.StringWidth(line[:n]), i
+			}
+		}
+		t.Fatalf("%q is not on screen:\n%s", title, strings.Join(screen, "\n"))
+		return 0, 0
+	}
+	lx, ly := at("linked one")
+	ux, uy := at("unclaimed one")
+	down := func(x, y int) { m.Update(tea.MouseWheelMsg{X: x, Y: y, Button: tea.MouseWheelDown}) }
+	up := func(x, y int) { m.Update(tea.MouseWheelMsg{X: x, Y: y, Button: tea.MouseWheelUp}) }
+
+	if got := v.currentKey(); got != "octo/api#11" {
+		t.Fatalf("the screen opened on %s", got)
+	}
+	down(lx, ly)
+	if got := v.currentKey(); got != "octo/api#13" {
+		t.Fatalf("a notch down over Linked selected %s, want #13", got)
+	}
+	up(lx, ly)
+	if got := v.currentKey(); got != "octo/api#11" {
+		t.Fatalf("a notch up over Linked selected %s, want #11", got)
+	}
+	down(ux, uy)
+	if got := v.currentKey(); got != "octo/api#14" {
+		t.Fatalf("a notch down over Unclaimed selected %s, want #14", got)
+	}
+	down(ux, uy)
+	if got := v.currentKey(); got != "octo/api#14" {
+		t.Fatalf("a notch past Unclaimed's end selected %s, want #14", got)
+	}
+	up(ux, uy)
+	if got := v.currentKey(); got != "octo/api#12" {
+		t.Fatalf("a notch up over Unclaimed selected %s, want #12", got)
 	}
 }

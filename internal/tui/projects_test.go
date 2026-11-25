@@ -139,8 +139,8 @@ func TestProjectsDeleteRePromptsOnlyWhenForceIsTheRemedy(t *testing.T) {
 	if !p.confirm.force {
 		t.Error("second confirmation does not carry force")
 	}
-	if p.err != "" {
-		t.Errorf("err = %q, want the 409 asked about rather than reported", p.err)
+	if p.status().text != "" {
+		t.Errorf("err = %q, want the 409 asked about rather than reported", p.status().text)
 	}
 
 	p.confirm = nil
@@ -152,8 +152,8 @@ func TestProjectsDeleteRePromptsOnlyWhenForceIsTheRemedy(t *testing.T) {
 	if p.confirm != nil {
 		t.Errorf("confirm = %+v, want no prompt for a 409 force cannot fix", p.confirm)
 	}
-	if !strings.Contains(p.err, "is running") {
-		t.Errorf("err = %q, want the daemon's refusal reported", p.err)
+	if !strings.Contains(p.status().text, "is running") {
+		t.Errorf("err = %q, want the daemon's refusal reported", p.status().text)
 	}
 }
 
@@ -169,7 +169,7 @@ func TestProjectsDeleteDoesNotReAskAfterAForcedConflict(t *testing.T) {
 	if p.confirm != nil {
 		t.Errorf("confirm = %+v, want none after a forced request already failed", p.confirm)
 	}
-	if p.err == "" {
+	if p.status().text == "" {
 		t.Error("err is empty; the failure has to be reported somewhere")
 	}
 }

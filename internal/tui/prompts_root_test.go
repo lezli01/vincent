@@ -225,17 +225,14 @@ func TestChatDeleteResultReachesTheChatsBoard(t *testing.T) {
 			tasks.marks = markSet{1}
 			m.views[viewArchived] = tasks
 
-			chats.note = "deleting…"
+			chats.status().text = "deleting…"
 			m.Update(tc.msg)
 
-			if chats.note == "deleting…" {
+			if chats.status().text == "deleting…" {
 				t.Error("the chats note still reads deleting… after the result landed")
 			}
 			if !tasks.marks.has(1) {
 				t.Error("a chat delete dropped task 1 from the archived tasks board's selection")
-			}
-			if tasks.delNote != "" {
-				t.Errorf("a chat delete reported on the archived tasks board: %q", tasks.delNote)
 			}
 		})
 	}
@@ -265,10 +262,18 @@ func TestArchivedTasksPromptAndReportFitEightyColumns(t *testing.T) {
 		refused: []bulkFailure{{id: 2, err: errors.New("a lane is holding on")}},
 		failed:  []bulkFailure{{id: 1, err: errors.New("connection refused")}},
 	})
+	// The report is the status line's (#1164), and too long for the footer
+	// row, so it takes the row above it (#1207): on screen at 80 columns,
+	// start to failed: clause.
 	out = ansi.Strip(content(m))
-	for _, want := range []string{"failed:", "connection refused"} {
+	for _, want := range []string{"delete · 1 of 3", "failed:"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the archived delete report at 80 columns does not show %q:\n%s", want, out)
+		}
+	}
+	for _, want := range []string{"failed:", "connection refused"} {
+		if !strings.Contains(m.status.text, want) {
+			t.Errorf("the archived delete report does not say %q: %q", want, m.status.text)
 		}
 	}
 }
@@ -297,8 +302,8 @@ func TestChatViewKeepsTheDraftOnARefusedSend(t *testing.T) {
 			if got := v.composer.Value(); got != draft {
 				t.Fatalf("after a %s refusal the composer holds %q, want %q", tc.name, got, draft)
 			}
-			if !v.noteBad || v.note == "" {
-				t.Fatalf("the refusal rendered as %q (bad=%v)", v.note, v.noteBad)
+			if !v.status().bad || v.status().text == "" {
+				t.Fatalf("the refusal rendered as %q (bad=%v)", v.status().text, v.status().bad)
 			}
 		})
 	}
@@ -323,8 +328,8 @@ func TestChatViewQueuesOnALiveChatAndRefusesATerminalOne(t *testing.T) {
 			if got := v.composer.Value(); got != "" {
 				t.Fatalf("a queued send left %q in the composer", got)
 			}
-			if !strings.Contains(v.note, "queued") || v.noteBad {
-				t.Fatalf("a queued send noted %q (bad=%v)", v.note, v.noteBad)
+			if !strings.Contains(v.status().text, "queued") || v.status().bad {
+				t.Fatalf("a queued send noted %q (bad=%v)", v.status().text, v.status().bad)
 			}
 		})
 	}
@@ -340,7 +345,7 @@ func TestChatViewQueuesOnALiveChatAndRefusesATerminalOne(t *testing.T) {
 			if got := v.composer.Value(); got != "hello" {
 				t.Fatalf("enter on a %s chat changed the draft to %q", state, got)
 			}
-			if v.note == "" {
+			if v.status().text == "" {
 				t.Fatalf("enter on a %s chat set no note", state)
 			}
 		})
@@ -399,8 +404,8 @@ func TestChatViewIgnoresASendResultForAChatItLeft(t *testing.T) {
 			if cmd := v.applySent(chatSentMsg{chatID: 1, err: tc.err}); cmd != nil {
 				t.Error("chat 1's send result reloaded chat 2")
 			}
-			if v.note != "" {
-				t.Errorf("chat 1's send result set chat 2's note: %q", v.note)
+			if v.status().text != "" {
+				t.Errorf("chat 1's send result set chat 2's note: %q", v.status().text)
 			}
 			if got := v.composer.Value(); got != "for chat two" {
 				t.Errorf("chat 1's send result changed chat 2's draft to %q", got)

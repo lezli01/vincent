@@ -580,9 +580,6 @@ func (p *projectsView) statusLines() []string {
 		}
 		out = append(out, styleBad.Render(note))
 	}
-	if p.err != "" {
-		out = append(out, styleBad.Render(" ⚠ "+p.err))
-	}
 	if p.confirm != nil {
 		out = append(out, styleWarn.Render(" "+p.confirm.text+" ")+
 			styleKey.Render("y")+styleDim.Render("/")+styleKey.Render("n"))

@@ -8821,7 +8821,7 @@ One Go binary, `vincent`:
 | `vincent daemon backup <path.tar.gz> / restore <path.tar.gz>` | *Added 2026-08-25 (task 030).* One `.tar.gz` of the database (`VACUUM INTO`, §14), `transcripts/`, `config.yaml` and `workflows/`, plus a manifest. `backup` is a thin API client and needs a **running** daemon; `restore` runs client-side and needs a **stopped** one, and refuses a newer schema or an occupied destination without `--force`. *Amended 2026-09-17 (task 115):* the daemon can also take the same archive **on a schedule**, into `backup.dir`, keeping the newest `backup.keep` of its own archives (§12.3). There is no new command: `restore` takes a scheduled archive exactly as it takes a manual one |
 | `vincent daemon pause [--reason TEXT] [--wait] / continue` | *Added 2026-11-17 (task 149).* The global pause (§11): `pause` holds admission and parks every running task at its next step boundary; `--wait` returns once none is still finishing a step (exit 1 after `--timeout`, default 30m, the pause staying in effect); `continue` lifts it and resumes exactly the tasks it parked. Thin API clients that need a **running** daemon. `vincent daemon status` adds one line while a pause is in effect |
 | `vincent task import <archive.tar.gz> <task-id> [--project <id>]` | *Added 2026-09-17 (task 117, issue #411).* Copies one task that was `archived` in a `daemon backup` archive — its row, its step runs and its `transcripts/{id}/` — back into this installation, with its id, `archived`. The undo for `vincent task delete`. A thin API client of `POST /v1/tasks/import` (§13.2) that needs a **running** daemon, exits 2 without one, and resolves the archive path before sending it |
-| `vincent service install / uninstall / status` | Registers OS-native autostart, always as the invoking user: launchd agent, systemd user unit, Windows Scheduled Task |
+| `vincent service install / uninstall / status` | Registers OS-native autostart, always as the invoking user: launchd agent, systemd user unit, Windows Scheduled Task. *Amended 2026-11-25 (issue #1160).* `vincent service restart` has the service manager stop the daemon and start it again, so the new daemon is the service's own process: `launchctl kickstart -k gui/<uid>/<label>`, `systemctl --user restart vincent.service`, and on Windows a graceful stop through the API (`/End` alone is a hard terminate, and the task's `IgnoreNew` drops a `/Run` that lands while the old process lives), then `schtasks /End` and `/Run`. A stop followed by a start cannot do this: every definition restarts on failure only, so the stop's clean exit leaves the service stopped and the start runs a daemon outside it. Per-user like the rest of the family, so it needs no elevation on any platform. Exit 1, saying so, when no service is installed — unlike `uninstall`, there is no desired state it already meets |
 | `vincent workflow ls / validate [file] / render <file> / init <name>` | Registry listing / YAML validation / template dry run / writing a new registry file. *Amended 2026-08-26 (task 034):* `init` writes the §5.2 scope directory a `--project` flag selects — global by default, resolved from §12.2 with **no daemon**; `--project N` needs one, purely to resolve the id to a repository root. `--from <example>` writes an embedded `examples/*.yaml` with its top-level `name:` rewritten. It refuses an existing path (`O_EXCL`) or a name another file in the same scope already declares, and only warns when the name shadows a lower scope. *Added 2026-08-28 (task 044):* `render` executes every template the file declares — `prompt`, `run`, `check`, `instructions`, `if` and `for_each` — against a synthetic §8.4 preview context and prints what each step would send, with the §8.6 triple each agent step resolves to. Where `validate` parses a template, this **executes** it, which is the only way `missingkey=error` catches a typo'd field. It is offline for the same reason `validate` is; `--task`/`--project` reach the daemon for a real task's facts and for registry lookups. Exit 0 clean · 1 a render error · 2 no daemon answered a `--task`/`--project` |
 | `vincent task add / ls / show <id> / cancel <id> / follow-up <id>` | Thin API clients for scripting. *Amended 2026-08-25 (task 027):* `follow-up` takes exactly one of `--prompt`, `--run` and `--workflow`, plus optional `--agent`/`--model`/`--effort` (§13.2). *Amended 2026-08-28 (task 045):* `add` fills the §8.1.2 field map from repeatable `--field name=value` and/or `--fields-file <path\|->`. *Amended 2026-09-14 (task 096):* `follow-up` also takes `--paused`, §13.2's `paused: true`: the follow-up is recorded and the task held in `paused` until `resume`. *Amended 2026-09-15 (task 101):* `show` prints a `hold` row for a queued task carrying a §11 hold — `<queued_reason> until <admit_not_before>` in local RFC3339, or the reason alone when there is no resume time — and `show <id> --step RUN` prints one step_run's §5.4 recorded inputs as ASCII text in the Step Details tab's four sections (input, resolution, control flow, outcome), looked up in the detail's own `steps[]`; with `--json` it prints that element unchanged. An id that is not one of the task's runs exits 1. No wire change |
 | `vincent task transcript <id>` | *Added 2026-08-28 (task 047).* Prints one attempt's transcript through `GET /v1/tasks/{id}/steps/{run_id}/transcript` (§13.2). `--step` takes a **step_run id**; omitted, it selects the running attempt, else the newest by run id. Default output is the normalized records rendered as text, `--json` is those records as NDJSON, `--raw` is the agent's own dialect byte for byte. `-f` opens on a tail and resumes from `X-Next-Offset`, ending when that attempt stops running |
@@ -10423,7 +10423,8 @@ for pause and resume, `approve`, `reject`, `retry`, `edit_retry`, `repair`,
 it is answered while the composer has the keyboard, so the printable-key
 refusal below covers it (§15). *Amended 2026-11-19 (tasks 158 and 159, issues
 #1022 and #1023; review F3):* `chat_search`, `S` by default on the chats
-board, and `export_chat`, `alt+e` by default on the chat workspace and both
+board, and `export_chat`, `alt+e` by default (*`alt+w` since 2026-11-25,
+issue #1157*) on the chat workspace and both
 chats boards, are two more terms; *and 2026-11-20 (task 169 decision 3):*
 `chat_diff`, `alt+d` by default on the chat surface and `Typing` like the
 others pressed from the composer, is one more; and `pause_all`, `Z` by default (*added
@@ -10439,7 +10440,10 @@ a fixed key (`group`, `fold`, `esc`, `tab`, `resume`, …), by name and with the
 reason; a string no key press produces, including `shift+` on a character; a
 key that already means anything else — an operation or a fixed key, on any
 surface — unless a recorded exception on that exact default key covers both
-meanings, which does not travel with an operation that moves; and a printable
+meanings, which does not travel with an operation that moves (*amended
+2026-11-25, issue #1208:* except the next/previous pairs, `next_chat` /
+`next_item` and `prev_chat` / `prev_item`, which may each share whatever key
+they are bound to, §15); and a printable
 key for `palette_alt`, `help_alt` or any operation answered where a text field
 owns the printable keys — *amended 2026-09-21 (task 125.9, issue #542):* unless
 that operation is answered there from a **list drawn over** the form's rows
@@ -12611,6 +12615,14 @@ GET    /v1/tasks?project_id=&state=&archived=&archived_before=&archived_since=&l
                                         attempt (§17) — so a board renders without an N+1.
                                         These are list-only; GET /v1/tasks/{id} serves the
                                         same numbers per attempt in steps[].
+                                        *Amended 2026-11-25 (issue #1155).* List rows also
+                                        carry `agents`: every distinct adapter the task's
+                                        attempts ran on, in the order each first ran, and
+                                        omitted when none has. A task's agent is resolved per
+                                        step (§8.6), so no task column says it; one batched
+                                        query for the page reads it off step_runs, the way
+                                        status_message is, and a board's filter matches it
+                                        and agent_override without fetching step rows.
                                         ?archived= defaults to false: archived tasks are
                                         excluded unless asked for (?archived=true → only
                                         archived, ?archived=all → both). state=archived
@@ -15557,7 +15569,11 @@ stream for the live tail.
    `(! N elsewhere)` badge (*The selected project*, below): root tasks in
    other projects in a needs-a-human state, from the same global listing.
    The footer's `!` hint counts everything `!` will visit — this project plus
-   every other — and carries no label, `! next attention (N)`. The slot head
+   every other — and carries no label, `! next attention (N)`.
+   *Amended 2026-11-24 (issue #1139):* the hint is offered only where `!`
+   jumps — not while a text field has the keyboard (#1060), and not while a
+   root popup (the palette, a picker, a question) is open, since each owns
+   every key but `ctrl+c` and `!` is typed into the palette's query. The slot head
    is the selected project's: `2 running · cap 3 · daemon 5/8`, its
    `slots_used`, its own `max_parallel_tasks` and the daemon's `slots.used`
    over the global cap, read from a plain `GET /v1/projects` the board makes
@@ -15820,6 +15836,10 @@ stream for the live tail.
 	   only place the column is written. The form states before the human
 	   confirms that only committed work is pushed. This section's other two
 	   states are unchanged, and the popup still has no tab strip.*
+	   *Amended 2026-11-24 (issue #1133): `ctrl+s` means one thing in the
+	   pull-request form — push and create. From inside the title or body
+	   field it keeps the text first and then sends, as the new-task, project
+	   and issue forms' fields do; `esc` alone leaves a field without sending.*
 	   **Output** renders the selected attempt's live or historical transcript and
 	   lets the reader move that selection with `←`/`→` (or `h`/`l`) without
 	   returning to the timeline. `enter` on a Steps & Attempts row opens Output
@@ -15918,7 +15938,9 @@ stream for the live tail.
    Actions run. Each confirms first, in one of three shapes: **close, reopen and
    re-run** ask inline with a y/n that names the consequence (the re-run prompt
    lists every failed row of the run, since the route takes one run id), and
-   any key but `y` declines; **merge** opens a popup listing merge, squash and
+   any key but `y` declines *(amended 2026-11-24, issue #1162: `n` or `esc`
+   declines and any other key leaves the question up, by the confirmation
+   rule under the footer)*; **merge** opens a popup listing merge, squash and
    rebase with **no method preselected** — `y` does nothing until `←`/`→` picks
    one, `n`/`esc` close it, and `enter` never confirms; **comment** opens a
    popup that is its own confirmation (task 069 decision 2's reasoning) —
@@ -16069,6 +16091,11 @@ stream for the live tail.
    **start** row after the pickers, toggled with `enter`, sends §13.2's
    `paused: true`; with it set, `ctrl+s` records the follow-up and holds the
    task in `paused` rather than starting the run.
+   *Amended 2026-11-24 (issue #1172): `ctrl+s` means one thing in the
+   repair and follow-up popups — start the run. From inside the prompt or
+   command field it keeps the text first and then starts it, as the
+   pull-request form (#1133) and the new-task, project and issue forms'
+   fields do; `esc` alone leaves a field without starting anything.*
 
    The detail timeline must render a follow-up round as **its own tier**, headed
    as a round rather than numbered as a step: its rows sit at
@@ -16239,6 +16266,16 @@ stream for the live tail.
    whole. *Superseded 2026-10-21 (issue #799): the card now collapses only
    when its headline and actions will not fit, and spends rows in priority
    order — see "Wrap or truncate, never clip" in §15.*
+
+   *Amended 2026-11-24 (issue #1146).* The card's first line ends at the
+   reason's §18 title; the raw code is no longer printed beside it (Task
+   Details keeps the identifiers for the CLI). Its actions are full rows,
+   each with what it does, only while those rows leave the meaning and three
+   lines of evidence on screen; on a shorter body "What you can do" is the
+   actions' keys alone (`r retry · E edit retry · s skip · …`), wrapped
+   between actions, so an 80x24 Overview shows evidence without scrolling.
+   The card collapses to its first line only when even the keys will not
+   fit.
 
    *Amended 2026-09-29 (task 129.14, issue #602).* **A finished task's
    ended frame is an outcome card.** It renders on `done` and `archived` in
@@ -16610,6 +16647,16 @@ stream for the live tail.
      field's newline-flattening is deliberate everywhere else it is used and
      is unchanged.
 
+   *Amended 2026-11-24 (issue #1136).* **`u` takes back the last add or
+   move, not only the last value.** An add is undone by removing the item it
+   inserted (with whatever rode along inside it), a move by moving the item
+   back; each inverse is computed when the write is sent and is itself one
+   PATCH. A remove stays final: the form holds the item only as parsed
+   values, so re-inserting it would drop its comments and any key the form
+   does not model. Its confirmation says it cannot be undone, and it leaves
+   nothing for `u`. The key hint offers `u undo` only while there is a write
+   `u` will take back.
+
    Unamended: `e` still means `$EDITOR`; the forms are still rendered from the
    served descriptor and never from a second copy of §8.2 — the agent, model
    and effort pickers read `GET /v1/agents`, which is where those sets live
@@ -16724,7 +16771,9 @@ stream for the live tail.
    above is about a TUI that leaves no daemon behind, and a restart leaves one.
    The question names its consequence (running steps are interrupted and
    re-run when the daemon is back, §12.4) and puts its key first: `y`
-   restarts, and any other key keeps the daemon. It is drawn over an empty,
+   restarts, and any other key keeps the daemon. *Amended 2026-11-24 (issue
+   #1162):* `n` or `esc` keeps the daemon and any other key leaves the
+   question up, by the confirmation rule under the footer. It is drawn over an empty,
    unread or unreadable log too, and so is a failed stop, which leaves the
    connection alone. The replacement is the TUI's detached auto-start, not the
    service manager's: the stop exits 0, which none of `vincent service
@@ -16732,7 +16781,19 @@ stream for the live tail.
    a daemon that was running under a service keeps running outside it, with
    the TUI's environment, until the service is next started. That is a
    recorded limitation rather than a hidden one; restart a service-managed
-   daemon through its service manager. The log pane hides the successful
+   daemon through its service manager. *Amended 2026-11-25 (issue #1160):*
+   the limitation is resolved. When `r` is pressed the TUI asks the service
+   manager whether a vincent service is installed and running (§12.1's
+   `service status`), and the question says which restart it will do —
+   "restart the daemon through its service (<name>)?" or the plain one. On
+   the service path `y` runs §12.1's `vincent service restart` and then waits,
+   bounded, for a daemon with a new PID to answer `/v1/health` before
+   reconnecting; it never auto-starts one, which would race the service's own,
+   and a daemon that does not come back is reported on this line with the
+   connection left to reconnect by itself. Otherwise the restart is the one
+   above. A restart under way ignores a second one, on both paths, and says
+   so: `r` until the TUI has reconnected to the new daemon, or the restart has
+   failed. The log pane hides the successful
    `http request` lines, mostly the TUI's own polling, counts them and shows
    them on `h`; a failed request stays. `/` narrows the log to the lines that
    contain what is typed.
@@ -16976,6 +17037,32 @@ stream for the live tail.
    and rail draw `●` on an `unread` chat. macOS terminals send `alt+` only
    with Option set to act as Meta.
 
+   *Amended 2026-11-24 (issue #1140).* **The Option note.** When a key
+   arrives as the character the macOS US layout's Option types for a chord
+   the surface in front of the user binds — letters, digits, shifted
+   letters, and what a dead key releases on the next key — the TUI says once
+   per run which terminal setting to change, on any surface (a chat's note
+   line, else the status line), not only in the composer (#1061). In a text
+   field the character may be meant, so it is said only when the next key is
+   `backspace` or another such character. A dead key's own press sends
+   nothing and is not detectable.
+
+   *Amended 2026-11-25 (issue #1157).* **No default on a dead key.** Option+e,
+   i and n are dead keys on a stock macOS terminal, so the defaults bound to
+   them could neither work nor be noticed on their first press. They move:
+   `next_chat` / `prev_chat` and `next_item` / `prev_item` (#1077) to `alt+.`
+   / `alt+,` (`>` and `<` without the shift, still one key shared by a
+   recorded exception), `conversation` (#1078) to `alt+o`, and `export_chat`
+   to `alt+w`. Their Option characters — `≥`, `≤`, `ø`, `∑` — arrive on the
+   first press and raise the note above. A user's `tui.keys` that names an
+   operation keeps its key, the old ones included, since overrides name
+   operations; the dead-key detection stays for such a binding. Stepping to
+   the neighbouring task opens it on the workspace tab the step was pressed
+   on when its strip has that tab, and where a fresh open lands otherwise;
+   stepping between issues keeps the issue's tab. The conversation's
+   one-line fields — the search line and the shell prompt — scroll
+   horizontally with the cursor, with a `…` at a cut edge.
+
    *Amended 2026-11-20 (task 160, issue #1014).* **Conversation focus.** The
    composer holds the keyboard by default, no longer always: `ctrl+f` hands it
    to the conversation with a search line open, and `capturesInput` is false
@@ -17066,6 +17153,20 @@ stream for the live tail.
    under it in the open chat. It is read with the chat (and with the chats
    board's preview), when a turn ends and after a reject — never per event,
    the route running git per call.
+
+   *Amended 2026-11-25 (issue #1163).* **The chat's diff answers the task
+   Diff tab's keys.** `ctrl+r` reads the diff again in both — the chat
+   pane's `r` above moved to it, and `r` now does nothing there; the
+   conversation's `ctrl+r` (the detail level) is untouched, since the pane
+   holds the keyboard while it is up. `/` searches the chat's diff with the
+   task Diff's own search: every file opens, `enter` lands on the first
+   match, `n`/`N` walk the matches and `esc` ends the search before it
+   leaves the pane; a reload or a scope switch keeps the search, leaving the
+   pane ends it. `ctrl+y` copies the selected hunk or the file's whole diff,
+   as plain text, as the task Diff does. A pending y/n owns `y`/`Y`/`n`/`N`/
+   `esc` over a committed search (the #1162 rule): the chat pane's reject
+   question and the task workspace's §6 confirmations are answered before a
+   search on Output or Diff sees the key.
 
    *Amended 2026-09-19 (issue #500).* `ctrl+j`, `shift+enter` and `alt+enter`
    insert a newline in the draft; `enter` still sends it. This makes the
@@ -17613,7 +17714,11 @@ stream for the live tail.
    above and below, whose text stays as the record).* **The lanes are columns
    of cards**, left to right in the same order. A column's top edge carries
    its glyph, title, count and `! n` badge; an empty one reads "no issues", or
-   "none match" under a filter. A card shows the id, kind and age, two lines
+   "none match" under a filter that keeps an issue in another column. *(Amended
+   2026-11-25, #1161: one message per board.)* A filter that keeps no issue is
+   said once above the board, as `none match "‹filter›" — esc clears the
+   filter.`, with the columns left blank; a project with no issues says "No
+   issues yet" whether or not a filter is typed. A card shows the id, kind and age, two lines
    of title, the labels, the source and one status line; the selected card has
    thick edges, so selection survives `NO_COLOR`. `↑`/`↓`, `pgup`/`pgdown` and
    `home`/`end` stay inside a column, and `←`/`→` cross to the nearest column
@@ -17702,6 +17807,15 @@ stream for the live tail.
    on its default, and `t` keeps the line of `operation=key` pairs for
    pasting a whole keymap. It is a screen inside Settings, not a fifteenth view.
 
+   *Amended 2026-11-25 (issue #1158).* **The Key bindings screen is in the
+   palette, and a reset can be undone.** The palette's screens group lists a
+   key-less **key bindings** row beside Settings, found by `key`, `keys`,
+   `bind`, `keybindings` and `shortcuts`, that opens Settings on the screen.
+   A rebinding or a `backspace` reset saved there fills Settings' one undo
+   slot with that operation's previous key: `u`, on the screen or in the list
+   of settings, puts that one key back — checked as any binding is, not the
+   whole map restored — and names it; the undo is not itself undoable.
+
    *Amended 2026-11-18 (task 150.6; applies to views 1 and 2).* **The live task
    board is four columns of cards**: Needs you (`taskstate.NeedsHuman`), Running
    (`running`, `awaiting_children`), Queued (`queued`, `paused`) and Finished.
@@ -17732,6 +17846,13 @@ stream for the live tail.
    `current`. `tab` crosses between archived tasks and
    archived chats at any width, and `enter` opens an archived task. Every frame in
    the TUI has rounded corners.
+
+   *Amended 2026-11-24 (issue #1143).* On the wide pull requests layout **the
+   wheel walks the column under the pointer**: a notch over the selection's
+   column moves it one card, and one over the other column crosses to it at the
+   same height and moves from there. A notch outside both columns walks the
+   selection's own. It used to step through the listing's order, which
+   interleaves the two columns.
 
    *Amended 2026-11-18 (task 150.8).* `tui.icons` (§12.3) picks the glyphs of the
    app header, boards, cards and side panes: `unicode`, the default, or `nerd`. It
@@ -18125,7 +18246,7 @@ stream for the live tail.
    is a listed task. The tab is client-only and unpaged.
 
 14. **Chat search.** *Added 2026-11-19 (task 158, issue #1022).* A takeover
-    reached from the command palette's "Search all chats", on any tab, and
+    reached from the command palette's "search all chats", on any tab, and
     from `S` on the chats board (rebindable; `/` keeps filtering the board's
     list, and `ctrl+f` is left for in-conversation search). A query box over
     results from `GET /v1/chats/search` with its default scope, every chat
@@ -18409,6 +18530,13 @@ draft and applies the switch; the view lands on a fresh form for the new
 project, or on its list for a form inside a detail. `n` or `esc` drops the
 switch: the selection, the header and `tui.json` are untouched. The new-task
 form's own `esc` prompt is not this one.
+*Amended 2026-11-24 (issue #1133).* Leaving the screen, rather than
+switching the project, asks through the same root line and the one choke
+point every screen change takes: the new-task form with a typed draft
+(#1051), and now the task workspace's form popups — the answer, repair,
+follow-up, pull-request and comment forms — once typed into, ask
+``discard the repair and leave? y/n`` before a tab, the palette or `!` takes
+the human elsewhere. A form whose request is in flight does not ask.
 
 **An open follows its object.** Every open of a task, chat or issue carries the
 object's project, from the row its sender holds; the trigger ledger takes the
@@ -19230,6 +19358,16 @@ persisted, sent to the daemon or written to a transcript.
   grown since the popup opened copies it as it is now, because "copy this
   message" means the whole message; and a reference whose records the prune
   took copies the captured text, so a pick can never fail.
+  *Amended 2026-11-25 (issue #1156).* Beside the prose, the picker offers the
+  references of what the surface is about: a task's id, branch, worktree path
+  and pull request (`owner/repo#N`), and in the task workspace that pull
+  request's URL — taken from the daemon's record of it
+  (`GET /v1/tasks/{id}/github/pull`), never built as `github.com/…`, which is
+  wrong on GitHub Enterprise. The board has no record, so it offers the
+  reference only; a link a human removed (suppressed) offers neither. The pull
+  requests board copies its selected row's URL, reference, head branch and
+  title. Every surface with `ctrl+y` hints `ctrl+y copy` in its footer, after
+  the surface's own actions, so a narrow footer drops it first.
 - **A paused pane keeps its place across a rebuild** *(added 2026-09-01, issue
   #291)*. Records carry no id on the wire and none is added; identity is
   client-assigned on ingest and is not an index, so it survives the record cap.
@@ -19602,6 +19740,29 @@ form the way `n` does. The header's right edge names the key. "Navigation
 living here" above still holds: the menu is a faster route to the palette's
 own screen rows, not a second set of view keys to memorise.
 
+*Amended 2026-11-25 (issue #1166).* **The screens menu is its own box.** It
+is titled `screens`, not `commands`, and where the palette has its search
+line it has one line of instruction (`press a screen's letter — or ↑/↓ and
+enter`), with no section header under it. It lists the key-bindings screen
+too, on `k`. Its box is as wide as the shared popup box but only as tall as its
+list, never taller; the two-line reserve for the focused label is drawn only
+where every screen still fits beside it, so at 80x24 every screen is on it at
+once, with no empty row. The palette's screen rows are spelled alike: "search
+all chats", lower case like the rest.
+
+*Amended 2026-11-25 (issue #1159).* **A short query is answered by words, and
+the header offers the menu only where it opens.** Matches sort best first in
+both cases above: among rows containing the query, a row where it starts a word
+ranks above one that holds it mid-word. Letters in order match only a query
+word of five letters or more — three or four letters turn up in order in most
+of the palette's long rows (`:key` had preselected "new task") — and a row that
+needed them for any word ranks below every row matched without. A screen row
+carries words it is looked for by without drawing them, as the key-bindings
+row does (`pr` for pull requests). The header names `` ` `` only where it
+opens the menu: never over a text field, where it is a character typed (it is
+not hoisted above the capture gate, unlike `ctrl+p` and `f1`), nor while the
+daemon is not connected.
+
 **The footer is one line and never wraps.** Left to right: the focused panel's
 keys (at most five, in registry priority order), then the task's
 `available_actions`, then — pinned right and never truncated — `: commands`,
@@ -19622,6 +19783,78 @@ from the right with `…` to the room the pinned segment leaves; the hints follo
 it while there is room and are counted into `+N` when there is not. Its start
 is what it says, and the left cut removed exactly that. The footer is still one
 row.
+
+*Amended 2026-11-25 (issue #1164).* **One status line, owned by the root.**
+What the TUI has to say — an action's result, an error, an explanation of a key
+that did nothing, a hint — goes to one status line that every screen posts to,
+drawn as the lead of the footer by the rule above, on every screen, with or
+without an action bar. It replaces the action bar's own status, the
+startup-project notice under the header and every screen's own note line
+(the issues list and an issue, pull requests, settings and key bindings,
+projects, workflows, triggers, the chats boards and a chat, the compare view,
+the archived boards' delete report and the task workspace's pull-request
+notes). A message is one of two kinds. A **note** — an explanation
+(`approve: not available while running`) or a hint (`nothing to copy`) — is
+dropped by the next key press, click, wheel turn or tab change. A **result**
+— what an action did, or why it failed — stays until a newer message replaces
+it. There is no queue: the newest message wins, whichever screen posted it.
+The footer is where it goes because it is the one row every screen has at every
+size, so a message neither takes a body row nor moves the layout under the
+cursor; a long message is cut from the right, keeping its start. Questions that
+own the keyboard (every y/n, the leave guard, a pending project switch, the
+key-binding capture) and persistent banners (the connection badge, the global
+pause line, the keymap warning) are not messages and stay where they were; so
+do a form's own field errors, a popup's errors, and the chat's note line for
+its questions and its draft hints.
+
+*Amended 2026-11-25 (issue #1207).* **A long result takes one row above the
+footer.** A result or an error wider than the room the footer gives its lead
+is drawn instead on one extra row directly above the footer, the terminal's
+full width, and cut with `…` only beyond that row; the footer then carries its
+keys alone. The row is there only while that message is shown: when it is
+replaced or cleared, the row goes. The body shrinks by one row while it is up,
+so nothing is overlapped, and the footer stays the last row, where its clicks
+land; a click on the row itself does nothing. A note never takes the row: it
+goes with the next key, so it stays on the footer and is cut from the right
+as above. Nor does a message the footer is not showing — under the help
+overlay, a popup, a view's question or the action bar's y/n. This restores
+what #790 and #796 had given the long reports (the archived board's delete
+report at 80 columns keeps its `failed:` clause), which one cut footer row had
+dropped.
+
+*Amended 2026-11-24 (issue #1162).* **Every y/n confirmation answers by one
+rule.** `y` or `Y` confirms; `n`, `N` or `esc` declines; any other key is
+ignored and the question stays until it is answered. One client helper
+(`confirmAnswer`) reads the key for every question — the action bar's, the
+leave and project-switch guards, the global pause, every delete, archive,
+close, compact, raise, unlink, hunk-reject, keep, discard-draft and
+dangerous-setting question, the workflow editor's remove and the daemon
+restart — so the rule cannot drift by surface again. Before it, some took
+`Y` and some did not, and some declined on any key while others waited. A
+question leads with its answer keys and then names the consequence, and the
+footer while it is up offers `y` and `n` rather than "any other key keeps it".
+A question with a third answer keeps it beside the rule (the delete
+confirmation's `b`); the daemon screen's offers (status line, skills, font),
+whose `n` is remembered and whose `esc` is not, are choices rather than y/n
+questions and keep their own keys. Where the key that opened a pane closes it
+(the chat diff pane's), it still closes it with the question up.
+
+*Amended 2026-11-24 (issue #1180).* **A root popup owns the key row.** The
+palette, the screens menu, the project, copy and link pickers, the export
+form, the chat rename prompt, the chat-with form and the draft question
+(a project switch, quit or screen switch held on a draft) each send every
+key but `ctrl+c` to themselves, so the pinned `: commands  ? help  q quit`
+under one advertised keys that type into its query or are swallowed. While
+one is open the footer is that popup's own, as the help overlay's is: its
+registry rows' hints on the left — each popup is a registry context of its
+own, its rows kept out of the palette — and `ctrl+c quit` pinned right, with
+no `+N` and nothing clickable. The palette reads `↑↓ move  enter run  esc
+close`; the screens menu `letter go  ↑↓ move  enter go  esc close` (its
+letters are its rows', named on them, not registry keys); the link picker
+adds `ctrl+y copy`; a list open in the chat-with form, or the export form
+once written, has rows of its own because enter does something else there;
+and a switch off a deleted project, which cannot be declined, offers `y`
+alone.
 
 *Amended 2026-09-10 (task 094, issue #352).* **The width decides how many keys
 reach the line, and the line says how many it is not showing.** "At most five"
@@ -19660,6 +19893,25 @@ The `…` still cuts whatever is left over after that. The workspace's own hints
 drop the tab already open (`5 workflow` on Workflow) and the second hint for
 one operation (`[/] views` beside `tab views`), and `?` lists `d`, `l`, `U`
 and the digit jumps on every workspace tab, since every tab answers them.
+
+*Amended 2026-11-25 (issue #1152).* **The selected task's state decides which
+of its actions lead.** The action segments still read the §6 order above, but
+the actions that move a task in its state on come first: the answer on
+`awaiting_input`, `a` approve and `x` reject on `awaiting_gate`, `r` retry (with
+`E` edit+retry beside it) and `R` repair on `blocked`, `F` follow up and `A`
+archive on `done` and `aborted`, `p` resume on `paused`. Lead is position, and
+position is what a short line keeps, since the segments give their place up
+from the end. Under a bulk selection the state is only the cursor row's, so the
+§6 order stands. Only the task's own segments are reordered: the surface's
+hints keep their registry priority, so priority still means priority. On the
+board the answer is a screen away — `enter` opens the workspace, and the form
+is the next press — so a task waiting on a question offers `enter open to
+answer` there, leading its segments and never dropped, and the board's `enter
+open` hint gives way to it rather than naming the key twice; before, the board
+offered no answer segment at all, and at 80 columns `enter open` lost the width
+contest to the attention count. The triggers screen's `e`, `D`, `B` and `/` and
+the projects screen's `e` gained hints, so the line can name them; the
+projects screen's `e`, a fixed key, has a registry row of its own for it.
 
 `?` remains, as a compact cheat sheet grouped by panel, rendered from the registry.
 
@@ -19921,7 +20173,9 @@ refusing it, and the composer's placeholder says so. Queued messages render as
 faded `You` cards marked `queued` below the live turn; `↑` on an empty
 composer edits the newest (`enter` saves, `ctrl+d` deletes, `esc` stops). A
 paused queue renders a card naming why, with `alt+r` to resume and `alt+c` to
-clear. `ctrl+s` is the rebindable `steer` operation (task 118's registry, with
+clear. *Amended 2026-11-24 (issue #1162):* `alt+c` asks first — `clear the
+queue? (y/n) · N queued messages are deleted unsent` — since a clear deletes
+messages nothing brings back; with nothing queued it says so instead. `ctrl+s` is the rebindable `steer` operation (task 118's registry, with
 a recorded exception beside the forms' fixed `ctrl+s`); no adapter can steer
 yet, so it puts the daemon's `steer_reason` in the composer note.
 *Amended 2026-11-20 (task 164, issue #1012).* **The composer is the chat's
@@ -19946,7 +20200,8 @@ sends it, `esc` leaves the draft as it was. Neither takes `ctrl+s` (steer,
 task 156 decision 5) nor `ctrl+r` (the verbosity cycle). The chats board marks
 a chat holding a draft `✎ draft` ahead of its title.
 *Amended 2026-11-19 (task 159, issue #1023).* **Exporting a chat** is the
-rebindable operation `export_chat`, default `alt+e`, on the chat workspace and
+rebindable operation `export_chat`, default `alt+e` (*amended 2026-11-25
+(issue #1157):* `alt+w`, because Option+e is a dead key on macOS), on the chat workspace and
 on the chats board (live and archived) for the selected row, and in the command
 palette. It opens a small form: the format (`md`, `html` or `json`, default
 `md`), whether to include the diff (default off), and a path prefilled
@@ -20068,6 +20323,24 @@ opened after the failing attempt finished, under *Stopped here before* when it
 was about an earlier stop — and a later `diagnose` passes that answer to the
 new chat to check first. `Q` because every mnemonic letter was taken on a
 surface the task actions share: `W` is the issue screen's comment.
+*Amended 2026-11-24 (issue #1162):* `Q` **asks first** when it would open a
+new chat, on the action bar like `cancel` — `diagnose #7? (y/n) · starts an
+agent turn in a new chat on its worktree, full-auto unless the task runs
+restricted; the task stays locked until the chat closes` — because a yes
+starts an agent turn that spends and runs with the task's permissions.
+Reopening a chat already open on the task asks nothing. `approve` stays
+unconfirmed: it moves the task on, which is what a gate is for.
+*Amended 2026-11-25 (issue #1153).* When the daemon creates the chat but
+refuses its first turn — the chat cap reached, say — `diagnose` closes that
+chat with the ordinary close, so the task is not left locked by a chat that
+asked nothing, and the action bar names the daemon's reason. Only if the close
+itself fails does the chat open, with the question back in its composer, as
+`chat_with` does for a refused send. The failure card and the hand-over read
+the closed diagnosis chats for the card's step and reason **newest first and
+take the first with an answer**, at most five reads, so an answerless newer
+chat (refused, failed or cancelled) never hides an older one that answered.
+The key is named `diagnose` everywhere it is shown — card, footer, palette and
+question — and the operation id is unchanged.
 
 An **open new-chat draft captures input on every row**, not only on the two
 text ones. This is a deliberate, scoped exception to the rule above that the
@@ -20259,6 +20532,20 @@ action letters still do not move **as defaults**; task 093 decision 2 governs
 the shipped keymap, and a user moving one is a user's choice held to the same
 clauses.
 
+*Amended 2026-11-25 (issue #1208).* **The next/previous pairs travel.** This
+departs from the rule above, and from tasks 118 and 128's exceptions being
+tied to their default keys, for two pairs only: `next_chat` / `next_item` may
+share **whatever key** they are bound to, and so may `prev_chat` /
+`prev_item` — the default `alt+.` / `alt+,`, or any override. The reason they
+may share one is where they are answered, a chat for one and a task or an
+issue for the other, never on the same surface, and that holds on any key.
+Before this, moving a pair onto a key of its own — `alt+n`, the default
+before #1157 — was refused, and a refused `tui.keys` fails the whole
+`config.yaml`. The pair is excepted only from each other: a third operation
+or a fixed key on that key still clashes, `next_chat` and `prev_item` on one
+key still clash, and a pair split across two keys is two ordinary bindings.
+Every other exception stays tied to its exact default key.
+
 *Amended 2026-09-28 (task 128, issue #590).* On **load** the checker is
 lenient about one thing: an override on a key a non-overridden operation's
 default or a fixed key holds wins, where a `PATCH` refuses it (§12.3). The
@@ -20339,6 +20626,13 @@ too. `chat conversation` captures no text, so a printable `filter` key is
 not refused for it. None of the other keys is nameable in `tui.keys` yet, a
 departure from the task's brief recorded in its document.
 
+*Amended 2026-11-25 (issue #1157).* The `conversation` term (#1078), which
+moves the keyboard between the composer and `chat conversation`, defaults to
+`alt+o`, and the step terms `next_item` / `prev_item` (#1077) and the chat
+switch's `next_chat` / `prev_chat` to `alt+.` / `alt+,`; the recorded
+exception that lets the two pairs share keys moved with them. `export_chat`
+defaults to `alt+w`. No default is an Option dead key (§15's chat workspace).
+
 *Amended 2026-09-30 (task 129.18, issue #607).* Two more vocabulary terms.
 `N` (`next_failure`) is on every workspace tab and walks the open task's
 failures: the newest attempt of each step or loop iteration that did not
@@ -20391,6 +20685,18 @@ or "mouse on — M turns it off for native selection", naming the key as bound �
 until the next key. The same line carries a copy's outcome on a surface with no
 note of its own (the issue screen's link and copy pickers); the task workspace
 and a chat keep saying it themselves, and the root stays quiet there.
+*Amended 2026-11-24 (issue #1144):* every picker runs a row on a left click,
+as `enter` on it does: the command palette and the project picker (#1065),
+the copy and link pickers, the chat-with popup's list, the lists the forms
+open (new task, follow-up, repair, new chat, issue, project, workflow
+editor, pull requests) and a chat's model and prompt-history lists. A
+click on a chat's rewind list — rewinding, forking or comparing — only
+moves the cursor to that row: rewinding drops the later turns and a fork or
+compare starts chats, so only `enter` does them, never one stray click.
+A click chooses nothing while a question owns the keyboard. `[ create task ]`
+takes a click at every width and while a row or list is open, committing it
+first as `ctrl+s` does, and a click on a Settings setting selects it in the
+narrow layout as in the wide one. The other popups stay keyboard-only.
 
 Capturing the mouse costs native click-drag text selection. Every terminal has a
 modifier override for it (shift-drag; option-drag on Terminal.app and iTerm) and

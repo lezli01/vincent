@@ -184,7 +184,7 @@ func TestPullTabOpensTheSelectedCheck(t *testing.T) {
 	if cmd := v.updateKey(registryKey(t, "enter")); cmd != nil {
 		t.Fatal("enter opened something for a check with no page")
 	}
-	if !v.pullTab.noteBad {
+	if !v.status().bad {
 		t.Fatal("enter said nothing about a check with no page")
 	}
 }

@@ -39,41 +39,53 @@ func (n *newTask) renderWide(width, height int) string {
 	out = joinColumns(out, n.widePane(width-listW-runW, height))
 	out = joinColumns(out, n.runPane(runW, height))
 	// The screen as text, and where its panes start, for a click (#1065).
-	n.wideText = n.wideText[:0]
+	n.shownText = n.shownText[:0]
 	for _, l := range out {
-		n.wideText = append(n.wideText, ansi.Strip(l))
+		n.shownText = append(n.shownText, ansi.Strip(l))
 	}
 	n.wideListW, n.wideFormEnd = listW, width-runW
 	return strings.Join(out, "\n")
 }
 
-// updateClick is a click on the wide form (#1065): a workflow card chooses
-// that workflow, and the create button submits, as enter on it does.
+// updateClick is a click on the form (#1065): a workflow card in the wide
+// list chooses that workflow, and the create button submits, as enter on it
+// does. The button answers at every width and while a row or a list is open
+// (#1144), committing that first, as ctrl+s does; only the discard question
+// keeps the click, as it keeps every key.
 func (n *newTask) updateClick(msg tea.MouseClickMsg) tea.Cmd {
-	if msg.Button != tea.MouseLeft || !n.frameless() || n.mode != ntNavigating || n.submitting {
+	if msg.Button != tea.MouseLeft || n.submitting || n.mode == ntConfirming {
 		return nil
 	}
-	if msg.X < n.wideListW {
+	x, y := msg.X, msg.Y
+	wide := n.frameless()
+	if !wide {
+		x, y = x-1, y-1 // the narrow form is drawn inside the root's frame
+	}
+	if wide && x < n.wideListW {
+		if n.mode != ntNavigating {
+			return nil
+		}
 		for _, h := range n.wfHits {
-			if h.y == msg.Y {
+			if h.y == y {
 				n.cursor = ntWorkflow
 				return n.applyPick(ntWorkflow, h.value, false)
 			}
 		}
 		return nil
 	}
-	if msg.X >= n.wideFormEnd || msg.Y < 0 || msg.Y >= len(n.wideText) {
+	if x >= n.wideFormEnd || y < 0 || y >= len(n.shownText) {
 		return nil
 	}
-	line := []rune(n.wideText[msg.Y])
+	line := n.shownText[y]
 	for _, label := range []string{"[ create task ]", "[ hand off to task ]"} {
-		at := strings.Index(string(line), label)
+		at := strings.Index(line, label)
 		if at < 0 {
 			continue
 		}
-		x0 := len([]rune(string(line)[:at]))
-		if msg.X >= x0 && msg.X < x0+len([]rune(label)) {
-			return n.submit()
+		x0 := ansi.StringWidth(line[:at])
+		if x >= x0 && x < x0+ansi.StringWidth(label) {
+			cmd := n.commitOpen()
+			return tea.Batch(cmd, n.submit())
 		}
 	}
 	return nil
@@ -459,8 +471,17 @@ func (n *newTask) wideRows(rows []ntRow, width int) (out []string, focused bool)
 		here := row == n.cursor && n.mode != ntConfirming
 		focused = focused || here
 		value, _, _ := strings.Cut(n.wideValue(row), "\n")
-		line := formRowMark(here) + styleDim.Render(padRight(ntLabels[row], ntWideLabelW)) + value
-		out = append(out, ansi.Truncate(line, width, "…"))
+		lead := formRowMark(here) + styleDim.Render(padRight(ntLabels[row], ntWideLabelW))
+		if n.inherited(row) {
+			// The hand-off's rows say where their value came from, as the
+			// narrow form's do (task 074). The mark outlasts the value: a long
+			// branch name is cut before it rather than taking it off the row.
+			mark := "  " + styleDim.Render("(from the chat)")
+			room := max(width-ansi.StringWidth(lead)-ansi.StringWidth(mark), 1)
+			out = append(out, ansi.Truncate(lead+ansi.Truncate(value, room, "…")+mark, width, "…"))
+		} else {
+			out = append(out, ansi.Truncate(lead+value, width, "…"))
+		}
 		if msg, bad := n.rowErr[row]; bad {
 			out = append(out, styled(wrapText("⚠ "+msg, max(width-2, 1), wrapOpts{prefix: "  ", indent: 2}), styleBad)...)
 		}

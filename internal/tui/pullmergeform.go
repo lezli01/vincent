@@ -66,13 +66,18 @@ func (f *pullMergeForm) update(msg tea.KeyPressMsg) (cmd tea.Cmd, exit bool) {
 		f.method = max(f.method-1, 0)
 	case "right", "l":
 		f.method = min(f.method+1, len(pullMergeMethods)-1)
-	case "y":
+	}
+	// y and n read by the shared rule (#1162); the arrows above choose the
+	// method the question is about.
+	yes, no := confirmAnswer(msg.String())
+	switch {
+	case yes:
 		if !f.ready() || f.submit == nil {
 			return nil, false
 		}
 		f.sending = true
 		return f.submit(pullMergeMethods[f.method], f.facts.head), false
-	case "n", "esc":
+	case no:
 		return nil, true
 	}
 	return nil, false

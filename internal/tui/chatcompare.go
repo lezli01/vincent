@@ -68,11 +68,14 @@ type compareView struct {
 	// confirm is the side a keep is waiting on y for, -1 for none. It owns
 	// the next key, as the chat's close confirmation does.
 	confirm int
-	busy    bool
-	note    string
-	noteBad bool
-	ticking bool
-	now     func() time.Time
+	// question is the keep question's text while confirm is set.
+	question string
+	busy     bool
+	ticking  bool
+	// statusPoster is where the screen's results and notes go (#1164); the
+	// keep question stays on its own line, since it owns the keyboard.
+	statusPoster
+	now func() time.Time
 }
 
 func newCompareView() *compareView {
@@ -106,7 +109,7 @@ func (v *compareView) leaveForSwitch() {
 // open points the view at the compare chatID is a side of.
 func (v *compareView) open(chatID int64) tea.Cmd {
 	v.chatID, v.cmp, v.sides, v.err = chatID, nil, [2]*chatPreview{}, ""
-	v.focus, v.confirm, v.busy, v.note, v.noteBad = 0, -1, false, "", false
+	v.focus, v.confirm, v.busy = 0, -1, false
 	v.gen++
 	v.ticking = false
 	return v.loadCmd()
@@ -208,12 +211,18 @@ func (v *compareView) update(msg tea.Msg) (panel, tea.Cmd) {
 func (v *compareView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	key := msg.String()
 	if v.confirm >= 0 {
-		side := v.confirm
-		v.confirm = -1
-		if key == "y" {
+		// A stray key no longer cancels the keep: it waits for y or n like
+		// every other confirmation (#1162).
+		yes, no := confirmAnswer(key)
+		switch {
+		case yes:
+			side := v.confirm
+			v.confirm = -1
 			return v, v.keepCmd(side)
+		case no:
+			v.confirm = -1
+			v.status().result("nothing kept", false)
 		}
-		v.note, v.noteBad = "nothing kept", false
 		return v, nil
 	}
 	switch key {
@@ -233,7 +242,6 @@ func (v *compareView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		v.askKeep(1)
 	}
 	if key == opKey(keymap.Refresh) {
-		v.note = ""
 		return v, v.loadCmd()
 	}
 	return v, nil
@@ -253,7 +261,7 @@ func (v *compareView) side(i int) (apiclient.CompareSide, *chatPreview) {
 func (v *compareView) openSide(i int) tea.Cmd {
 	s, p := v.side(i)
 	if s.ChatID == nil || p == nil {
-		v.note, v.noteBad = "that side's chat is gone", true
+		v.status().note("that side's chat is gone", true)
 		return nil
 	}
 	id, pid := *s.ChatID, p.chat.ProjectID
@@ -268,22 +276,34 @@ func (v *compareView) askKeep(i int) {
 	case v.cmp == nil || v.busy:
 		return
 	case v.cmp.KeptChatID != nil:
-		v.note, v.noteBad = "a side was already kept", false
+		v.status().note("a side was already kept", false)
 		return
 	case v.working():
-		v.note, v.noteBad = "both answers must finish before one is kept — wait, or cancel the running side", true
+		v.status().note("both answers must finish before one is kept — wait, or cancel the running side", true)
 		return
 	}
 	keep, _ := v.side(i)
 	drop, _ := v.side(1 - i)
 	if keep.ChatID == nil {
-		v.note, v.noteBad = "that side's chat is gone", true
+		v.status().note("that side's chat is gone", true)
 		return
 	}
 	v.confirm = i
-	v.note, v.noteBad = fmt.Sprintf("keep %s (%s)? the %s side (%s) is archived and its branch deleted — y keeps, any other key cancels",
-		sideName(i), keep.Agent, sideName(1-i), drop.Agent), false
+	v.question = fmt.Sprintf("keep %s (%s)? (y/n) · the %s side (%s) is archived and its branch deleted",
+		sideName(i), keep.Agent, sideName(1-i), drop.Agent)
 }
+
+// promptKeys names the keep question's answers while it is up.
+func (v *compareView) promptKeys() promptAnswers {
+	if v.confirm >= 0 {
+		return promptHint("y", "keep "+sideName(v.confirm), "n", "don't")
+	}
+	return nil
+}
+
+// capturesInput holds the global single keys back while the keep question
+// is up: it owns the keyboard until it is answered (#1162).
+func (v *compareView) capturesInput() bool { return v.confirm >= 0 }
 
 func sideName(i int) string {
 	if i == 0 {
@@ -298,7 +318,8 @@ func (v *compareView) keepCmd(i int) tea.Cmd {
 		return nil
 	}
 	client, id := v.client, *s.ChatID
-	v.busy, v.note, v.noteBad = true, "keeping "+sideName(i)+"…", false
+	v.busy = true
+	v.status().result("keeping "+sideName(i)+"…", false)
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), actionTimeout)
 		defer cancel()
@@ -315,7 +336,7 @@ func (v *compareView) applyKept(msg compareKeptMsg) tea.Cmd {
 		if errors.As(msg.err, &apiErr) {
 			text = apiErr.Message
 		}
-		v.note, v.noteBad = text, true
+		v.status().result(text, true)
 		return v.loadCmd()
 	}
 	note := fmt.Sprintf("kept chat %d", msg.res.Kept.ID)
@@ -325,7 +346,7 @@ func (v *compareView) applyKept(msg compareKeptMsg) tea.Cmd {
 			note += ", its branch deleted"
 		}
 	}
-	v.note, v.noteBad = note, false
+	v.status().result(note, false)
 	return v.loadCmd()
 }
 
@@ -337,12 +358,8 @@ func (v *compareView) render(width, height int) string {
 	if v.cmp != nil {
 		lines = append(lines, ansi.Truncate(" "+styleDim.Render("prompt: ")+oneLine(sanitizeText(v.cmp.Prompt)), width, "…"))
 	}
-	if v.note != "" {
-		style := styleDim
-		if v.noteBad {
-			style = styleBad
-		}
-		lines = append(lines, ansi.Truncate(" "+style.Render(v.note), width, "…"))
+	if v.confirm >= 0 {
+		lines = append(lines, ansi.Truncate(" "+styleWarn.Render(v.question), width, "…"))
 	}
 	room := max(height-len(lines), 3)
 	switch {

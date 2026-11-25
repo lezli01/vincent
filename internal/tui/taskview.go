@@ -112,13 +112,16 @@ type taskView struct {
 	// task and navigates here, and the form needs the daemon's prefill, so
 	// the intent waits for the fetch rather than opening an empty form.
 	pullFormPending bool
+	// pullKept is a step that kept the Pull request tab before the next
+	// task's pull row said whether it has one (#1157): if it has none, the
+	// tab falls back to where a fresh open lands, pullFallback.
+	pullKept     bool
+	pullFallback taskViewTab
 	// createPR is the pull-request form, open only while a human has it up.
-	pull        apiclient.GitHubTaskPull
-	pullLoaded  bool
-	pullErr     string
-	pullNote    string
-	pullNoteBad bool
-	createPR    *createPRForm
+	pull       apiclient.GitHubTaskPull
+	pullLoaded bool
+	pullErr    string
+	createPR   *createPRForm
 	// pullTab is the §15 Pull Request tab (task 068). Its checks are fetched
 	// and never stored, so it holds a rollup and a cursor and nothing else —
 	// everything about the pull request itself is read off `pull` above, so
@@ -270,7 +273,8 @@ func (t *taskView) setClient(c *apiclient.Client) tea.Cmd {
 func (t *taskView) setConnected(ok bool) { t.connected = ok }
 
 func (t *taskView) capturesInput() bool {
-	return t.popup || t.pullTab.confirm != nil || t.detail.capturesInput()
+	return t.popup || t.pullTab.confirm != nil || t.detail.capturesInput() ||
+		t.laneDetail != nil && t.laneDetail.find.typing // a lane's search (#1154)
 }
 
 func (t *taskView) paste(text string) tea.Cmd {
@@ -327,7 +331,7 @@ func (t *taskView) bindingContext() bindingContext {
 			return ctxForm
 		}
 	}
-	if t.tab == taskTabOutput && t.detail.find.active() || t.tab == taskTabDiff && t.detail.diff.find.active() {
+	if t.tab == taskTabOutput && t.outputPane().find.active() || t.tab == taskTabDiff && t.detail.diff.find.active() {
 		return ctxPaneFind
 	}
 	switch t.tab {
@@ -433,7 +437,7 @@ func (t *taskView) route(msg tea.Msg) (panel, tea.Cmd) {
 		t.createPR = nil
 		t.pullMerge, t.pullComment = nil, nil
 		t.pull, t.pullLoaded, t.pullErr = apiclient.GitHubTaskPull{}, false, ""
-		t.pullNote, t.pullNoteBad = "", false
+		t.detail.pullRecord = nil
 		t.pullTab = taskPullTab{}
 		t.pullFormPending = msg.openPR
 		t.thenOp, t.thenID = msg.then, msg.id
@@ -444,6 +448,21 @@ func (t *taskView) route(msg tea.Msg) (panel, tea.Cmd) {
 		openCmd := t.detail.open(msg.id, msg.state)
 		// After the open, so a tab that fetches on activation — Diff, the
 		// Workflow graph, the checks — fetches for this task.
+		// A step to the neighbouring task keeps the tab it was pressed on
+		// (#1157): stepping through the cards to read each one's diff should
+		// not need tab pressed after every step. Settled here, after the
+		// reset, so the strip is the next task's. The Pull request tab is not
+		// on it until the pull row lands; leaveAbsentPullTab falls back then.
+		t.pullKept = false
+		if msg.keep && !msg.openPR {
+			switch {
+			case msg.keepTab == taskTabPull:
+				t.pullKept, t.pullFallback = true, landing
+				landing = taskTabPull
+			case msg.keepTab == taskTabDetails, slices.Contains(t.tabs(), msg.keepTab):
+				landing = msg.keepTab
+			}
+		}
 		var tabCmd tea.Cmd
 		if landing == taskTabPull {
 			// Set rather than setTab: the tab is not on the strip until the
@@ -533,9 +552,7 @@ func (t *taskView) route(msg tea.Msg) (panel, tea.Cmd) {
 			return t, nil
 		}
 		if msg.err != nil {
-			t.pullNote, t.pullNoteBad = openFailure(msg), true
-		} else {
-			t.pullNote, t.pullNoteBad = "", false
+			t.status().result(openFailure(msg), true)
 		}
 		return t, nil
 	case noteMsg:
@@ -580,7 +597,7 @@ func (t *taskView) runThen() tea.Cmd {
 	// rather than open nothing.
 	for _, w := range workspaceOps {
 		if w.op == op && !t.detail.target().has(w.action) {
-			t.detail.actions.setStatus(unavailableText(w.name, t.detail.target()), false)
+			t.detail.actions.setNote(unavailableText(w.name, t.detail.target()))
 			return nil
 		}
 	}
@@ -608,20 +625,32 @@ func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		return t.updatePopupKey(msg)
 	}
 	if t.pullTab.confirm != nil {
-		// The inline y/n owns the keyboard: tab, the digits, esc and the §6
-		// letters are all spent on declining it.
+		// The inline y/n owns the keyboard (#1162): tab, the digits and the
+		// §6 letters wait for its answer; n or esc declines it.
 		return t.updatePullConfirmKey(msg)
+	}
+	if t.detail.actions.capturing() {
+		// A pending §6 confirmation owns its answers (#1162) ahead of a
+		// committed search, whose n, N and esc would otherwise walk or end
+		// it and leave the question up (#1163) — and ahead of esc's pop.
+		if yes, no := confirmAnswer(msg.String()); yes || no {
+			cmd, _ := t.detail.actions.handleKey(msg.String(), t.detail.client, t.detail.target())
+			return cmd
+		}
 	}
 
 	// A search on Output or Diff takes its own keys first (#1074): n and N
 	// walk its matches while it runs, and mean what they always mean after.
 	switch t.tab {
 	case taskTabOutput:
-		if t.detail.findKey(msg) {
+		// The search is the pane's on screen: a selected lane's, not the
+		// parent's hidden one (#1154).
+		pane := t.outputPane()
+		if pane.findKey(msg) {
 			return nil
 		}
 		if msg.String() == opKey(keymap.Filter) {
-			t.detail.find.open()
+			pane.find.open()
 			return nil
 		}
 	case taskTabDiff:
@@ -688,7 +717,7 @@ func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		// The Output tab adds its messages to these (detail.go); every other
 		// tab copies the task's references (#1076).
 		if t.tab != taskTabOutput && t.detail.loaded {
-			items := taskCopyItems(t.detail.task.Task)
+			items := taskCopyItems(t.detail.task.Task, t.detail.pullRecord)
 			if t.tab == taskTabDiff {
 				// The hunk and the file's diff first (#1076): on the Diff tab
 				// they are what is being read.
@@ -2619,10 +2648,6 @@ func treeCost(own, children *float64) *float64 {
 	return &sum
 }
 
-// notesClipboard marks the workspace as saying a copy's outcome itself, on
-// its action bar (detail.update), so the root's status line stands down.
-func (t *taskView) notesClipboard() {}
-
 // syncDiffScope keeps a Diff scoped to one attempt on the attempt selected
 // (task 168.6): moving the selection — the rail, ←/→ — while the Diff is on
 // one attempt moves it to the new one.
@@ -2673,3 +2698,10 @@ func (t *taskView) outputPane() *detail {
 	}
 	return t.detail
 }
+
+// setStatusHolder hands the root's status line to the workspace's action
+// bar (#1164) — the shell's own, when the root built both.
+func (t *taskView) setStatusHolder(h *statusHolder) { t.detail.actions.setStatusHolder(h) }
+
+// status is the line the workspace posts to.
+func (t *taskView) status() *statusHolder { return t.detail.actions.status() }

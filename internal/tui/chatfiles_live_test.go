@@ -183,7 +183,7 @@ func TestChatFilesPickedMentionReachesTheAgentLive(t *testing.T) {
 	}
 	v.applyFiles(answer)
 	if !v.files.open {
-		t.Fatalf("the daemon's listing did not open a picker: %q", v.note)
+		t.Fatalf("the daemon's listing did not open a picker: %q", v.status().text)
 	}
 
 	// The daemon's claude adapter quotes a path with a space in it, and the

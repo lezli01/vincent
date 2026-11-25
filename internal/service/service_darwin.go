@@ -119,6 +119,22 @@ func uninstall(ctx context.Context) error {
 	return nil
 }
 
+// restart is `launchctl kickstart -k` (#1160): -k has launchd send the
+// running instance SIGTERM — the daemon's §12.4 shutdown — and start it again
+// as the agent's own process. A plain stop would not do: the daemon exits 0,
+// and KeepAlive relaunches only an unsuccessful exit.
+func restart(ctx context.Context) error {
+	path, err := plistPath()
+	if err != nil {
+		return err
+	}
+	if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
+		return ErrNotInstalled
+	}
+	_, err = launchctl(ctx, "kickstart", "-k", domain()+"/"+LaunchdName)
+	return err
+}
+
 func query(ctx context.Context) (Status, error) {
 	path, err := plistPath()
 	if err != nil {

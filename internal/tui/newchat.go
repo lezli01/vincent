@@ -326,11 +326,13 @@ func (f *newChatForm) update(msg tea.KeyPressMsg, client *apiclient.Client) (cmd
 	defer f.watch()()
 	f.client = client
 	if f.confirming {
-		f.confirming = false
-		if k := msg.String(); k == "y" || k == "Y" {
-			return nil, true
+		// "discard this draft?" answers by the shared rule (#1162): any key
+		// but yes or no leaves it up.
+		yes, no := confirmAnswer(msg.String())
+		if yes || no {
+			f.confirming = false
 		}
-		return nil, false
+		return nil, yes
 	}
 	// An open list is a layer above the form in §15's esc stack: every key
 	// goes to it, `ctrl+s` included, so `esc` closes the list and leaves the
@@ -651,6 +653,12 @@ func (f *newChatForm) request() apiclient.CreateChatRequest {
 }
 
 func (f *newChatForm) submit() tea.Cmd {
+	// One request at a time (#1134, as #1052 did for the new-task form): a
+	// second ctrl+s while the create is in flight would create a second chat.
+	// The form already says "creating…".
+	if f.submitting {
+		return nil
+	}
 	if strings.TrimSpace(f.title.Value()) == "" && f.messageValue() == "" {
 		f.err = "a chat needs a first message or a title"
 		return nil

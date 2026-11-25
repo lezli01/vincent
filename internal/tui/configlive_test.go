@@ -672,7 +672,7 @@ func TestKeyBindingsScreenRebindsThroughTheDaemon(t *testing.T) {
 	h.view.update(namedKey("enter"))
 	_, cmd := h.view.update(synthKey("f5"))
 	if cmd == nil {
-		t.Fatalf("pressing f5 saved nothing: %q", h.view.bindings.note)
+		t.Fatalf("pressing f5 saved nothing: %q", h.view.status().text)
 	}
 	saved, ok := cmd().(configSavedMsg)
 	if !ok || saved.err != nil {

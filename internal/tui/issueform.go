@@ -273,8 +273,12 @@ func (f *issueForm) update(msg tea.Msg) (cmd tea.Cmd, ok bool) {
 func (f *issueForm) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	switch {
 	case f.confirming:
-		f.confirming = false
-		if s := msg.String(); s == "y" || s == "Y" {
+		// The shared rule (#1162): any key but yes or no leaves it up.
+		yes, no := confirmAnswer(msg.String())
+		if yes || no {
+			f.confirming = false
+		}
+		if yes {
 			return f.close(nil, false)
 		}
 		return nil
@@ -407,6 +411,19 @@ func (f *issueForm) updateEditing(msg tea.KeyPressMsg) tea.Cmd {
 		f.editing = false
 		f.title.Blur()
 		return f.submit()
+	case "down", "tab", "up", "shift+tab":
+		// The title is one line, so these keys have nothing to do inside
+		// it (#1142): they commit it and move, as on the rows and as the
+		// new-chat form's text rows do — a new issue opens typing here
+		// (#1063), and tab was the obvious way on to the description.
+		f.editing = false
+		f.title.Blur()
+		if s := msg.String(); s == "down" || s == "tab" {
+			f.move(1)
+		} else {
+			f.move(-1)
+		}
+		return nil
 	}
 	var cmd tea.Cmd
 	f.title, cmd = f.title.Update(msg)
@@ -707,7 +724,7 @@ func (f *issueForm) render(width, height int) string {
 	tail := []string{""}
 	switch {
 	case f.confirming:
-		tail = append(tail, styled(wrapText("discard your changes? y discards · any other key keeps editing", width, hanging("  ")), styleWarn)...)
+		tail = append(tail, styled(wrapText("discard your changes? y discards · n keeps editing", width, hanging("  ")), styleWarn)...)
 	case f.saving:
 		tail = append(tail, styleDim.Render("  saving…"))
 	case f.err != "":

@@ -72,6 +72,19 @@ func (r chatPickerRow) label() string {
 type chatSettingsPicker struct {
 	rows   []chatPickerRow
 	cursor int
+	// drawn is the rows render last drew, for a click (#1144).
+	drawn []clickRow
+}
+
+func (p *chatSettingsPicker) clickRows() []clickRow { return p.drawn }
+
+// pointAt is a click on a row (#1144).
+func (p *chatSettingsPicker) pointAt(i int) bool {
+	if i < 0 || i >= len(p.rows) {
+		return false
+	}
+	p.cursor = i
+	return true
 }
 
 // newChatSettingsPicker lists a, the chat agent's catalog, the way the
@@ -113,12 +126,15 @@ func newChatSettingsPicker(a apiclient.Agent, c *apiclient.Chat) *chatSettingsPi
 
 func (p *chatSettingsPicker) render(width int) []string {
 	out := []string{" " + styleDim.Render("model and effort for the next turns — enter choose, esc close")}
+	p.drawn = p.drawn[:0]
 	for i, r := range p.rows {
 		line := "   " + r.label()
 		if i == p.cursor {
 			line = " " + styleSelected.Render("▸ "+r.label())
 		}
-		out = append(out, ansi.Truncate(line, width, "…"))
+		line = ansi.Truncate(line, width, "…")
+		p.drawn = append(p.drawn, drawnRow(line, i))
+		out = append(out, line)
 	}
 	return out
 }
@@ -130,18 +146,17 @@ func (v *chatView) openSettingsPicker() {
 	case c == nil:
 		return
 	case chatstate.Terminal(chatstate.State(c.State)):
-		v.note, v.noteBad = "this chat has ended; its settings no longer change", true
+		v.status().note("this chat has ended; its settings no longer change", true)
 		return
 	}
 	a, ok := v.agents[c.Agent]
 	switch {
 	case !ok:
-		v.note, v.noteBad = "the agent catalog has not loaded yet", true
+		v.status().note("the agent catalog has not loaded yet", true)
 	case c.SessionID != "" && a.CannotChangeOnResume():
-		v.note, v.noteBad = c.Agent+" cannot change model or effort on a resumed session; open a new chat to change them", true
+		v.status().note(c.Agent+" cannot change model or effort on a resumed session; open a new chat to change them", true)
 	default:
 		v.picker = newChatSettingsPicker(a, c)
-		v.note = ""
 		v.hideInline("")
 		v.hideFiles()
 	}
@@ -181,7 +196,7 @@ func (v *chatView) toggleMode() tea.Cmd {
 		return nil
 	}
 	if chatstate.Terminal(chatstate.State(c.State)) {
-		v.note, v.noteBad = "this chat has ended; its settings no longer change", true
+		v.status().note("this chat has ended; its settings no longer change", true)
 		return nil
 	}
 	if c.PermissionMode == modeRestricted {
@@ -189,17 +204,16 @@ func (v *chatView) toggleMode() tea.Cmd {
 			// Decision 3's clamp, as the daemon reported it on an earlier
 			// raise: only restricted is legal, so the key says why and asks
 			// nothing (decision 2, review F3).
-			v.note, v.noteBad = clampNote(v.clampTask), true
+			v.status().note(clampNote(v.clampTask), true)
 			return nil
 		}
 		v.raising = true
-		v.note = ""
 		v.hideInline("")
 		v.hideFiles()
 		return nil
 	}
 	if why := v.cannotRestrict(c.Agent); why != "" {
-		v.note, v.noteBad = why, true
+		v.status().note(why, true)
 		return nil
 	}
 	mode := modeRestricted
@@ -244,7 +258,7 @@ type chatPatchedMsg struct {
 func (v *chatView) patchSettingsCmd(req apiclient.PatchChatRequest) tea.Cmd {
 	client, id := v.client, v.chatID
 	if client == nil {
-		v.note, v.noteBad = "not connected", true
+		v.status().result("not connected", true)
 		return nil
 	}
 	return func() tea.Msg {
@@ -260,7 +274,7 @@ func (v *chatView) applyPatched(msg chatPatchedMsg) {
 		return
 	}
 	if msg.err != nil {
-		v.note, v.noteBad = errString(msg.err), true
+		v.status().result(errString(msg.err), true)
 		// A 409 naming a linked task is decision 3's clamp: the chat can
 		// never run full-auto. Say that as the reason, and keep it, so the
 		// next shift+tab says it without asking first (review F3).
@@ -268,11 +282,11 @@ func (v *chatView) applyPatched(msg chatPatchedMsg) {
 		if errors.As(msg.err, &apiErr) && apiErr.Status == http.StatusConflict {
 			if id, err := strconv.ParseInt(apiErr.Details["linked_task_id"], 10, 64); err == nil && id > 0 {
 				v.clampTask = id
-				v.note = clampNote(id)
+				v.status().result(clampNote(id), true)
 			}
 		}
 		return
 	}
 	v.chat = msg.chat
-	v.note, v.noteBad = "next turns run on "+chatSettingsChip(msg.chat), false
+	v.status().result("next turns run on "+chatSettingsChip(msg.chat), false)
 }

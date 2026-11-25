@@ -92,6 +92,11 @@ type (
 // the selected attempt below. PR K adds the diff tab and the action bar to
 // the same shell.
 type detail struct {
+	// pullRecord is the daemon's record of the task's linked pull request,
+	// which the workspace fetched (taskView.applyPull) — the one source of
+	// the URL the copy picker offers (#1156). Nil until it arrives, and when
+	// nothing is linked.
+	pullRecord *apiclient.GitHubPullRequest
 	// find is the Output pane's search (#1074); feedLines is the content it
 	// last built, which the search scans, and findShown what the viewport
 	// holds with the current match drawn, so a render only re-sets it when
@@ -274,7 +279,7 @@ func newDetail(ctx context.Context, level *levelHolder, raw *rawHolder, links *h
 		links:     links,
 		following: true,
 		actions:   &actionBar{},
-		diff:      newDiffPane(),
+		diff:      newTaskDiffPane(),
 		exec:      tea.ExecProcess,
 	}
 }
@@ -348,18 +353,6 @@ func (d *detail) updateMsg(msg tea.Msg) tea.Cmd {
 		if len(notes) > 0 {
 			d.actions.setStatus(strings.Join(notes, " · "), false)
 		}
-		return nil
-	case clipboardResultMsg:
-		// The copy's outcome, said where every other action's is said: a
-		// key press a human made never fails silently (task 076).
-		text, bad := msg.notice()
-		d.actions.setStatus(text, bad)
-		return nil
-	case linkOpenedMsg:
-		// A link opened from the output pane reports here, beside the copy
-		// notice, and never in the pull-request note (task 112 decision 5).
-		text, bad := msg.notice()
-		d.actions.setStatus(text, bad)
 		return nil
 	case detailTranscriptMsg:
 		d.applyTranscript(msg)
@@ -494,6 +487,8 @@ func (d *detail) open(id int64, stateHint string) tea.Cmd {
 	d.tab = tabOutput
 	d.actions.clear()
 	d.form, d.repair, d.followUp = nil, nil, nil
+	// A search belongs to the task it was typed on (#1154).
+	d.find.end()
 	d.diff.openTask(id)
 	return tea.Batch(d.loadCmd(), d.syncStream())
 }
@@ -513,6 +508,7 @@ func (d *detail) deselect() {
 	d.resetOutput()
 	d.buffer = nil
 	d.liveRun, d.liveTail = 0, nil
+	d.find.end() // #1154, as open
 	d.actions.clear()
 	d.form, d.repair, d.followUp = nil, nil, nil
 	d.syncStream()
@@ -886,6 +882,14 @@ func (d *detail) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		return cmd
 	}
 
+	if d.tab == tabDiff && outputPaneKey(msg.String()) {
+		// The Output pane's own keys act on a pane the Diff tab is not
+		// showing (#1212): e opened a transcript, ctrl+l listed links and v
+		// and ctrl+o changed the Output tab out of sight. None of them is a
+		// Diff row, so on Diff they do nothing.
+		return nil
+	}
+
 	switch msg.String() {
 	case "]", "[", "d":
 		// The registry names `]` canonical with `[` and `d` as aliases, and
@@ -907,12 +911,36 @@ func (d *detail) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		// panel-scoped, so the capital is free in the task-action scope.
 		return d.openFollowUp()
 	case opKey(keymap.Chat):
+		// T, alt+t and Q say why when the task does not offer them (#1138).
+		// Here and not in the shared commands: on the board a key they do not
+		// take falls through to the view's own meaning.
+		if !d.target().offersChat() {
+			d.actions.setNote(unavailableText("chat", d.target()))
+			return nil
+		}
 		return taskChatCmd(d.client, d.target(), d.actions)
 	case opKey(keymap.ChatWith):
+		if !d.target().offersChat() {
+			d.actions.setNote(unavailableText("chat", d.target()))
+			return nil
+		}
 		return taskChatWithCmd(d.client, d.target(), d.actions)
 	case opKey(keymap.Diagnose):
-		return diagnoseCmd(d.client, d.target(), d.actions)
+		cmd, handled := diagnoseCmd(d.target(), d.actions)
+		if !handled {
+			// Named diagnose, as everywhere else `Q` is shown (#1153).
+			d.actions.setNote(unavailableText(actionDiagnose, d.target()))
+		}
+		return cmd
 	case "f":
+		if d.tab == tabDiff {
+			// On Diff, f pages down as b pages up — the chat diff's pair
+			// (#1212). Following is the Output pane's, which is not on screen.
+			if d.focus == focusOutput {
+				return d.diff.updateKey(msg)
+			}
+			return nil
+		}
 		d.setFollowing(true)
 		return nil
 	case "v":
@@ -931,7 +959,7 @@ func (d *detail) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 			items = append([]copyItem{out}, items...)
 		}
 		if d.loaded {
-			items = append(taskCopyItems(d.task.Task), items...)
+			items = append(taskCopyItems(d.task.Task, d.pullRecord), items...)
 		}
 		return func() tea.Msg {
 			return openCopyPickerMsg{items: items, resolve: func(seq int64) (string, bool) {
@@ -1305,6 +1333,8 @@ func (d *detail) capturesInput() bool {
 // action has to be on the task's available_actions (§6).
 func (d *detail) openRepair() tea.Cmd {
 	if !d.target().has(apiclient.ActionRepair) {
+		// Said, not silent (#1138), as the board says it (#1059).
+		d.actions.setNote(unavailableText("repair", d.target()))
 		return nil
 	}
 	reason := ""
@@ -1322,6 +1352,7 @@ func (d *detail) openRepair() tea.Cmd {
 // which is `done` and `aborted` and no other state.
 func (d *detail) openFollowUp() tea.Cmd {
 	if !d.target().has(apiclient.ActionFollowUp) {
+		d.actions.setNote(unavailableText("follow-up", d.target()))
 		return nil
 	}
 	d.followUp = newFollowUpForm(d.taskID, d.task.ProjectID, d.task.State)
@@ -1340,10 +1371,10 @@ func (d *detail) editRetryKey() tea.Cmd {
 	}
 	// Hinted wherever retry is, so it says why it did nothing (#1059).
 	if d.target().has(apiclient.ActionRetry) {
-		d.actions.setStatus("edit+retry: this step has no prompt or command to edit — "+
-			opKey(keymap.Retry)+" retries it as it is", false)
+		d.actions.setNote("edit+retry: this step has no prompt or command to edit — " +
+			opKey(keymap.Retry) + " retries it as it is")
 	} else {
-		d.actions.setStatus(unavailableText("edit+retry", d.target()), false)
+		d.actions.setNote(unavailableText("edit+retry", d.target()))
 	}
 	return nil
 }
@@ -1528,4 +1559,15 @@ func (d *detail) newestFanOutRun() (apiclient.StepRun, bool) {
 		}
 	}
 	return out, found
+}
+
+// outputPaneKey reports whether key is one of the Output pane's own keys
+// that detail answers ahead of the tabs — what it means acts on the Output
+// pane alone (#1212).
+func outputPaneKey(key string) bool {
+	switch key {
+	case opKey(keymap.Editor), "v", rawToggleKey, linkPickKey:
+		return true
+	}
+	return false
 }

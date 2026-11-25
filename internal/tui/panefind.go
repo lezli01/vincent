@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"cmp"
 	"fmt"
 	"strings"
 
@@ -80,16 +81,26 @@ func (f *paneFind) highlight(lines []string) []string {
 
 // bar is the line under the pane: the find line while typing, the count and
 // the keys once committed.
+//
+// The search is opened by the filter operation, which a user may move (task
+// 118), so the bar prints the key in force rather than a literal `/`
+// (#1165): the prompt is the key that opened it, and "again" is offered
+// only while that key is bound.
 func (f *paneFind) bar(width int, note string) string {
+	key := opKey(keymap.Filter)
+	prompt := cmp.Or(key, "/")
 	if f.typing {
-		return ansi.Truncate(styleKey.Render("/")+f.buf.View()+
-			styleDim.Render("  enter search · esc cancel"), max(width, 1), "…")
+		return lineField(styleKey.Render(prompt), &f.buf, "  enter search · esc cancel", width)
 	}
 	count := "no match"
 	if len(f.hits) > 0 {
 		count = fmt.Sprintf("match %d/%d", f.cur+1, len(f.hits))
 	}
-	text := fmt.Sprintf("/%s  %s · n next · N previous · / again · esc ends the search", f.query, count)
+	again := ""
+	if key != "" {
+		again = key + " again · "
+	}
+	text := fmt.Sprintf("%s%s  %s · n next · N previous · %sesc ends the search", prompt, f.query, count, again)
 	if note != "" {
 		text += " · " + note
 	}
@@ -97,7 +108,10 @@ func (f *paneFind) bar(width int, note string) string {
 }
 
 // key runs one key on an active search and reports whether it was the
-// search's. commit is told when a query is committed, step when the match
+// search's. Neither pane's moved clears its findShown: the highlight key
+// already changes with the match, and an empty findShown is how the render
+// knows no highlight is drawn — clearing it on esc left the last match
+// reversed after the search had ended (#1154). commit is told when a query is committed, step when the match
 // moved, so the pane can scan and scroll.
 func (f *paneFind) key(msg tea.KeyPressMsg, commit, moved func()) bool {
 	if f.typing {
@@ -154,7 +168,6 @@ func (d *detail) findKey(msg tea.KeyPressMsg) bool {
 				// A reader jumping to a match is not following the tail.
 				d.following, d.findJump = false, true
 			}
-			d.findShown = ""
 		})
 }
 
@@ -177,8 +190,5 @@ func (p *diffPane) findKey(msg tea.KeyPressMsg) bool {
 			p.findLines, p.findShown = lines, ""
 			p.find.scan(lines)
 		},
-		func() {
-			p.findJump = true
-			p.findShown = ""
-		})
+		func() { p.findJump = true })
 }

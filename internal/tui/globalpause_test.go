@@ -92,7 +92,7 @@ func TestGlobalPauseKeyAsksThenActs(t *testing.T) {
 	}
 	// The confirmation notice is cleared by the next key; the pause's own
 	// line is what stays.
-	m.selNotice = ""
+	m.status.note("", false)
 	line, ok = m.statusLine()
 	if got := ansi.Strip(line); !ok || !strings.Contains(got, "Pausing all work — 2 tasks still finishing their step") ||
 		!strings.Contains(got, "3 queued") {
@@ -116,8 +116,8 @@ func TestGlobalPauseKeyAsksThenActs(t *testing.T) {
 	if len(ps.posts) != 2 || ps.posts[1] != "continue" {
 		t.Fatalf("posts = %v, want pause then continue", ps.posts)
 	}
-	if !strings.Contains(m.selNotice, "resumed 2 tasks") {
-		t.Errorf("notice = %q, want the resumed count", m.selNotice)
+	if !strings.Contains(m.status.text, "resumed 2 tasks") {
+		t.Errorf("notice = %q, want the resumed count", m.status.text)
 	}
 	if strings.Contains(ansi.Strip(m.headerLine()), "⏸") {
 		t.Errorf("header after continue still shows the pause: %q", ansi.Strip(m.headerLine()))

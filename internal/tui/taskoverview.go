@@ -411,7 +411,7 @@ func overviewSentence(task apiclient.TaskDetail, lanes int) string {
 		return "Running" + step + "."
 	case stateQueued:
 		if reason, _, ok := task.Hold(); ok {
-			return "Queued, held: " + reason + "."
+			return "Queued, held: " + reasonTitle(reason) + "."
 		}
 		return "Queued, waiting for a free slot."
 	case statePaused:

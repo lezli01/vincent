@@ -174,8 +174,8 @@ func TestIssueLaneMovesFromTheBoard(t *testing.T) {
 	// the note says so rather than claiming open.
 	moveTo(iss.ID, "open")
 	waitLane(iss.ID, "hand_off")
-	if !strings.Contains(list.note, "it is in the hand-off lane") {
-		t.Fatalf("the reopen note says %q", list.note)
+	if !strings.Contains(list.status().text, "it is in the hand-off lane") {
+		t.Fatalf("the reopen note says %q", list.status().text)
 	}
 
 	// in progress → open: a second issue whose only task is cancelled.
@@ -201,7 +201,7 @@ func TestIssueLaneMovesFromTheBoard(t *testing.T) {
 	})
 	h.sendKey(keyPress("y"))
 	waitLane(other.ID, "open")
-	if !strings.Contains(list.note, "it is in the open lane") {
-		t.Fatalf("the cancel note says %q", list.note)
+	if !strings.Contains(list.status().text, "it is in the open lane") {
+		t.Fatalf("the cancel note says %q", list.status().text)
 	}
 }

@@ -240,6 +240,17 @@ func (w *workflowsView) editorUndo() tea.Cmd {
 		return nil
 	}
 	u := e.undo
+	if u.ops != nil {
+		for i, r := range e.rows {
+			if r.list != "" && fmt.Sprintf("%s[%d]", r.list, r.index) == u.at {
+				e.cursor = i
+				break
+			}
+		}
+		e.saving = true
+		e.pending = &wfUndo{undoing: true}
+		return w.editorPatchCmd(u.ops)
+	}
 	for i, r := range e.rows {
 		if r.path == u.row.path {
 			e.cursor = i

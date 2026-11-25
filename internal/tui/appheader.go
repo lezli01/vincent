@@ -72,6 +72,13 @@ func tabGlyph(id viewID) string {
 	return "•"
 }
 
+// goToWorks reports whether the screens menu's key opens it on the surface
+// in front of the human: what globalKey answers, behind the root's
+// input-capture gate.
+func (m *root) goToWorks() bool {
+	return (m.phase == phaseConnected || m.phase == phaseReconnecting) && !m.activeCapturesInput()
+}
+
 // headerRuleShown reports whether the rule under the header is drawn.
 func (m *root) headerRuleShown() bool { return m.height >= headerRuleMinH }
 
@@ -110,8 +117,13 @@ func (m *root) headerLine() string {
 	}
 	// The screens menu's key, where the eye looks for where it can go
 	// (#1080). It rides with the version, so it is the first thing a narrow
-	// header sheds and never costs the tabs room.
-	if goTo := opKey(keymap.GoTo); goTo != "" {
+	// header sheds and never costs the tabs room. Offered only where the key
+	// opens it (#1159), as the footer's pinned part names only keys that
+	// work (§15 Discovery): a text field takes every key but the few the
+	// root hoists, and `go_to` is not one of them — under the chat composer
+	// or a filter it is a character typed — and the menu opens only while
+	// connected or reconnecting.
+	if goTo := opKey(keymap.GoTo); goTo != "" && m.goToWorks() {
 		p.version = goTo + " screens · " + p.version
 	}
 	// Connected is the normal case and says nothing a working screen does

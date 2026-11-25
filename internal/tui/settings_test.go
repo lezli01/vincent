@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -171,8 +172,8 @@ func TestSettingsRefusalRestoresTheValue(t *testing.T) {
 	v.updateKey(namedKey("right"))
 	v.applySaved(configSavedMsg{path: "max_parallel_tasks", err: errDaemonUnreachable})
 	k := mustSetting(t, v, "max_parallel_tasks")
-	if v.value(k) != "3" || !v.noteBad {
-		t.Fatalf("value %q, note %q", v.value(k), v.note)
+	if v.value(k) != "3" || !v.status().bad {
+		t.Fatalf("value %q, note %q", v.value(k), v.status().text)
 	}
 }
 
@@ -317,8 +318,8 @@ func TestSettingsSaysWhatItWasAndUndoes(t *testing.T) {
 	if v.undo == nil || v.undo.was != before {
 		t.Fatalf("undo = %+v, want the value it replaced (%q)", v.undo, before)
 	}
-	if !strings.Contains(v.note, "was "+before) || !strings.Contains(v.note, "u puts it back") {
-		t.Fatalf("note = %q", v.note)
+	if !strings.Contains(v.status().text, "was "+before) || !strings.Contains(v.status().text, "u puts it back") {
+		t.Fatalf("note = %q", v.status().text)
 	}
 	v.updateKey(tea.KeyPressMsg{Code: 'u', Text: "u"})
 	if got := v.value(k); got != before {
@@ -327,11 +328,91 @@ func TestSettingsSaysWhatItWasAndUndoes(t *testing.T) {
 	restored := changed
 	restored.MaxParallelTasks--
 	v.update(configSavedMsg{path: k.path, cfg: restored})
-	if v.undo != nil || !strings.Contains(v.note, "put back") {
-		t.Fatalf("after the undo: undo %+v, note %q", v.undo, v.note)
+	if v.undo != nil || !strings.Contains(v.status().text, "put back") {
+		t.Fatalf("after the undo: undo %+v, note %q", v.undo, v.status().text)
 	}
 	v.updateKey(tea.KeyPressMsg{Code: 'u', Text: "u"})
-	if v.note != "nothing to undo" {
-		t.Fatalf("a second u said %q", v.note)
+	if v.status().text != "nothing to undo" {
+		t.Fatalf("a second u said %q", v.status().text)
+	}
+}
+
+// #1137: an undo that never landed — an esc at a dangerous key's
+// confirmation, or a write the daemon refused — leaves nothing behind, so
+// the next ordinary change is offered as undoable, not reported "put back".
+func TestSettingsUndoClearsOnEscAndOnFailure(t *testing.T) {
+	saveNext := func(t *testing.T, v *settingsView) {
+		t.Helper()
+		v.form = nil
+		v.goTo("max_parallel_tasks")
+		k := mustSetting(t, v, v.selected)
+		v.updateKey(tea.KeyPressMsg{Code: tea.KeyRight})
+		changed := v.config
+		changed.MaxParallelTasks++
+		v.update(configSavedMsg{path: k.path, cfg: changed})
+		if strings.Contains(v.status().text, "put back") || !strings.Contains(v.status().text, "u puts it back") || v.undo == nil || v.undo.key.path != k.path {
+			t.Fatalf("the next change: note %q, undo %+v", v.status().text, v.undo)
+		}
+	}
+
+	v := settingsFixture(t)
+	v.client = offlineClient()
+	v.undo = &settingsUndo{key: mustSetting(t, v, "triggers.enabled"), was: "true"}
+	v.updateKey(tea.KeyPressMsg{Code: 'u', Text: "u"})
+	if v.form == nil || !v.form.confirming {
+		t.Fatal("u on a dangerous key did not stop at the confirmation")
+	}
+	v.updateKey(namedKey("esc"))
+	if v.undoing {
+		t.Fatal("esc at the confirmation left the undo pending")
+	}
+	saveNext(t, v)
+
+	v = settingsFixture(t)
+	v.client = offlineClient()
+	k := mustSetting(t, v, "max_parallel_tasks")
+	v.undo = &settingsUndo{key: k, was: "1"}
+	v.updateKey(tea.KeyPressMsg{Code: 'u', Text: "u"})
+	v.update(configSavedMsg{path: k.path, err: errors.New("refused")})
+	if v.undoing {
+		t.Fatal("a refused undo left the undo pending")
+	}
+	saveNext(t, v)
+}
+
+// #1137: u pressed in another category goes to the setting it puts back and
+// names it, rather than rewriting a value off screen.
+func TestSettingsUndoNamesTheSettingAndShowsIt(t *testing.T) {
+	v := settingsFixture(t)
+	v.client = offlineClient()
+	v.selected = "max_parallel_tasks"
+	k := mustSetting(t, v, v.selected)
+	home := v.category
+	v.updateKey(tea.KeyPressMsg{Code: tea.KeyRight})
+	changed := v.config
+	changed.MaxParallelTasks++
+	v.update(configSavedMsg{path: k.path, cfg: changed})
+	v.updateKey(namedKey("tab"))
+	if v.category == home {
+		t.Fatal("tab did not leave the category")
+	}
+	v.updateKey(tea.KeyPressMsg{Code: 'u', Text: "u"})
+	if v.category != home || v.selected != k.path {
+		t.Fatalf("u left the screen on category %d, %q", v.category, v.selected)
+	}
+	if row, ok := v.current(); !ok || row.item.path != k.path {
+		t.Fatal("the setting u puts back is not on screen")
+	}
+	label := ""
+	for _, r := range v.rows() {
+		if r.item.path == k.path {
+			label = r.item.label
+		}
+	}
+	restored := changed
+	restored.MaxParallelTasks--
+	v.update(configSavedMsg{path: k.path, cfg: restored})
+	if !strings.Contains(v.status().text, label+" put back") {
+		t.Fatalf("the undo's note %q does not name %q", v.status().text, label)
 	}
 }

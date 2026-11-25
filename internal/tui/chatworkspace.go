@@ -576,11 +576,7 @@ func chatPreviewLines(c apiclient.Chat, p *chatPreview, now time.Time, inner int
 			out = append(out, markdownLines(t.ResultText, inner)...)
 		}
 		if t.FailReason != "" {
-			text := t.FailReason
-			if t.ErrorMessage != "" {
-				text += ": " + t.ErrorMessage
-			}
-			out = append(out, styled(wrapText(text, inner, wrapOpts{}), styleBad)...)
+			out = append(out, styled(wrapText(failedTurnText(t), inner, wrapOpts{}), styleBad)...)
 		}
 		out = append(out, "")
 	}

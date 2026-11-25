@@ -3,6 +3,7 @@ package tui
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strconv"
@@ -61,6 +62,9 @@ type root struct {
 	connErr     error
 	logPath     string
 	retryIn     time.Duration
+	// restarting is a daemon restart under way, from the confirmed `r` to
+	// the reconnect or the failure that ends it; a second is ignored (#1160).
+	restarting bool
 
 	notes      <-chan apiclient.Note
 	stopStream context.CancelFunc
@@ -120,6 +124,9 @@ type root struct {
 	mouseOn bool
 	// footerHits are the clickable spans of the last-rendered footer.
 	footerHits []footerHit
+	// lastFrame is the last frame View drew, which a click on an inline
+	// list's row is read against (#1144).
+	lastFrame string
 	// notice is §16's full-auto warning. It owns the whole screen until it
 	// is dismissed, ahead of and independent of the connect flow: the
 	// warning is about what the daemon will do, so it must not wait on the
@@ -179,13 +186,18 @@ type root struct {
 	// rather than broadcast. selWhy is the rule that chose it.
 	sel    projectSel
 	selWhy string
-	// startup is the task 132.3 resolution chain's state (startproject.go),
-	// and selNotice the one line it raises (decision 30): a pick by the
-	// working directory, or a rule that fell through. Cleared by the next
-	// key, like keysNotice; selNoticeWarn renders it as a warning.
-	startup       startupState
-	selNotice     string
-	selNoticeWarn bool
+	// startup is the task 132.3 resolution chain's state (startproject.go).
+	// The line it raises (decision 30) — a pick by the working directory, or
+	// a rule that fell through — is a note on the status line.
+	startup startupState
+	// status is the TUI's one status line (#1164, msgline.go): every view
+	// posts to it, the footer leads with it, and Update applies its one
+	// clearing rule — a note goes on the next key, click, wheel or tab
+	// change, a result stays until a newer message replaces it.
+	status *statusHolder
+
+	// option is the macOS Option watch's state between key presses (#1140).
+	option optionWatch
 	// defaultProject is `tui.default_project` as of the latest config answer.
 	// Startup reads only the first one; a deleted selection is replaced by
 	// this one when it names a registered project (task 132 decision 46).
@@ -251,10 +263,23 @@ func newRoot(ctx context.Context, cn connector, dataDir string) *root {
 		notice:  firstRunNotice{active: !noticeAcknowledged(dataDir)},
 		focused: true,
 		bell:    newBellState(),
+		status:  newStatusHolder(),
 	}
+	m.wireStatus()
 	m.setTabs(defaultTabs())
 	m.setDataDir(dataDir)
 	return m
+}
+
+// wireStatus hands every view that posts the root's one status line
+// (#1164). Update repeats it, so a view put in place later — a test's
+// fixture — posts there too; it is a pointer store per view.
+func (m *root) wireStatus() {
+	for i := range m.views {
+		if sa, ok := m.views[i].(statusAware); ok {
+			sa.setStatusHolder(m.status)
+		}
+	}
 }
 
 // setDataDir hands the resolved directory to the views that read from it.
@@ -281,6 +306,7 @@ func (m *root) Init() tea.Cmd { return m.cn.probeCmd() }
 
 // Update implements tea.Model.
 func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	m.wireStatus()
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
@@ -397,18 +423,29 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case newTaskFromChatMsg:
 		return m.updateNewTaskFromChat(msg)
 	case connectedMsg:
-		return m.updateConnected(msg)
+		model, cmd := m.updateConnected(msg)
+		return model, tea.Batch(cmd, m.endRestart(nil))
 	case projectListMsg:
 		return m, m.updateProjectList(msg)
 	case restartDaemonMsg:
+		// #1160: one restart at a time. The screen ignores a second `r`, and
+		// this holds for any other route a restart could arrive by.
+		if m.restarting {
+			return m, nil
+		}
+		m.restarting = true
+		if msg.viaService {
+			// The service manager restarts it, so the new daemon stays
+			// under the service (#1160).
+			return m, m.cn.serviceRestartCmd(m.dataDir)
+		}
 		// #1081: stop the daemon, then the connect flow starts a new one.
 		return m, stopDaemonCmd(m.dataDir)
 	case daemonStoppedMsg:
-		cmd := m.deliver(viewDaemon, msg)
 		if msg.err != nil {
-			return m, cmd
+			return m, m.endRestart(msg.err)
 		}
-		return m, tea.Batch(cmd, m.restartConnect())
+		return m, m.restartConnect()
 	case probeFailedMsg:
 		m.phase = phaseStarting
 		m.setDataDir(msg.dataDir)
@@ -418,12 +455,16 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.connErr = msg.err
 		m.logPath = msg.logPath
 		m.setConnected(false)
-		return m, nil
+		return m, m.endRestart(msg.err)
 	case tea.PasteMsg:
 		return m, m.updatePaste(msg.Content)
 	case tea.MouseClickMsg:
+		// A click moves a cursor or presses a key, so it drops a note the
+		// way a key does (#1164).
+		m.status.dropNote()
 		return m.updateMouseClick(msg)
 	case tea.MouseWheelMsg:
+		m.status.dropNote()
 		if m.notice.active || m.popupOpen() {
 			return m, nil
 		}
@@ -467,8 +508,9 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.fetchProjectPicker()
 	case linkOpenedMsg:
-		// Like a copy's outcome, to the surface the human pressed the key on
-		// and nowhere else (task 112 decision 5).
+		// Like a copy's outcome, on the status line (#1164), and to the
+		// surface the human pressed the key on (task 112 decision 5).
+		m.status.result(msg.notice())
 		return m, m.deliver(m.active, msg)
 	case clipboardResultMsg:
 		return m, m.updateClipboardResult(msg)
@@ -537,11 +579,21 @@ func (m *root) updatePaste(text string) tea.Cmd {
 // header's `◆` segment opens the project picker (task 132.4), a main-tab
 // strip label switches to its tab (task 136.3), the rest of the header is
 // inert, and everything else lands in the active screen's body. The palette
-// and the project picker take a click on a row (#1065); the other popups stay
+// and the project picker take a click on a row (#1065), and so do the copy and
+// link pickers and every inline picker (#1144); the other popups stay
 // keyboard; right-clicks and the rest are out of scope.
 func (m *root) updateMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
-	if msg.Button == tea.MouseLeft && !m.notice.active && !m.help && (m.palette != nil || m.projPick != nil) {
+	if msg.Button == tea.MouseLeft && !m.notice.active && !m.help && (m.palette != nil || m.projPick != nil || m.reader != nil || m.linkPick != nil) {
 		return m.updatePopupClick(msg)
+	}
+	// Every other picker runs a row on a click too (#1144), as enter does.
+	if msg.Button == tea.MouseLeft && !m.notice.active && !m.help {
+		if l := m.openList(); l != nil && m.clickListRow(l, msg.X, msg.Y) {
+			if _, only := l.(selectOnClick); only {
+				return m, nil
+			}
+			return m.updateKey(tea.KeyPressMsg{Code: tea.KeyEnter})
+		}
 	}
 	if msg.Button != tea.MouseLeft || m.notice.active || m.popupOpen() || m.help {
 		return m, nil
@@ -568,6 +620,9 @@ func (m *root) updateMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	if _, ok := m.statusRow(); ok && msg.Y == m.height-2 {
+		return m, nil // the status row (#1207) is not the screen's
+	}
 	if m.connScreen() {
 		// The body is the connection screen, not the view behind it (#793,
 		// review F3).
@@ -581,13 +636,21 @@ func (m *root) updateMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *root) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	// Every key passes the macOS Option watch on its way (#1140): a chord the
+	// terminal turned into a character is noted on whatever surface it lands.
+	return m.watchOption(msg, func() (tea.Model, tea.Cmd) { return m.routeKey(msg) })
+}
+
+// routeKey is updateKey's routing, past the Option watch.
+func (m *root) routeKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.notice.active {
 		return m.updateNoticeKey(msg)
 	}
-	// The keymap and startup-project notices are read by the time a key is
-	// pressed; the key itself still does what it does.
+	// The keymap notice and a status note are read by the time a key is
+	// pressed (#1164); the key itself still does what it does, and may post
+	// a note of its own.
 	m.keysNotice = ""
-	m.selNotice = ""
+	m.status.dropNote()
 	// A switch waiting on its draft confirmation owns every key but ctrl+c
 	// (task 132 decision 36): it is the question on screen.
 	if m.pending != nil && msg.String() != "ctrl+c" {
@@ -835,9 +898,10 @@ func (m *root) globalKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		// changes nothing visible, and native selection is the reason to
 		// press it.
 		k := opKey(keymap.Mouse)
-		m.selNotice, m.selNoticeWarn = "mouse on — "+k+" turns it off for native selection", false
-		if !m.mouseOn {
-			m.selNotice = "mouse off — native selection works; " + k + " turns it back on"
+		if m.mouseOn {
+			m.status.result("mouse on — "+k+" turns it off for native selection", false)
+		} else {
+			m.status.result("mouse off — native selection works; "+k+" turns it back on", false)
 		}
 		return nil, true
 	case opKey(keymap.PauseAll):
@@ -984,6 +1048,51 @@ func (m *root) updateLinksKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 func (m *root) popupOpen() bool {
 	return m.palette != nil || m.reader != nil || m.linkPick != nil || m.projPick != nil || m.exportForm != nil ||
 		m.pending != nil || m.leave != nil || m.rename != nil || m.chatWith != nil
+}
+
+// popupContext is the registry context of the open root popup (#1180), in
+// the order Update routes keys to them — the first popup listed there is
+// the one that answers. ok is false with none open.
+func (m *root) popupContext() (bindingContext, bool) {
+	switch {
+	case m.pending != nil, m.leave != nil:
+		return ctxDraftQuestion, true
+	case m.reader != nil:
+		return ctxCopyPicker, true
+	case m.linkPick != nil:
+		return ctxLinkPicker, true
+	case m.projPick != nil:
+		return ctxProjectPicker, true
+	case m.exportForm != nil:
+		if m.exportForm.written != "" {
+			return ctxChatExportWritten, true
+		}
+		return ctxChatExport, true
+	case m.rename != nil:
+		return ctxChatRename, true
+	case m.chatWith != nil:
+		if m.chatWith.pick != nil {
+			return ctxChatWithList, true
+		}
+		return ctxChatWith, true
+	case m.palette != nil:
+		if m.palette.jump {
+			return ctxScreensMenu, true
+		}
+		return ctxPalette, true
+	}
+	return "", false
+}
+
+// popupRows is ctx's registry rows as the open popup answers them: a
+// project switch off a deleted selection cannot be declined (task 132.7),
+// so its question offers no `n`.
+func (m *root) popupRows(ctx bindingContext) []binding {
+	rows := bindingsFor(ctx)
+	if ctx == ctxDraftQuestion && m.pending != nil && m.pending.deleted != "" {
+		rows = slices.DeleteFunc(rows, func(b binding) bool { return b.key == "n" })
+	}
+	return rows
 }
 
 // openProjectPicker raises the project picker over whatever is on screen,
@@ -1397,7 +1506,11 @@ func (m *root) routeOpen(open tea.Msg) tea.Cmd {
 		// openChatMsg's reason: an inactive view receives nothing.
 		if v, ok := m.views[viewIssue].(*issueView); ok {
 			v.back = msg.back
-			return tea.Batch(v.open(msg.id), m.switchTo(viewIssue))
+			cmd := v.open(msg.id)
+			if msg.keep {
+				v.tab = msg.keepTab
+			}
+			return tea.Batch(cmd, m.switchTo(viewIssue))
 		}
 	case openCompareMsg:
 		// Pointed first and switched second, for openChatMsg's reason.
@@ -1702,17 +1815,19 @@ func (m *root) applyFollow(p apiclient.Project, open tea.Msg, notice string) tea
 	if notice == "" {
 		notice = followedNotice(p.Name)
 	}
-	m.selNotice, m.selNoticeWarn = notice, false
+	m.status.result(notice, false)
 	return tea.Batch(cmd, m.routeOpen(open))
 }
 
 // updatePendingSwitchKey answers the draft confirmation: y discards the draft
 // and applies the switch (and the open waiting on it), n or esc keeps both
-// the draft and the selection, and every other key is swallowed.
+// the draft and the selection, and every other key is swallowed — the shared
+// rule (#1162).
 func (m *root) updatePendingSwitchKey(msg tea.KeyPressMsg) tea.Cmd {
 	p := m.pending
-	switch msg.String() {
-	case "y":
+	yes, no := confirmAnswer(msg.String())
+	switch {
+	case yes:
 		m.pending = nil
 		if p.deleted != "" {
 			return m.applyDeletedSwitch(p.project, p.why, p.notice)
@@ -1721,7 +1836,7 @@ func (m *root) updatePendingSwitchKey(msg tea.KeyPressMsg) tea.Cmd {
 			return m.applyFollow(p.project, p.open, p.notice)
 		}
 		return m.applySwitch(p.project, p.why)
-	case "n", "esc":
+	case no:
 		// A deleted selection has nowhere to stay (decision 47): the
 		// question waits for y.
 		if p.deleted == "" {
@@ -1741,6 +1856,16 @@ func (m *root) activeDraft() (string, bool) {
 
 // restartConnect tears down any live stream and reruns the full connect
 // flow, auto-start included — the retry key on the failure screen.
+// endRestart closes a restart under way, if one is, and tells the daemon
+// screen how it ended (#1160).
+func (m *root) endRestart(err error) tea.Cmd {
+	if !m.restarting {
+		return nil
+	}
+	m.restarting = false
+	return m.deliver(viewDaemon, restartEndedMsg{err: err})
+}
+
 func (m *root) restartConnect() tea.Cmd {
 	if m.stopStream != nil {
 		m.stopStream()
@@ -1889,8 +2014,7 @@ func (m *root) revalidatePending() {
 		}
 	}
 	m.pending = nil
-	m.selNotice = fmt.Sprintf("project `%s` was deleted — staying on `%s`", p.project.Name, m.sel.name)
-	m.selNoticeWarn = true
+	m.status.result(fmt.Sprintf("project `%s` was deleted — staying on `%s`", p.project.Name, m.sel.name), true)
 }
 
 // applyDeletedSwitch is selectionDeleted past its guard. A zero p is "no
@@ -1898,7 +2022,7 @@ func (m *root) revalidatePending() {
 // one, so a detail view falls back to its list and a form is re-aimed.
 func (m *root) applyDeletedSwitch(p apiclient.Project, why, notice string) tea.Cmd {
 	cmd := m.applySwitch(p, why)
-	m.selNotice, m.selNoticeWarn = notice, true
+	m.status.result(notice, true)
 	return cmd
 }
 
@@ -2112,6 +2236,8 @@ func (m *root) switchNow(id viewID) tea.Cmd {
 	if id == m.active {
 		return nil
 	}
+	// A tab change drops a note (#1164): it was about the screen left.
+	m.status.dropNote()
 	prev := m.active
 	m.active = id
 	m.landing = false
@@ -2453,8 +2579,9 @@ func (m *root) noticeKeys(warnings []string) {
 
 // statusLine is the line under the header, when there is one: the full-auto
 // notice's failed acknowledgment, else a pending switch's confirmation, else
-// the one-time keymap notice, else the startup-project notice — which a
-// follow's `switched to` line reuses.
+// the one-time keymap notice, else the global pause banner. These are
+// questions and banners, not messages: what the TUI has to say goes on the
+// one status line in the footer (#1164, msgline.go).
 //
 // The line is budgeted to the terminal's width (#793): one that overflows is
 // cut with "…" rather than left for the renderer to clip unmarked. Two cuts
@@ -2480,12 +2607,6 @@ func (m *root) statusLine() (string, bool) {
 			head = ansi.Truncate(head, max(m.width-cols(m.keysMore), 0), "…")
 		}
 		return styleWarn.Render(fitStatus(head+m.keysMore, m.width)), true
-	}
-	if m.selNotice != "" {
-		if m.selNoticeWarn {
-			return styleWarn.Render(fitStatus(" ⚠ "+m.selNotice, m.width)), true
-		}
-		return styleDim.Render(fitStatus(" "+m.selNotice, m.width)), true
 	}
 	if m.globalPause.shown() && m.phase == phaseConnected {
 		return styleWarn.Render(fitStatus(m.globalPause.statusLine(), m.width)), true
@@ -2594,6 +2715,10 @@ func (m *root) View() tea.View {
 	}
 	b.WriteString(m.body())
 	b.WriteString("\n")
+	if row, ok := m.statusRow(); ok {
+		b.WriteString(row)
+		b.WriteString("\n")
+	}
 	b.WriteString(m.footerLine())
 	frame := b.String()
 	if popup, ok := m.popupRender(); ok {
@@ -2604,6 +2729,7 @@ func (m *root) View() tea.View {
 		pw, ph := popupBox(m.width, m.height, top)
 		frame = overlay(frame, popup(pw, ph), max((m.width-pw)/2, 0), top)
 	}
+	m.lastFrame = frame
 	v := tea.NewView(frame)
 	// The alternate screen, which the teardown path (tui.go's quit reminder)
 	// and the board's mouse handling were written against: without it
@@ -2875,12 +3001,19 @@ func (m *root) footerLine() string {
 		// underneath do nothing until it closes.
 		return helpFooter(m.width)
 	}
+	if ctx, ok := m.popupContext(); ok {
+		// A root popup owns every key but ctrl+c, as the overlay does, so it
+		// owns the key row too (#1180): its own keys from the registry, and
+		// ctrl+c — the pinned `: ? q` would type into its query.
+		m.footerHits = nil
+		return buildPopupFooter(m.width, m.popupRows(ctx))
+	}
 	if m.connScreen() {
 		// The connection screen's own keys: retry where there is something
 		// to retry, and the pinned palette, help and quit — never the rows of
 		// the view hidden behind it (#793).
 		retry := m.phase == phaseFailed || m.phase == phaseReconnecting
-		line, hits := buildFooter(m.width, nil, nil, taskActions{}, attentionTally{}, retry, m.activeCapturesInput())
+		line, hits := buildFooterStatus(m.width, nil, nil, taskActions{}, attentionTally{}, retry, m.activeCapturesInput(), m.footerStatus())
 		m.footerHits = hits
 		return line
 	}
@@ -2897,11 +3030,14 @@ func (m *root) footerLine() string {
 		target    taskActions
 		attention attentionTally
 	)
-	if s, ok := m.views[viewHome].(*shell); ok {
+	// Not while a root popup is up (#1139): each owns every key but ctrl+c,
+	// so `!` is typed into the palette's query or dropped rather than
+	// jumping — the rule #1060 applied to a view's own text field.
+	if s, ok := m.views[viewHome].(*shell); ok && !m.popupOpen() {
 		attention = s.board.attentionTally()
 	}
+	bar = m.activeBar()
 	if s, ok := m.views[m.active].(*shell); ok {
-		bar = s.bar
 		if m.phase == phaseConnected {
 			target = s.board.target()
 			// E reaches the board's detail panes (shell.go), so it is hinted
@@ -2911,10 +3047,12 @@ func (m *root) footerLine() string {
 			// Answer is opened from the task workspace. On the board, enter
 			// crosses that screen boundary; advertising it as an immediate
 			// answer would describe the second press rather than this one.
-			target.actions = withoutAction(target.actions, apiclient.ActionAnswer)
+			// It is still the key a waiting task most needs, so it leads the
+			// task's segments as the open it is (#1152), rather than being
+			// dropped and leaving `enter open` to lose the width contest.
+			target.answerOpens = true
 		}
 	} else if t, ok := m.views[m.active].(*taskView); ok {
-		bar = t.detail.actions
 		if m.phase == phaseConnected {
 			target = popupFreeTarget(t)
 		}
@@ -2927,10 +3065,19 @@ func (m *root) footerLine() string {
 		rows = fb.footerBindings(rows)
 	}
 	rows = mainTabRows(rows, m.nextTabName())
+	if footerAnswerKey(target) != "" && target.answerOpens {
+		// The answer segment is the board's enter (#1152): one key, named
+		// once, counted once — the way the workspace's `enter answer`
+		// stands in for its tabs' own enter rows (#1062).
+		rows = slices.DeleteFunc(slices.Clone(rows), func(b binding) bool { return b.op == keymap.OpenRow })
+	}
 	retry := m.phase == phaseFailed || m.phase == phaseReconnecting
 	pill := m.footerPill()
 	pw := ansi.StringWidth(pill)
-	line, hits := buildFooter(m.width-pw, rows, bar, target, attention, retry, m.activeCapturesInput())
+	// The status line leads (#1164): the root's, on every screen, whether
+	// or not the screen has an action bar — unless it is on its own row
+	// above (#1207).
+	line, hits := buildFooterStatus(m.width-pw, rows, bar, target, attention, retry, m.activeCapturesInput(), m.footerStatus())
 	for i := range hits {
 		hits[i].x0 += pw
 		hits[i].x1 += pw
@@ -2939,20 +3086,77 @@ func (m *root) footerLine() string {
 	return pill + line
 }
 
-func withoutAction(actions []string, drop string) []string {
-	out := make([]string, 0, len(actions))
-	for _, action := range actions {
-		if action != drop {
-			out = append(out, action)
-		}
+// activeBar is the active screen's action bar, nil on a screen without one.
+func (m *root) activeBar() *actionBar {
+	switch v := m.views[m.active].(type) {
+	case *shell:
+		return v.bar
+	case *taskView:
+		return v.detail.actions
 	}
-	return out
+	return nil
+}
+
+// footerStatusRoom is how many cells the footer gives the status line when
+// it leads it, and whether the footer shows the status at all: the help
+// overlay, a root popup, a view's question and the action bar's y/n each own
+// the key row, and the status waits under them (#1164). It mirrors the
+// branches of footerLine and the lead budget of buildFooterStatus.
+func (m *root) footerStatusRoom() (int, bool) {
+	if m.width <= 0 || m.help {
+		return 0, false
+	}
+	if _, ok := m.popupContext(); ok {
+		return 0, false
+	}
+	textField := m.activeCapturesInput()
+	if m.connScreen() {
+		return footerLeadRoom(m.width, textField), true
+	}
+	if p, ok := m.views[m.active].(prompter); ok && len(p.promptKeys()) > 0 {
+		return 0, false
+	}
+	if bar := m.activeBar(); bar != nil && bar.capturing() {
+		return 0, false
+	}
+	return footerLeadRoom(m.width-ansi.StringWidth(m.footerPill()), textField), true
+}
+
+// statusRow is the row a result or an error the footer would cut takes
+// above the footer while it is shown (#1207). One footer row cut a long
+// report from the right — the archived board's delete report lost its
+// `failed:` clause at 80 columns, which #790 had wrapped to keep — so news
+// the human has not read yet gets the terminal's whole width instead, cut
+// with "…" only beyond that. A note stays on the footer row and is cut
+// there: it explains the key just pressed and goes with the next one, so
+// moving the layout for it would shift the screen under every key press.
+// The row goes as soon as the message is replaced or cleared; the root
+// counts it in bodyHeight, so the body shrinks by one rather than being
+// overlapped, and the footer stays the last row, where clicks look for it.
+func (m *root) statusRow() (string, bool) {
+	room, ok := m.footerStatusRoom()
+	if !ok || !m.status.overflows(room) {
+		return "", false
+	}
+	return " " + m.status.styled(ansi.Truncate(m.status.text, max(m.width-1, 1), "…")), true
+}
+
+// footerStatus is the status as the footer leads with it: none while it has
+// its own row above (#1207).
+func (m *root) footerStatus() string {
+	if _, ok := m.statusRow(); ok {
+		return ""
+	}
+	return m.status.shown()
 }
 
 // bodyHeight is the space left for the active view: total minus header,
-// event line, and footer.
+// event line, footer, and the status row while one is up (#1207).
 func (m *root) bodyHeight() int {
 	chrome := m.chromeTop() + 1
+	if _, ok := m.statusRow(); ok {
+		chrome++
+	}
 	if m.height <= chrome {
 		return 0
 	}
@@ -3006,25 +3210,17 @@ func (m *root) popupRender() (func(w, h int) string, bool) {
 	}
 }
 
-// clipboardNoter is a view that says a copy's outcome itself: the task
-// workspace on its action bar, a chat on its note line. The root's status
-// line stands down for it, so a copy is reported once.
-type clipboardNoter interface {
-	notesClipboard()
-}
-
-// updateClipboardResult turns a copy's outcome into the active surface's own
-// notice (§15). It goes to the active view rather than being broadcast: the
-// human pressed the key on one screen and is looking at it.
-//
-// A view with no notice of its own — the issue screen, whose link picker
-// copies too — gets the root's status line instead (task 135.10 decision 6),
-// decided by clipboardNoter rather than a list of view ids, so a view that
-// learns to say it takes over without the root changing. Before it, such a
-// copy succeeded or failed with nothing on screen.
+// updateClipboardResult says a copy's outcome on the status line (§15,
+// #1164) — a key press a human made never fails silently — and hands the
+// message to the active view, the surface the key was pressed on, for
+// anything else it does with it. "nothing to copy" is a hint, so a note;
+// every other outcome is a result.
 func (m *root) updateClipboardResult(msg clipboardResultMsg) tea.Cmd {
-	if _, ok := m.views[m.active].(clipboardNoter); !ok {
-		m.selNotice, m.selNoticeWarn = msg.notice()
+	text, bad := msg.notice()
+	if errors.Is(msg.err, errNothingToCopy) {
+		m.status.note(text, false)
+	} else {
+		m.status.result(text, bad)
 	}
 	cmds := []tea.Cmd{m.deliver(m.active, msg)}
 	if msg.osc != "" {
@@ -3046,6 +3242,22 @@ func (m *root) updatePopupClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 	}
 	y := msg.Y - top
 	enter := tea.KeyPressMsg{Code: tea.KeyEnter}
+	// The copy and link pickers are the root's too, drawn in the same box
+	// (#1144); they are checked in the order keys reach them.
+	if m.reader != nil {
+		if i, ok := m.reader.clickLine(y); ok {
+			m.reader.cursor = i
+			return m.updateReaderKey(enter)
+		}
+		return m, nil
+	}
+	if m.linkPick != nil {
+		if i, ok := m.linkPick.clickLine(y); ok {
+			m.linkPick.cursor = i
+			return m.updateLinksKey(enter)
+		}
+		return m, nil
+	}
 	if m.palette != nil {
 		if i, ok := m.palette.clickLine(y); ok {
 			m.palette.cursor = i
@@ -3057,4 +3269,37 @@ func (m *root) updatePopupClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 		return m.updateProjectPickerKey(enter)
 	}
 	return m, nil
+}
+
+// openList is the inline list a click may choose a row of (#1144): the
+// chat-with popup's picker, or one the active screen has open. None while a
+// question owns the keyboard — a draft or quit question, `Z`'s — or a popup
+// without a list is up, or the screen is not the one drawn.
+func (m *root) openList() clickList {
+	switch {
+	case m.pending != nil, m.leave != nil, m.globalPause.asking:
+		return nil
+	case m.chatWith != nil:
+		if m.chatWith.pick == nil {
+			return nil
+		}
+		return m.chatWith.pick
+	case m.popupOpen(), m.connScreen():
+		return nil
+	}
+	if o, ok := m.views[m.active].(clickListOwner); ok {
+		return o.openList()
+	}
+	return nil
+}
+
+// clickListRow points l at the row drawn under (x, y) on the last frame, and
+// reports whether there was one.
+func (m *root) clickListRow(l clickList, x, y int) bool {
+	lines := strings.Split(ansi.Strip(m.lastFrame), "\n")
+	if y < 0 || y >= len(lines) {
+		return false
+	}
+	i, ok := rowAt(lines[y], x, l.clickRows())
+	return ok && l.pointAt(i)
 }

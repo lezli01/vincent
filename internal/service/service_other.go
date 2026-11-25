@@ -12,6 +12,8 @@ func install(context.Context, Options) error { return ErrUnsupported }
 
 func uninstall(context.Context) error { return ErrUnsupported }
 
+func restart(context.Context) error { return ErrUnsupported }
+
 func query(context.Context) (Status, error) { return Status{}, ErrUnsupported }
 
 // LingerFailed is never true where nothing installs.

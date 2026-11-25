@@ -89,9 +89,17 @@ func (p *pump) push(cmd tea.Cmd) {
 }
 
 // until pumps until cond holds, failing the test on timeout.
+//
+// It also re-checks cond on a short tick, not only when a message arrives: a
+// command that does its work and returns nil — saveSelection writing tui.json
+// — makes cond true without delivering anything, and a loop that woke only
+// on messages slept through it until the deadline whenever that write
+// finished after the last message in flight (TestRenamedSelectionIsPersisted).
 func (p *pump) until(timeout time.Duration, what string, cond func() bool) {
 	p.t.Helper()
 	deadline := time.After(wait.Timeout(timeout))
+	tick := time.NewTicker(20 * time.Millisecond)
+	defer tick.Stop()
 	for !cond() {
 		select {
 		case msg := <-p.msgs:
@@ -103,6 +111,7 @@ func (p *pump) until(timeout time.Duration, what string, cond func() bool) {
 			}
 			_, cmd := p.m.Update(msg)
 			p.push(cmd)
+		case <-tick.C:
 		case <-deadline:
 			p.t.Fatalf("timed out waiting for %s; view: %q", what, content(p.m))
 		}

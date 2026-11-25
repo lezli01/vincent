@@ -78,7 +78,7 @@ type repairForm struct {
 	err        string
 	submitting bool
 	// confirming is esc's "discard this draft?" on a form holding typed
-	// text (#1053): y closes it, any other key keeps it.
+	// text (#1053): y closes it, n or esc keeps it, any other key waits (#1162).
 	confirming bool
 	// dirty is any edit to a row since the form opened (task 132.6).
 	dirty bool
@@ -156,11 +156,13 @@ func (f *repairForm) paste(text string) tea.Cmd {
 func (f *repairForm) update(msg tea.KeyPressMsg, client *apiclient.Client) (cmd tea.Cmd, exit bool) {
 	defer f.watch()()
 	if f.confirming {
-		f.confirming = false
-		if k := msg.String(); k == "y" || k == "Y" {
-			return nil, true
+		// "discard this draft?" answers by the shared rule (#1162): any key
+		// but yes or no leaves it up.
+		yes, no := confirmAnswer(msg.String())
+		if yes || no {
+			f.confirming = false
 		}
-		return nil, false
+		return nil, yes
 	}
 	if f.picker != nil {
 		res := f.picker.update(msg)
@@ -181,8 +183,11 @@ func (f *repairForm) update(msg tea.KeyPressMsg, client *apiclient.Client) (cmd 
 			f.commitPrompt()
 			return nil, false
 		case "ctrl+s":
-			f.commitPrompt()
-			return nil, false
+			// ctrl+s means one thing in this form (#1172): start the repair.
+			// From the editor it keeps the text first — submit commits it —
+			// as the pull request (#1133), new-task, project and issue
+			// forms' fields do; esc alone leaves the field.
+			return f.submit(client), false
 		}
 		var c tea.Cmd
 		f.editor, c = f.editor.Update(msg)
@@ -322,6 +327,12 @@ func (f *repairForm) request() apiclient.RepairInput {
 // submit posts the repair. The empty prompt is refused here as well as by the
 // daemon: a round trip to be told to type something is a round trip wasted.
 func (f *repairForm) submit(client *apiclient.Client) tea.Cmd {
+	// One request at a time (#1134, as #1052 did for the new-task form): a
+	// second ctrl+s while the repair is in flight would post it again. The
+	// form already says "starting the repair agent…".
+	if f.submitting {
+		return nil
+	}
 	if f.editing {
 		f.commitPrompt()
 	}
@@ -375,7 +386,7 @@ func (f *repairForm) lines(width int) []string {
 	case f.err != "":
 		out = append(out, proseLines(styleBad, "⚠ "+f.err, width)...)
 	case f.editing:
-		out = append(out, proseLines(styleDim, "ctrl+s or esc keeps this text and leaves the field", width)...)
+		out = append(out, proseLines(styleDim, "esc keeps this text and leaves the field · ctrl+s keeps it and starts the repair", width)...)
 	case f.picker != nil:
 		out = append(out, proseLines(styleDim, "↑/↓ choose · / filter · enter pick · esc close the list", width)...)
 	case f.submitting:

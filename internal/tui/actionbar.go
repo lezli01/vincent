@@ -107,6 +107,10 @@ type taskActions struct {
 	// workspace's, or the board's detail panes when they show the selected
 	// task. A target with no such detail leaves it false.
 	editRetry bool
+	// answerOpens marks a target whose answer is a screen away (#1152): on
+	// the board, enter opens the workspace and the answer form is the next
+	// press, so the footer names the open rather than an immediate answer.
+	answerOpens bool
 }
 
 // offersChat reports whether `T` does anything for this target: the daemon
@@ -206,8 +210,11 @@ type actionBar struct {
 	// named — "cancel #21?" must never kill #22 (review finding 1).
 	pendingID int64
 
-	status    string
-	statusBad bool
+	// statusPoster is the status line the bar reports to (#1164): an
+	// action's result there stays until a newer message replaces it, and a
+	// key's "not available" explanation (#1138) is a note the next key,
+	// cursor move or tab change drops.
+	statusPoster
 }
 
 // capturing reports that a confirmation owns the keyboard, so the shell stops
@@ -219,15 +226,20 @@ func (a *actionBar) capturing() bool { return a.pending != "" }
 // as its own.
 func (a *actionBar) handleKey(key string, client *apiclient.Client, t taskActions) (cmd tea.Cmd, handled bool) {
 	if a.pending != "" {
-		switch key {
-		case "y":
+		yes, no := confirmAnswer(key)
+		switch {
+		case yes:
 			action, force, ids, id := a.pending, a.force, a.pendingIDs, a.pendingID
 			a.resetPending()
+			if action == actionDiagnose {
+				// Not a §6 call: `Q` opens a chat (#1162 made it ask).
+				return diagnoseRun(client, id, a), true
+			}
 			if len(ids) > 0 {
 				return a.dispatchBulk(client, ids, action, force), true
 			}
 			return a.dispatch(client, id, action, force), true
-		case "n", "esc":
+		case no:
 			a.resetPending()
 			a.setStatus("cancelled", false)
 			return nil, true
@@ -243,7 +255,7 @@ func (a *actionBar) handleKey(key string, client *apiclient.Client, t taskAction
 		// surfaces that call here, so nothing falls through that would have
 		// done something.
 		if name, isAction := keyAction(key, t); isAction {
-			a.setStatus(unavailableText(name, t), false)
+			a.setNote(unavailableText(name, t))
 			return nil, true
 		}
 		return nil, false
@@ -419,7 +431,8 @@ func (a *actionBar) applyResult(msg actionResultMsg) {
 	if isDirtyWorktree(msg.action, msg.err) {
 		a.pending, a.force = apiclient.ActionArchive, true
 		a.pendingIDs, a.bulkTotal = nil, 0
-		a.pendingID, a.status = msg.taskID, ""
+		a.pendingID = msg.taskID
+		a.status().clear()
 		return
 	}
 	if isStuckArchive(msg.action, msg.err) {
@@ -428,7 +441,8 @@ func (a *actionBar) applyResult(msg actionResultMsg) {
 		a.pending, a.force = actionForceDelete, false
 		a.pendingIDs, a.bulkTotal = nil, 0
 		a.pendingID = msg.taskID
-		a.cause, a.status = actionErrString(msg.err), ""
+		a.cause = actionErrString(msg.err)
+		a.status().clear()
 		return
 	}
 	var apiErr *apiclient.Error
@@ -445,11 +459,16 @@ func (a *actionBar) applyResult(msg actionResultMsg) {
 	a.setStatus(msg.action+": "+errString(msg.err), true)
 }
 
-func (a *actionBar) setStatus(text string, bad bool) {
-	a.status, a.statusBad = text, bad
-}
+// setStatus posts an action's result to the status line (#1164).
+func (a *actionBar) setStatus(text string, bad bool) { a.status().result(text, bad) }
 
-// clear drops transient state when the bar moves to another task.
+// setNote says why a key did nothing (#1138): a note, which the next key,
+// cursor move or tab change drops (#1164).
+func (a *actionBar) setNote(text string) { a.status().note(text, false) }
+
+// clear drops a pending question when the bar moves to another task. The
+// status line is not the bar's to clear (#1164): a result stays until a
+// newer message replaces it.
 //
 // A pending *bulk* question survives it, because it is a question about the
 // selection rather than about the row under the cursor — and the cursor moves
@@ -462,7 +481,6 @@ func (a *actionBar) clear() {
 		return
 	}
 	a.resetPending()
-	a.status, a.statusBad = "", false
 }
 
 // resetPending drops the question, whatever it was about.
@@ -493,6 +511,11 @@ func (a *actionBar) confirmPrompt() string {
 		return fmt.Sprintf("skip #%d's current step? (y/n) · it is marked skipped and the task goes on without it", a.pendingID)
 	case a.pending == apiclient.ActionReject:
 		return fmt.Sprintf("reject #%d's gate? (y/n) · the task is blocked there until you retry, skip or cancel", a.pendingID)
+	case a.pending == actionDiagnose:
+		// A linked chat takes its task's permission mode (spec §5.5), so the
+		// turn is full-auto unless the task runs restricted.
+		return fmt.Sprintf("diagnose #%d? (y/n) · starts an agent turn in a new chat on its worktree, "+
+			"full-auto unless the task runs restricted; the task stays locked until the chat closes", a.pendingID)
 	default:
 		return fmt.Sprintf("%s #%d? (y/n)", a.pending, a.pendingID)
 	}
@@ -557,12 +580,8 @@ func (a *actionBar) render(t taskActions) string {
 	if len(parts) == 0 {
 		line = styleDim.Render(" no actions available")
 	}
-	if a.status != "" {
-		style := styleDim
-		if a.statusBad {
-			style = styleBad
-		}
-		line += style.Render("   " + a.status)
+	if st := a.status().shown(); st != "" {
+		line += "   " + st
 	}
 	return line
 }

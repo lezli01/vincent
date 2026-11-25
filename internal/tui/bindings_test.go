@@ -105,10 +105,10 @@ func registryKey(t *testing.T, key string) tea.KeyPressMsg {
 		// press: the hand-built alt+G one no decoder produces is how the
 		// follow key shipped dead (review F1).
 		msg = decodePress(t, "\x1bG")
-	case "alt+shift+n":
-		// prev_chat, decoded from what a terminal sends for alt+N for the
-		// reason alt+shift+g is.
-		msg = decodePress(t, "\x1bN")
+	case "alt+.", "alt+,":
+		// next and previous (#1157), decoded from what a terminal sends
+		// for Meta+. and Meta+, for the reason alt+shift+g is.
+		msg = decodePress(t, "\x1b"+strings.TrimPrefix(key, "alt+"))
 	case "shift+right":
 		msg = tea.KeyPressMsg{Code: tea.KeyRight, Mod: tea.ModShift}
 	default:
@@ -495,7 +495,7 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		"z": func(t *testing.T) {
 			b := taskBoardFixture()
 			b.update(keyPress("z"))
-			if b.sortOrder != "newest" {
+			if b.sortOrder != "updated" {
 				t.Fatalf("z left the order at %q", b.sortOrder)
 			}
 		},
@@ -919,11 +919,11 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatal("R did not reload the board")
 			}
 		},
-		"alt+e": func(t *testing.T) {
+		"alt+w": func(t *testing.T) {
 			v := archivedChatsFixture()
-			_, cmd := v.updateKey(registryKey(t, "alt+e"))
+			_, cmd := v.updateKey(registryKey(t, "alt+w"))
 			if _, ok := drain(cmd).(openChatExportMsg); !ok {
-				t.Fatalf("alt+e produced %T, want openChatExportMsg", drain(cmd))
+				t.Fatalf("alt+w produced %T, want openChatExportMsg", drain(cmd))
 			}
 		},
 		"r": func(t *testing.T) {
@@ -961,14 +961,14 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			v := compareFixture()
 			v.updateKey(registryKey(t, "["))
 			if v.confirm != 0 {
-				t.Fatalf("[ did not ask to keep the left side (confirm %d, note %q)", v.confirm, v.note)
+				t.Fatalf("[ did not ask to keep the left side (confirm %d, note %q)", v.confirm, v.status().text)
 			}
 		},
 		"]": func(t *testing.T) {
 			v := compareFixture()
 			v.updateKey(registryKey(t, "]"))
 			if v.confirm != 1 {
-				t.Fatalf("] did not ask to keep the right side (confirm %d, note %q)", v.confirm, v.note)
+				t.Fatalf("] did not ask to keep the right side (confirm %d, note %q)", v.confirm, v.status().text)
 			}
 		},
 		"R": func(t *testing.T) {
@@ -1020,15 +1020,15 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatalf("S produced %#v, want the chat search", drain(cmd))
 			}
 		},
-		"alt+e": func(t *testing.T) {
+		"alt+w": func(t *testing.T) {
 			v := chatsFixture()
-			_, cmd := v.updateKey(registryKey(t, "alt+e"))
+			_, cmd := v.updateKey(registryKey(t, "alt+w"))
 			msg, ok := drain(cmd).(openChatExportMsg)
 			if !ok {
-				t.Fatalf("alt+e produced %T, want openChatExportMsg", drain(cmd))
+				t.Fatalf("alt+w produced %T, want openChatExportMsg", drain(cmd))
 			}
 			if c, _ := v.current(); msg.id != c.ID {
-				t.Fatalf("alt+e opened the export for chat %d, want the selected %d", msg.id, c.ID)
+				t.Fatalf("alt+w opened the export for chat %d, want the selected %d", msg.id, c.ID)
 			}
 		},
 		"enter": func(t *testing.T) {
@@ -1092,8 +1092,8 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		"alt+l": func(t *testing.T) {
 			v := chatViewFixture()
 			v.updateKey(registryKey(t, "alt+l"))
-			if v.note != "the last turn did not fail — nothing to retry" {
-				t.Fatalf("alt+l with no failed turn said %q", v.note)
+			if v.status().text != "the last turn did not fail — nothing to retry" {
+				t.Fatalf("alt+l with no failed turn said %q", v.status().text)
 			}
 		},
 		// Task 164: recall's way back, the stash and the history picker.
@@ -1135,8 +1135,8 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			v := chatViewFixture()
 			v.chat.State, v.chat.SteerReason = "running", "claude cannot steer a running turn"
 			v.updateKey(registryKey(t, "ctrl+s"))
-			if !strings.Contains(v.note, "cannot steer") {
-				t.Fatalf("ctrl+s noted %q, want the daemon's steer reason", v.note)
+			if !strings.Contains(v.status().text, "cannot steer") {
+				t.Fatalf("ctrl+s noted %q, want the daemon's steer reason", v.status().text)
 			}
 		},
 		"up": func(t *testing.T) {
@@ -1171,20 +1171,25 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			v := chatViewFixture()
 			v.client = offlineClient()
 			v.chat.QueuedCount = 2
-			if _, cmd := v.updateKey(registryKey(t, "alt+c")); cmd == nil {
-				t.Fatal("alt+c did not clear the queue")
+			// alt+c asks first (#1162); y clears.
+			v.updateKey(registryKey(t, "alt+c"))
+			if !v.clearingQueue {
+				t.Fatal("alt+c did not ask before clearing the queue")
+			}
+			if _, cmd := v.updateKey(tea.KeyPressMsg{Code: 'y', Text: "y"}); cmd == nil {
+				t.Fatal("alt+c then y did not clear the queue")
 			}
 		},
-		"alt+e": func(t *testing.T) {
+		"alt+w": func(t *testing.T) {
 			v := chatViewFixture()
 			v.composer.SetValue("draft")
-			_, cmd := v.updateKey(registryKey(t, "alt+e"))
+			_, cmd := v.updateKey(registryKey(t, "alt+w"))
 			msg, ok := drain(cmd).(openChatExportMsg)
 			if !ok || msg.id != v.chat.ID {
-				t.Fatalf("alt+e produced %#v, want openChatExportMsg for chat %d", drain(cmd), v.chat.ID)
+				t.Fatalf("alt+w produced %#v, want openChatExportMsg for chat %d", drain(cmd), v.chat.ID)
 			}
 			if v.composer.Value() != "draft" {
-				t.Fatalf("alt+e reached the composer: %q", v.composer.Value())
+				t.Fatalf("alt+w reached the composer: %q", v.composer.Value())
 			}
 		},
 		"enter": func(t *testing.T) {
@@ -1546,7 +1551,7 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		"z": func(t *testing.T) {
 			v := issuesFixture()
 			v.update(keyPress("z"))
-			if v.sortOrder != "newest" {
+			if v.sortOrder != "updated" {
 				t.Fatalf("z left the order at %q", v.sortOrder)
 			}
 		},
@@ -2313,6 +2318,14 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatalf("enter = %+v, want project 1 picked", msg)
 			}
 		},
+		"e": func(t *testing.T) {
+			p := newProjectsView()
+			loadedProjects(p, []apiclient.Project{testProject(1, "api")}, nil)
+			p.updateKey(registryKey(t, "e"))
+			if p.form == nil {
+				t.Fatal("e did not open the project's edit form")
+			}
+		},
 		"tab": func(t *testing.T) {
 			p := newProjectsView()
 			loadedProjects(p, []apiclient.Project{testProject(1, "api")},
@@ -2423,13 +2436,9 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			w := newWorkflowsView()
 			w.client = offlineClient()
 			loadedWorkflows(w, globalEntry("review"))
-			w.err = "a stale note the reload should clear"
 			_, cmd := w.updateKey(registryKey(t, "R"))
 			if cmd == nil {
 				t.Fatal("R did not re-read the registry")
-			}
-			if w.err != "" {
-				t.Errorf("R left the previous error on screen: %q", w.err)
 			}
 		},
 		"g": func(t *testing.T) {
@@ -3012,8 +3021,8 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		"u": func(t *testing.T) {
 			v := settingsFixture(t)
 			v.updateKey(registryKey(t, "u"))
-			if v.note != "nothing to undo" {
-				t.Fatalf("u with nothing changed said %q", v.note)
+			if v.status().text != "nothing to undo" {
+				t.Fatalf("u with nothing changed said %q", v.status().text)
 			}
 		},
 		"down": func(t *testing.T) {
@@ -3528,6 +3537,219 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			}
 		},
 	},
+	// The root's other popups (#1180). Probes that would reach the clipboard
+	// or a browser stop at the cmd: running it is the chokepoints' business.
+	ctxChatExportWritten: {
+		"down": func(t *testing.T) {
+			m := exportWrittenProbeRoot(t)
+			m.Update(registryKey(t, "down"))
+			if m.exportForm.choice != 1 {
+				t.Fatalf("down left the choice at %d", m.exportForm.choice)
+			}
+		},
+		"enter": func(t *testing.T) {
+			m := exportWrittenProbeRoot(t)
+			_, cmd := m.Update(registryKey(t, "enter"))
+			if m.exportForm != nil || cmd == nil {
+				t.Fatalf("enter: form open %v, cmd %v — want it closed on a copy", m.exportForm != nil, cmd != nil)
+			}
+		},
+		"esc": func(t *testing.T) {
+			m := exportWrittenProbeRoot(t)
+			_, cmd := m.Update(registryKey(t, "esc"))
+			if m.exportForm != nil || cmd != nil {
+				t.Fatal("esc did not just close the form")
+			}
+		},
+	},
+	ctxPalette: {
+		"down": func(t *testing.T) {
+			m := paletteProbeRoot(t)
+			m.Update(registryKey(t, "down"))
+			if m.palette.cursor != 1 {
+				t.Fatalf("down left the highlight on %d", m.palette.cursor)
+			}
+		},
+		"enter": func(t *testing.T) {
+			m := paletteProbeRoot(t)
+			_, cmd := m.Update(registryKey(t, "enter"))
+			if m.palette != nil || cmd == nil {
+				t.Fatal("enter did not run the highlighted command")
+			}
+			if _, ok := cmd().(probeRanMsg); !ok {
+				t.Fatal("enter ran something other than the highlighted command")
+			}
+		},
+		"esc": func(t *testing.T) {
+			m := paletteProbeRoot(t)
+			m.Update(registryKey(t, "esc"))
+			if m.palette != nil {
+				t.Fatal("esc left the palette open")
+			}
+		},
+	},
+	ctxScreensMenu: {
+		"down": func(t *testing.T) {
+			m := screensProbeRoot(t)
+			m.Update(registryKey(t, "down"))
+			if m.palette.cursor != 1 {
+				t.Fatalf("down left the highlight on %d", m.palette.cursor)
+			}
+		},
+		"enter": func(t *testing.T) {
+			m := screensProbeRoot(t)
+			want := m.palette.matches()[1].navTarget
+			m.Update(registryKey(t, "down"))
+			m.Update(registryKey(t, "enter"))
+			if m.palette != nil || m.active != want {
+				t.Fatalf("enter: menu open %v, active %v, want %v", m.palette != nil, m.active, want)
+			}
+		},
+		"esc": func(t *testing.T) {
+			m := screensProbeRoot(t)
+			m.Update(registryKey(t, "esc"))
+			if m.palette != nil {
+				t.Fatal("esc left the menu open")
+			}
+		},
+	},
+	ctxCopyPicker: {
+		"down": func(t *testing.T) {
+			m := copyProbeRoot(t)
+			m.Update(registryKey(t, "down"))
+			if m.reader.cursor != 1 {
+				t.Fatalf("down left the highlight on %d", m.reader.cursor)
+			}
+		},
+		"enter": func(t *testing.T) {
+			m := copyProbeRoot(t)
+			_, cmd := m.Update(registryKey(t, "enter"))
+			if m.reader != nil || cmd == nil {
+				t.Fatal("enter did not copy the highlighted row")
+			}
+		},
+		"esc": func(t *testing.T) {
+			m := copyProbeRoot(t)
+			_, cmd := m.Update(registryKey(t, "esc"))
+			if m.reader != nil || cmd != nil {
+				t.Fatal("esc did not just close the picker")
+			}
+		},
+	},
+	ctxLinkPicker: {
+		"down": func(t *testing.T) {
+			p := linkProbePicker()
+			p.update(registryKey(t, "down"))
+			if p.cursor != 1 {
+				t.Fatalf("down left the highlight on %d", p.cursor)
+			}
+		},
+		"enter": func(t *testing.T) {
+			if _, act, done, _ := linkProbePicker().update(registryKey(t, "enter")); !done || act != linkOpen {
+				t.Fatalf("enter: done %v, act %v, want an open", done, act)
+			}
+		},
+		copyPickKey: func(t *testing.T) {
+			if _, act, done, _ := linkProbePicker().update(registryKey(t, copyPickKey)); !done || act != linkCopy {
+				t.Fatalf("%s: done %v, act %v, want a copy", copyPickKey, done, act)
+			}
+		},
+		"esc": func(t *testing.T) {
+			if run, _, done, _ := linkProbePicker().update(registryKey(t, "esc")); !done || run != nil {
+				t.Fatal("esc did not just close the picker")
+			}
+		},
+	},
+	ctxChatRename: {
+		"enter": func(t *testing.T) {
+			p := newChatRenamePrompt(7, "Fix the build")
+			p.input.SetValue("")
+			p.update(registryKey(t, "enter"), nil)
+			if p.err == "" {
+				t.Fatal("enter did not try to rename (an empty title should say so)")
+			}
+		},
+		"esc": func(t *testing.T) {
+			if done, _ := newChatRenamePrompt(7, "Fix the build").update(registryKey(t, "esc"), nil); !done {
+				t.Fatal("esc left the prompt open")
+			}
+		},
+	},
+	ctxChatWith: {
+		"down": func(t *testing.T) {
+			f := newChatWithForm(chatWithTarget{})
+			f.update(registryKey(t, "down"), nil)
+			if f.focus == cwAgent {
+				t.Fatal("down left the focus on the agent row")
+			}
+		},
+		"enter": func(t *testing.T) {
+			f := newChatWithForm(chatWithTarget{})
+			f.update(registryKey(t, "enter"), nil)
+			if f.pick == nil {
+				t.Fatal("enter did not open the agent row's list")
+			}
+		},
+		"ctrl+s": func(t *testing.T) {
+			f := newChatWithForm(chatWithTarget{})
+			f.update(registryKey(t, "ctrl+s"), nil)
+			if f.err != "not connected" {
+				t.Fatalf("ctrl+s did not try to create the chat: err %q", f.err)
+			}
+		},
+		"esc": func(t *testing.T) {
+			if done, _ := newChatWithForm(chatWithTarget{}).update(registryKey(t, "esc"), nil); !done {
+				t.Fatal("esc left the form open")
+			}
+		},
+	},
+	ctxChatWithList: {
+		"down": func(t *testing.T) {
+			f := chatWithListProbe()
+			f.update(registryKey(t, "down"), nil)
+			if f.pick.cursor != 1 {
+				t.Fatalf("down left the highlight on %d", f.pick.cursor)
+			}
+		},
+		"enter": func(t *testing.T) {
+			f := chatWithListProbe()
+			f.update(registryKey(t, "down"), nil)
+			f.update(registryKey(t, "enter"), nil)
+			if f.pick != nil || f.model != "opus" {
+				t.Fatalf("enter: list open %v, model %q, want opus", f.pick != nil, f.model)
+			}
+		},
+		"esc": func(t *testing.T) {
+			f := chatWithListProbe()
+			f.update(registryKey(t, "esc"), nil)
+			if f.pick != nil || f.model != "" {
+				t.Fatalf("esc: list open %v, model %q", f.pick != nil, f.model)
+			}
+		},
+	},
+	ctxDraftQuestion: {
+		"y": func(t *testing.T) {
+			m := pickerProbeRoot(t)
+			m.projPick = nil
+			m.leave = &pendingLeave{draft: "draft", quit: true}
+			_, cmd := m.Update(registryKey(t, "y"))
+			if m.leave != nil || cmd == nil {
+				t.Fatal("y did not answer the question")
+			}
+			if _, ok := cmd().(tea.QuitMsg); !ok {
+				t.Fatal("y did not quit")
+			}
+		},
+		"n": func(t *testing.T) {
+			m := pickerProbeRoot(t)
+			m.projPick = nil
+			m.leave = &pendingLeave{draft: "draft", quit: true}
+			_, cmd := m.Update(registryKey(t, "n"))
+			if m.leave != nil || cmd != nil {
+				t.Fatal("n did not keep the draft")
+			}
+		},
+	},
 	ctxChatDiff: {
 		"]": func(t *testing.T) {
 			v := chatDiffFixture(t)
@@ -3560,10 +3782,25 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatalf("s left the scope at %q", v.diffScope())
 			}
 		},
-		"r": func(t *testing.T) {
+		"ctrl+r": func(t *testing.T) {
 			v := chatDiffFixture(t)
-			if _, cmd := v.updateKey(registryKey(t, "r")); cmd == nil || !v.diff.fetching {
-				t.Fatal("r did not read the diff again")
+			if _, cmd := v.updateKey(registryKey(t, "ctrl+r")); cmd == nil || !v.diff.fetching {
+				t.Fatal("ctrl+r did not read the diff again")
+			}
+		},
+		"/": func(t *testing.T) {
+			v := chatDiffFixture(t)
+			v.updateKey(registryKey(t, "/"))
+			if !v.diff.pane.find.typing {
+				t.Fatal("/ on the chat diff did not open the search")
+			}
+		},
+		"ctrl+y": func(t *testing.T) {
+			v := chatDiffFixture(t)
+			v.updateKey(registryKey(t, "]"))
+			_, cmd := v.updateKey(registryKey(t, "ctrl+y"))
+			if msg, ok := drain(cmd).(openCopyPickerMsg); !ok || len(msg.items) == 0 || msg.items[0].label != "this hunk" {
+				t.Fatalf("ctrl+y on the chat diff produced %#v", msg)
 			}
 		},
 		"down": func(t *testing.T) {
@@ -4029,6 +4266,10 @@ var vocabularyExceptions = map[string]string{
 	// Task 052 decision 6: link and unlink are the two writes to vincent's own
 	// column, and they live on the one screen that can see a pull request no
 	// task claims. `l` there is not a lane, and the takeover has none.
+	// Task 132 decision 42: on the project overview `e` edits the
+	// highlighted project in its form — a fixed key in keymap.fixed — and
+	// the screen opens no file in $EDITOR. A row since #1152, for its hint.
+	"panel/projects/e":      "task 132.42 — edit the project in its form, on a screen with no $EDITOR row",
 	"panel/pull requests/l": "task 052.6 — link, on a screen with no fan-out lanes",
 	// Issue #595: `d` switches Output and Diff from every workspace tab; the
 	// keymap's exception on `d` records why no draft is ever open there.
@@ -4257,6 +4498,64 @@ func exportProbeRoot(t *testing.T) *root {
 	m.phase = phaseConnected
 	m.exportForm = newChatExportForm(7, "Fix the build", t.TempDir())
 	return m
+}
+
+// exportWrittenProbeRoot is the export form once its file is written.
+func exportWrittenProbeRoot(t *testing.T) *root {
+	t.Helper()
+	m := exportProbeRoot(t)
+	m.exportForm.written, m.exportForm.body = "/tmp/chat.md", []byte("# chat")
+	return m
+}
+
+// probeRanMsg is what a probe's palette entry runs.
+type probeRanMsg struct{}
+
+func paletteProbeRoot(t *testing.T) *root {
+	t.Helper()
+	m := pickerProbeRoot(t)
+	m.projPick = nil
+	run := func() tea.Msg { return probeRanMsg{} }
+	m.palette = newPalette([]paletteEntry{
+		{group: "probe", label: "first", action: run},
+		{group: "probe", label: "second", action: run},
+	})
+	return m
+}
+
+func screensProbeRoot(t *testing.T) *root {
+	t.Helper()
+	m := pickerProbeRoot(t)
+	m.projPick = nil
+	m.palette = newGoToMenu(false)
+	return m
+}
+
+func copyProbeRoot(t *testing.T) *root {
+	t.Helper()
+	m := pickerProbeRoot(t)
+	m.projPick = nil
+	m.reader = newReaderPicker([]copyItem{
+		{group: "message 1", label: "markdown", snippet: "the whole answer"},
+		{group: "message 1", label: "plain text", snippet: "the whole answer"},
+	})
+	return m
+}
+
+func linkProbePicker() *linkPicker {
+	return newLinkPicker([]linkItem{
+		{group: "message 1", link: mdLink{n: 1, label: "docs", dest: "https://example.com/docs"}},
+		{group: "message 1", link: mdLink{n: 2, label: "api", dest: "https://example.com/api"}},
+	})
+}
+
+// chatWithListProbe is the chat-with form with its model list open.
+func chatWithListProbe() *chatWithForm {
+	f := newChatWithForm(chatWithTarget{})
+	f.pick = newPicker(int(cwModel), "model", []pickerOption{
+		{value: "sonnet", label: "sonnet"}, {value: "opus", label: "opus"},
+	}, false, "")
+	return f
 }
 
 func pickerProbeRoot(t *testing.T) *root {

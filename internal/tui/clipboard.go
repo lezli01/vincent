@@ -65,6 +65,10 @@ func readClipboardCmd() tea.Cmd {
 // openURL is.
 var clipboardWrite = clipboard.WriteAll
 
+// errNothingToCopy is a copy of empty text: a hint, which the status line
+// shows as a note (#1164), rather than a failure.
+var errNothingToCopy = errors.New("nothing to copy")
+
 // clipboardResultMsg reports what became of a copy. label names what was
 // copied ("markdown", "code block") so the notice can say it.
 type clipboardResultMsg struct {
@@ -74,6 +78,9 @@ type clipboardResultMsg struct {
 	// the notice names.
 	osc string
 	err error
+	// done, when set, is the whole notice of a copy that succeeded, for a
+	// copy the human did not ask for and so needs saying in full (#1135).
+	done string
 }
 
 // notice renders the result as the line a human reads, and whether it is bad.
@@ -90,6 +97,8 @@ func (msg clipboardResultMsg) notice() (string, bool) {
 			label, errString(msg.err)), false
 	case msg.err != nil:
 		return fmt.Sprintf("%s: %s", label, errString(msg.err)), true
+	case msg.done != "":
+		return msg.done, false
 	default:
 		return label + " copied", false
 	}
@@ -106,11 +115,24 @@ func writeClipboardCmd(label, text string) tea.Cmd {
 	return func() tea.Msg {
 		clean := sanitizeText(text)
 		if clean == "" {
-			return clipboardResultMsg{label: label, err: errors.New("nothing to copy")}
+			return clipboardResultMsg{label: label, err: errNothingToCopy}
 		}
 		if err := clipboardWrite(clean); err != nil {
 			return clipboardResultMsg{label: label, osc: clean, err: err}
 		}
 		return clipboardResultMsg{label: label}
+	}
+}
+
+// writeClipboardCmdSaying is writeClipboardCmd whose success reads done in
+// full rather than "<label> copied" (#1135).
+func writeClipboardCmdSaying(label, done, text string) tea.Cmd {
+	write := writeClipboardCmd(label, text)
+	return func() tea.Msg {
+		msg, ok := write().(clipboardResultMsg)
+		if ok && msg.err == nil {
+			msg.done = done
+		}
+		return msg
 	}
 }

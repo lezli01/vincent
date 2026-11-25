@@ -12,6 +12,7 @@ import (
 
 	"github.com/lezli01/vincent/internal/daemon"
 	"github.com/lezli01/vincent/internal/procx"
+	"github.com/lezli01/vincent/internal/service"
 )
 
 // The daemon screen's restart and its log filter (#1081). Restart existed
@@ -22,12 +23,80 @@ import (
 // `daemon stop` budget.
 const restartStopTimeout = 30 * time.Second
 
-// restartDaemonMsg is a confirmed restart, from the daemon screen to the
-// root, which owns the connection it tears down.
-type restartDaemonMsg struct{}
+// serviceRestartTimeout bounds a restart through the service manager, from
+// asking it to the new daemon answering /v1/health (#1160). It covers
+// Windows' graceful stop, which waits up to `daemon stop`'s 30 s on its own.
+const serviceRestartTimeout = 60 * time.Second
 
-// daemonStoppedMsg says the old daemon is gone, or why the stop failed.
+// restartDaemonMsg is a confirmed restart, from the daemon screen to the
+// root, which owns the connection it tears down. viaService is the path the
+// question named (#1160): through the service manager, or a stop and the
+// connect flow's auto-start.
+type restartDaemonMsg struct{ viaService bool }
+
+// daemonStoppedMsg ends the first half of a restart: on the plain path the old
+// daemon is gone, on the service path the service's new one is serving — or
+// err says why not. Either way a nil err means "reconnect now".
 type daemonStoppedMsg struct{ err error }
+
+// restartEndedMsg tells the daemon screen a restart is over: reconnected, or
+// failed with err. Until it lands a second restart is ignored (#1160).
+type restartEndedMsg struct{ err error }
+
+// serviceStateMsg is the service manager's answer to "is a vincent service
+// installed and running?", read when `r` opens the question (#1160).
+type serviceStateMsg struct {
+	st  service.Status
+	err error
+}
+
+// serviceStateCmd reads the service state off the UI goroutine: every
+// backend shells out, and Windows' answer comes from PowerShell.
+func serviceStateCmd(query func(context.Context) (service.Status, error)) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		st, err := query(ctx)
+		return serviceStateMsg{st: st, err: err}
+	}
+}
+
+// serviceRestartCmd restarts a service-managed daemon through its service
+// manager and waits for the new one (#1160). A stop and the connect flow's
+// auto-start would leave the new daemon outside the service, because every
+// definition restarts on failure only and the stop exits 0.
+//
+// It waits here, for a daemon.json naming a PID other than the old one and a
+// healthy answer from it, rather than handing straight to the connect flow:
+// a probe that ran before the service had the new daemon up would fail and
+// auto-start a detached one beside it. A daemon that does not come back is an
+// error, and the connection is left to the stream's own reconnect.
+func (cn connector) serviceRestartCmd(dataDir string) tea.Cmd {
+	return func() tea.Msg {
+		old := 0
+		if ri, err := cn.readRuntime(dataDir); err == nil {
+			old = ri.PID
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), cn.serviceTimeout)
+		defer cancel()
+		if err := cn.restartService(ctx); err != nil {
+			return daemonStoppedMsg{err: fmt.Errorf("restart the service: %w", err)}
+		}
+		for ctx.Err() == nil {
+			if ri, err := cn.readRuntime(dataDir); err == nil && ri.PID != old {
+				hctx, hcancel := context.WithTimeout(ctx, probeTimeout)
+				_, err := cn.checkHealth(hctx, ri.Port)
+				hcancel()
+				if err == nil {
+					return daemonStoppedMsg{}
+				}
+			}
+			time.Sleep(cn.pollInterval)
+		}
+		return daemonStoppedMsg{err: fmt.Errorf("the service did not bring the daemon back within %s; "+
+			"`vincent service status` and the log say why", cn.serviceTimeout)}
+	}
+}
 
 // stopDaemonCmd asks the daemon to stop the way `vincent daemon stop` does
 // and waits for its process to exit; the connect flow then starts a new one.
@@ -118,15 +187,46 @@ func (d *daemonView) logHeader() string {
 	return "  " + strings.Join(parts, " · ")
 }
 
-// updateRestartAsk answers the restart question: y restarts, anything else
-// keeps the daemon.
+// updateRestartAsk answers the restart question by the shared rule (#1162):
+// y restarts, n or esc keeps the daemon, and any other key leaves the
+// question up. Until the service reading lands y waits too (#1160): the
+// question has not yet said which restart it is asking about.
 func (d *daemonView) updateRestartAsk(msg tea.KeyPressMsg) tea.Cmd {
-	d.restartAsk = false
-	if msg.String() == "y" {
-		d.restarting = true
-		return func() tea.Msg { return restartDaemonMsg{} }
+	yes, no := confirmAnswer(msg.String())
+	if yes && !d.svcKnown {
+		return nil
+	}
+	if yes || no {
+		d.restartAsk = false
+	}
+	if yes {
+		d.restarting, d.restartIgnored = true, false
+		d.restartViaService = d.viaService()
+		via := d.restartViaService
+		return func() tea.Msg { return restartDaemonMsg{viaService: via} }
 	}
 	return nil
+}
+
+// startRestart is `r`: the question, and the service reading it waits on. A
+// restart already under way ignores it and says so (#1160) — `r y r y` used
+// to start a second one while the first was still reconnecting.
+func (d *daemonView) startRestart() tea.Cmd {
+	if d.restarting {
+		d.restartIgnored = true
+		return nil
+	}
+	d.restartAsk, d.restartErr = true, nil
+	d.svcKnown, d.svc, d.svcErr = false, service.Status{}, nil
+	return serviceStateCmd(d.serviceQuery)
+}
+
+// viaService is whether the restart goes through the service manager: a
+// vincent service is installed and its daemon is running (#1160). A failed
+// reading, or a service that is installed but stopped, restarts the daemon
+// the way it did before — whatever is running is not the service's.
+func (d *daemonView) viaService() bool {
+	return d.svcKnown && d.svcErr == nil && d.svc.Installed && d.svc.Running
 }
 
 // updateSearch edits the log search: enter keeps it, esc clears it.

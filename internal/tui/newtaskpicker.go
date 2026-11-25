@@ -79,6 +79,8 @@ type picker struct {
 	// while editing, else the highlighted row. A form that windows the
 	// body keeps them on screen (review F2).
 	focusFrom, focusTo int
+	// drawn is the rows renderBody last drew, for a click (#1144).
+	drawn []clickRow
 }
 
 // setWidth hands the picker the pane width its rows share.
@@ -282,6 +284,7 @@ func (p *picker) renderBody() []string {
 	}
 	out := []string{styleDim.Render(heading)}
 	p.focusFrom, p.focusTo = 0, 1
+	p.drawn = p.drawn[:0]
 	if p.filtering {
 		p.filter.SetWidth(max(p.width-6, 10))
 		out = append(out, fieldRows("      ", p.filter)...)
@@ -309,6 +312,8 @@ func (p *picker) renderBody() []string {
 			}
 			label = box + label
 		}
+		// The label alone, not the note: an owner may cut a long row.
+		p.drawn = append(p.drawn, drawnRow(label, i))
 		if opt.disabled {
 			label = styleBad.Render(label)
 		}
@@ -334,7 +339,9 @@ func (p *picker) renderBody() []string {
 				p.focusFrom, p.focusTo = len(out), len(out)+1
 			}
 		}
-		out = append(out, "    "+marker+styleDim.Render("type a value not listed… ("+opKey(keymap.FreeText)+")"))
+		free := "type a value not listed… (" + opKey(keymap.FreeText) + ")"
+		p.drawn = append(p.drawn, drawnRow(free, len(p.matches)))
+		out = append(out, "    "+marker+styleDim.Render(free))
 	}
 	if p.editing {
 		p.input.SetWidth(max(p.width-6, 10))
@@ -349,6 +356,24 @@ func (p *picker) renderBody() []string {
 		}
 	}
 	return out
+}
+
+func (p *picker) clickRows() []clickRow { return p.drawn }
+
+// pointAt is a click on a row (#1144). A filter being typed is accepted, as
+// enter would accept it, so the click lands on the list it narrowed; the
+// free-text entry being typed in keeps the keyboard.
+func (p *picker) pointAt(i int) bool {
+	if p.editing || i < 0 || i >= p.rowCount() {
+		return false
+	}
+	if p.filtering {
+		p.filtering = false
+		p.filter.Blur()
+	}
+	p.cursor = i
+	p.scrollToCursor()
+	return true
 }
 
 func (p *picker) startFree() {

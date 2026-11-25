@@ -72,7 +72,6 @@ func (v *triggersView) openCreate() {
 	f.command.SetPlaceholder("optional: the poll command's argv, space-separated — run directly, never through a shell")
 	f.interval.SetPlaceholder("optional: default 5m")
 	f.id.Focus()
-	v.err, v.note = "", ""
 	v.create = f
 }
 
@@ -185,7 +184,7 @@ func (v *triggersView) applyCreated(msg trigCreatedMsg) tea.Cmd {
 	v.create = nil
 	v.selectedID = msg.id
 	cmd := v.openFormOn(msg.id, msg.result.File, msg.result.Version)
-	v.note = "created " + msg.id + " — disabled until you enable it"
+	v.status().result("created "+msg.id+" — disabled until you enable it", false)
 	return tea.Batch(v.loadCmd(), cmd)
 }
 

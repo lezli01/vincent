@@ -40,3 +40,38 @@ func hasKey(rows []binding, key string) bool {
 	}
 	return false
 }
+
+// #1141: the ? sheet agrees with the footer. While a question is pending,
+// the workspace's sheet gives enter one meaning — the answer, among the
+// actions now — and no tab's own enter row stands beside it.
+func TestHelpGivesEnterOneMeaningWhileAQuestionIsPending(t *testing.T) {
+	m, v := runningWorkspace(t, "")
+	v.detail.task.State = stateAwaitingInput
+	v.detail.task.AvailableActions = []string{apiclient.ActionAnswer, apiclient.ActionCancel}
+	for _, tab := range v.tabs() {
+		v.tab = tab
+		v.detail.form = nil
+		if tab == taskTabOutput && len(enterRows(m.helpSheet())) == 0 {
+			t.Fatal("the fixture's Output sheet has no enter row to replace")
+		}
+		v.detail.form = newAnswerForm(questionRequest())
+		sheet := m.helpSheet()
+		if rows := enterRows(sheet); len(rows) != 1 || !strings.HasSuffix(rows[0], " "+answerBinding.label) {
+			t.Errorf("%s: the sheet's enter rows outside the popups' sections are %q, want only the answer",
+				taskTabNames[tab], rows)
+		}
+	}
+}
+
+// enterRows counts the sheet's enter rows before the popups' sections,
+// which describe the popups rather than the surface under them.
+func enterRows(sheet string) []string {
+	plain, _, _ := strings.Cut(ansi.Strip(sheet), "ANSWER FORM")
+	var rows []string
+	for line := range strings.SplitSeq(plain, "\n") {
+		if strings.HasPrefix(line, "  enter ") {
+			rows = append(rows, line)
+		}
+	}
+	return rows
+}
