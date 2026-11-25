@@ -17774,6 +17774,15 @@ stream for the live tail.
    on its default, and `t` keeps the line of `operation=key` pairs for
    pasting a whole keymap. It is a screen inside Settings, not a fifteenth view.
 
+   *Amended 2026-11-25 (issue #1158).* **The Key bindings screen is in the
+   palette, and a reset can be undone.** The palette's screens group lists a
+   key-less **key bindings** row beside Settings, found by `key`, `keys`,
+   `bind`, `keybindings` and `shortcuts`, that opens Settings on the screen.
+   A rebinding or a `backspace` reset saved there fills Settings' one undo
+   slot with that operation's previous key: `u`, on the screen or in the list
+   of settings, puts that one key back — checked as any binding is, not the
+   whole map restored — and names it; the undo is not itself undoable.
+
    *Amended 2026-11-18 (task 150.6; applies to views 1 and 2).* **The live task
    board is four columns of cards**: Needs you (`taskstate.NeedsHuman`), Running
    (`running`, `awaiting_children`), Queued (`queued`, `paused`) and Finished.

@@ -673,10 +673,14 @@ func (v *settingsView) reset() tea.Cmd {
 	return v.apply(row.key, row.key.def())
 }
 
-// settingsUndo is one change `u` can take back.
+// settingsUndo is one change `u` can take back. op is set for a binding
+// changed on the key-bindings screen (#1158), and opWas is its override
+// before ("" for its default): that is put back alone, not the whole map.
 type settingsUndo struct {
-	key configKey
-	was string
+	key   configKey
+	was   string
+	op    keymap.Op
+	opWas string
 }
 
 // undoLast is `u`: the last saved change's setting back to what it was.
@@ -686,6 +690,11 @@ func (v *settingsView) undoLast() tea.Cmd {
 		v.note, v.noteBad = "nothing to undo", false
 		return nil
 	}
+	if u.op != "" {
+		return v.undoBinding(u)
+	}
+	// A setting's undo is made in the list, where the setting is shown.
+	v.bindings = nil
 	v.undoing = true
 	// #1137: u may be pressed in another category, or under a search that
 	// hides the setting; go to it, so the write is not made off screen.

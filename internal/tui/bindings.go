@@ -1313,6 +1313,7 @@ var bindings = []binding{
 	{key: "down", label: "move through the operations (↑/↓, pgup/pgdown, home/end)", scope: scopePanel, context: ctxKeyBindings, hint: "↑↓ move", priority: 1, noPalette: true},
 	{key: "enter", label: "set the operation's key by pressing it — a clash is named before anything is saved", scope: scopePanel, context: ctxKeyBindings, hint: "enter set", priority: 2, noPalette: true},
 	{key: "backspace", label: "put the operation back on its default key", scope: scopePanel, context: ctxKeyBindings, hint: "backspace default", priority: 3, noPalette: true},
+	{key: "u", label: "undo the last change: put the operation's key back, a reset included", scope: scopePanel, context: ctxKeyBindings, hint: "u undo", priority: 6, noPalette: true},
 	{op: keymap.FreeText, key: "t", label: "type every binding as one line of operation=key pairs, to paste a whole keymap", scope: scopePanel, context: ctxKeyBindings, priority: 5, noPalette: true, term: termFreeText},
 	{key: "esc", label: "back to Settings", scope: scopePanel, context: ctxKeyBindings, hint: "esc back", priority: 4, noPalette: true},
 	{key: "left", label: "choose a value, for a key with a fixed vocabulary (←/→)", scope: scopePanel, context: ctxConfigEdit, noPalette: true},
