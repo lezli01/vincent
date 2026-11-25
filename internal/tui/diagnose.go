@@ -248,7 +248,7 @@ func diagnoseCmd(t taskActions, bar *actionBar) (cmd tea.Cmd, handled bool) {
 	}
 	bar.resetPending()
 	bar.pending, bar.pendingID = actionDiagnose, t.id
-	bar.status, bar.statusBad = "", false
+	bar.status().clear()
 	return nil, true
 }
 

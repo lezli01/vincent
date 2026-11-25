@@ -214,8 +214,8 @@ func TestChatSendRefusedBeforeLoad(t *testing.T) {
 	if cmd := v.sendCmd(); cmd != nil {
 		t.Fatal("a chat that has not loaded sent a message")
 	}
-	if v.composer.Value() != "hello" || !v.noteBad {
-		t.Errorf("the refusal lost the draft or said nothing: %q, %q", v.composer.Value(), v.note)
+	if v.composer.Value() != "hello" || !v.status().bad {
+		t.Errorf("the refusal lost the draft or said nothing: %q, %q", v.composer.Value(), v.status().text)
 	}
 }
 
@@ -294,7 +294,7 @@ func TestChatFooterFitsShortPanes(t *testing.T) {
 		setup func(v *chatView)
 	}{
 		{"note", func(v *chatView) {
-			v.note, v.noteBad = strings.Repeat("the daemon refused the message for a long reason ", 4), true
+			v.status().text, v.status().bad = strings.Repeat("the daemon refused the message for a long reason ", 4), true
 		}},
 		{"skills", func(v *chatView) {
 			v.skills.open, v.skills.data = true, manySkills(20)

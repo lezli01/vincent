@@ -1148,10 +1148,10 @@ func TestNewTaskWarningsReachTheDetailView(t *testing.T) {
 		Task:     apiclient.Task{ID: 7},
 		Warnings: []string{`model "opus-tomorrow" is not in claude's catalog`},
 	}})
-	if !strings.Contains(d.actions.status, "opus-tomorrow") {
-		t.Errorf("status = %q, want the 201's warning", d.actions.status)
+	if !strings.Contains(d.actions.status().text, "opus-tomorrow") {
+		t.Errorf("status = %q, want the 201's warning", d.actions.status().text)
 	}
-	if d.actions.statusBad {
+	if d.actions.status().bad {
 		t.Error("the warning renders as an error; the task exists and will run")
 	}
 }

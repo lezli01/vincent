@@ -19771,6 +19771,29 @@ it while there is room and are counted into `+N` when there is not. Its start
 is what it says, and the left cut removed exactly that. The footer is still one
 row.
 
+*Amended 2026-11-25 (issue #1164).* **One status line, owned by the root.**
+What the TUI has to say — an action's result, an error, an explanation of a key
+that did nothing, a hint — goes to one status line that every screen posts to,
+drawn as the lead of the footer by the rule above, on every screen, with or
+without an action bar. It replaces the action bar's own status, the
+startup-project notice under the header and every screen's own note line
+(the issues list and an issue, pull requests, settings and key bindings,
+projects, workflows, triggers, the chats boards and a chat, the compare view,
+the archived boards' delete report and the task workspace's pull-request
+notes). A message is one of two kinds. A **note** — an explanation
+(`approve: not available while running`) or a hint (`nothing to copy`) — is
+dropped by the next key press, click, wheel turn or tab change. A **result**
+— what an action did, or why it failed — stays until a newer message replaces
+it. There is no queue: the newest message wins, whichever screen posted it.
+The footer is where it goes because it is the one row every screen has at every
+size, so a message neither takes a body row nor moves the layout under the
+cursor; a long message is cut from the right, keeping its start. Questions that
+own the keyboard (every y/n, the leave guard, a pending project switch, the
+key-binding capture) and persistent banners (the connection badge, the global
+pause line, the keymap warning) are not messages and stay where they were; so
+do a form's own field errors, a popup's errors, and the chat's note line for
+its questions and its draft hints.
+
 *Amended 2026-11-24 (issue #1162).* **Every y/n confirmation answers by one
 rule.** `y` or `Y` confirms; `n`, `N` or `esc` declines; any other key is
 ignored and the question stays until it is answered. One client helper

@@ -273,8 +273,8 @@ func TestIssueStateKeyOffersOnlyAvailableActions(t *testing.T) {
 	v := issueFixture()
 	v.issue.AvailableActions = nil
 	v.update(registryKey(t, "X"))
-	if v.w.act != nil || !strings.Contains(v.note, "no state change") {
-		t.Fatalf("X with no available action: act=%v note=%q", v.w.act, v.note)
+	if v.w.act != nil || !strings.Contains(v.status().text, "no state change") {
+		t.Fatalf("X with no available action: act=%v note=%q", v.w.act, v.status().text)
 	}
 	v.issue.AvailableActions = []string{"reopen"}
 	v.update(registryKey(t, "X"))

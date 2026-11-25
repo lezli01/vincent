@@ -607,11 +607,11 @@ func (v *chatView) noteLines(width int) []string {
 	case v.clearingQueue && v.chat != nil:
 		// Keys first (#1162): the question is short, so they lead.
 		text, style = v.clearQueueQuestion(), styleWarn
-	case v.note != "":
-		text = v.note
-		if v.noteBad {
-			style = styleBad
-		}
+	case v.editingQueued != 0:
+		// A mode, not a message (#1164): it holds while the queued message
+		// is in the composer, where a status note would go with the first
+		// key typed into it.
+		text = chatQueueEditNote
 	case v.formAway != nil:
 		// Persistent while the question is away (issue #801 F7): it is the
 		// only thing on screen saying the agent is waiting, and how to answer.

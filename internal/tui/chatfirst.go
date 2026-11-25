@@ -32,6 +32,6 @@ func (v *chatView) restoreDraft(draft, note string) {
 		v.composer.SetValue(draft)
 	}
 	if note != "" {
-		v.note, v.noteBad = note, true
+		v.status().result(note, true)
 	}
 }

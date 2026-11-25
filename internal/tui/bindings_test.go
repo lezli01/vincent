@@ -961,14 +961,14 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			v := compareFixture()
 			v.updateKey(registryKey(t, "["))
 			if v.confirm != 0 {
-				t.Fatalf("[ did not ask to keep the left side (confirm %d, note %q)", v.confirm, v.note)
+				t.Fatalf("[ did not ask to keep the left side (confirm %d, note %q)", v.confirm, v.status().text)
 			}
 		},
 		"]": func(t *testing.T) {
 			v := compareFixture()
 			v.updateKey(registryKey(t, "]"))
 			if v.confirm != 1 {
-				t.Fatalf("] did not ask to keep the right side (confirm %d, note %q)", v.confirm, v.note)
+				t.Fatalf("] did not ask to keep the right side (confirm %d, note %q)", v.confirm, v.status().text)
 			}
 		},
 		"R": func(t *testing.T) {
@@ -1092,8 +1092,8 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		"alt+l": func(t *testing.T) {
 			v := chatViewFixture()
 			v.updateKey(registryKey(t, "alt+l"))
-			if v.note != "the last turn did not fail — nothing to retry" {
-				t.Fatalf("alt+l with no failed turn said %q", v.note)
+			if v.status().text != "the last turn did not fail — nothing to retry" {
+				t.Fatalf("alt+l with no failed turn said %q", v.status().text)
 			}
 		},
 		// Task 164: recall's way back, the stash and the history picker.
@@ -1135,8 +1135,8 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			v := chatViewFixture()
 			v.chat.State, v.chat.SteerReason = "running", "claude cannot steer a running turn"
 			v.updateKey(registryKey(t, "ctrl+s"))
-			if !strings.Contains(v.note, "cannot steer") {
-				t.Fatalf("ctrl+s noted %q, want the daemon's steer reason", v.note)
+			if !strings.Contains(v.status().text, "cannot steer") {
+				t.Fatalf("ctrl+s noted %q, want the daemon's steer reason", v.status().text)
 			}
 		},
 		"up": func(t *testing.T) {
@@ -2436,13 +2436,9 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			w := newWorkflowsView()
 			w.client = offlineClient()
 			loadedWorkflows(w, globalEntry("review"))
-			w.err = "a stale note the reload should clear"
 			_, cmd := w.updateKey(registryKey(t, "R"))
 			if cmd == nil {
 				t.Fatal("R did not re-read the registry")
-			}
-			if w.err != "" {
-				t.Errorf("R left the previous error on screen: %q", w.err)
 			}
 		},
 		"g": func(t *testing.T) {
@@ -3025,8 +3021,8 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		"u": func(t *testing.T) {
 			v := settingsFixture(t)
 			v.updateKey(registryKey(t, "u"))
-			if v.note != "nothing to undo" {
-				t.Fatalf("u with nothing changed said %q", v.note)
+			if v.status().text != "nothing to undo" {
+				t.Fatalf("u with nothing changed said %q", v.status().text)
 			}
 		},
 		"down": func(t *testing.T) {

@@ -74,7 +74,7 @@ func openChatSkills(t *testing.T, v *chatView, key string) {
 	t.Helper()
 	v.updateKey(registryKey(t, key))
 	if !v.skills.open {
-		t.Fatalf("%s did not open the skill list (note %q)", key, v.note)
+		t.Fatalf("%s did not open the skill list (note %q)", key, v.status().text)
 	}
 }
 
@@ -312,9 +312,9 @@ func TestChatSkillsStates(t *testing.T) {
 			if v.skills.open != c.wantOpen {
 				t.Fatalf("the list open = %v, want %v", v.skills.open, c.wantOpen)
 			}
-			if v.note != c.wantNote || v.noteBad != c.wantBad {
+			if v.status().text != c.wantNote || v.status().bad != c.wantBad {
 				t.Fatalf("the note is %q (bad=%v), want %q (bad=%v)",
-					v.note, v.noteBad, c.wantNote, c.wantBad)
+					v.status().text, v.status().bad, c.wantNote, c.wantBad)
 			}
 			if c.wantOpen && len(c.data.Skills) == 0 {
 				frame := ansi.Strip(v.render(100, 30))
@@ -357,8 +357,8 @@ func TestChatSkillsCannotInvoke(t *testing.T) {
 			if got := v.composer.Value(); got != "" {
 				t.Fatalf("a read-only list wrote %q into the draft", got)
 			}
-			if !v.noteBad || v.note != "this agent cannot be told to run a skill" {
-				t.Fatalf("the refusal is %q (bad=%v)", v.note, v.noteBad)
+			if !v.status().bad || v.status().text != "this agent cannot be told to run a skill" {
+				t.Fatalf("the refusal is %q (bad=%v)", v.status().text, v.status().bad)
 			}
 		})
 	}
@@ -384,8 +384,8 @@ func TestChatSkillsTerminalChatMakesNoRequest(t *testing.T) {
 	if v.skills.open {
 		t.Fatal("a terminal chat opened the list")
 	}
-	if v.note != "this chat has ended — no turn will run here" || !v.noteBad {
-		t.Fatalf("the refusal is %q (bad=%v)", v.note, v.noteBad)
+	if v.status().text != "this chat has ended — no turn will run here" || !v.status().bad {
+		t.Fatalf("the refusal is %q (bad=%v)", v.status().text, v.status().bad)
 	}
 	if n := calls.Load(); n != 0 {
 		t.Fatalf("the refusal made %d requests, want none", n)
@@ -473,8 +473,8 @@ func TestChatSkillsSanitizesHostileText(t *testing.T) {
 	if got := v.composer.Value(); got != "" {
 		t.Fatalf("a disabled row wrote %q into the draft", got)
 	}
-	if !v.noteBad {
-		t.Fatalf("accepting a disabled row said %q, want a refusal", v.note)
+	if !v.status().bad {
+		t.Fatalf("accepting a disabled row said %q, want a refusal", v.status().text)
 	}
 }
 
@@ -736,8 +736,8 @@ func TestChatSkillsInlinePathIsSilent(t *testing.T) {
 		if v.skills.open {
 			t.Fatal("a file path kept the list open")
 		}
-		if v.skills.inlineNote != "" || v.note != "" {
-			t.Fatalf("a file path was nagged about: %q / %q", v.skills.inlineNote, v.note)
+		if v.skills.inlineNote != "" || v.status().text != "" {
+			t.Fatalf("a file path was nagged about: %q / %q", v.skills.inlineNote, v.status().text)
 		}
 	})
 	t.Run("a name is hinted and still sends", func(t *testing.T) {
@@ -979,9 +979,9 @@ func TestChatSkillsInlineNeverOpensUnder(t *testing.T) {
 		data.ListVerdict = "unsupported"
 		v := chatSkillsFixture(data)
 		typeIntoChat(t, v, "/dep")
-		if v.skills.open || v.skills.inlineNote != "" || v.note != "" {
+		if v.skills.open || v.skills.inlineNote != "" || v.status().text != "" {
 			t.Fatalf("an unsupported listing spoke up: open=%v note=%q/%q",
-				v.skills.open, v.skills.inlineNote, v.note)
+				v.skills.open, v.skills.inlineNote, v.status().text)
 		}
 	})
 	t.Run("an adapter that cannot invoke", func(t *testing.T) {
@@ -1016,9 +1016,9 @@ func TestChatSkillsInlineFetchIsSilentAndLatched(t *testing.T) {
 	if n := calls.Load(); n != 1 {
 		t.Fatalf("the typed sigil made %d requests, want exactly one", n)
 	}
-	if v.skills.open || v.skills.inlineNote != "" || v.note != "" {
+	if v.skills.open || v.skills.inlineNote != "" || v.status().text != "" {
 		t.Fatalf("a failed inline probe spoke up: open=%v note=%q/%q",
-			v.skills.open, v.skills.inlineNote, v.note)
+			v.skills.open, v.skills.inlineNote, v.status().text)
 	}
 	if !v.skills.probeFailed {
 		t.Fatal("the failed probe was not latched off")
@@ -1037,8 +1037,8 @@ func TestChatSkillsInlineFetchIsSilentAndLatched(t *testing.T) {
 	if n := calls.Load(); n != 2 {
 		t.Fatalf("tab made %d requests in total, want a second one", n)
 	}
-	if !v.noteBad || !strings.HasPrefix(v.note, "could not list skills: ") {
-		t.Fatalf("tab said %q (bad=%v), want the explaining note", v.note, v.noteBad)
+	if !v.status().bad || !strings.HasPrefix(v.status().text, "could not list skills: ") {
+		t.Fatalf("tab said %q (bad=%v), want the explaining note", v.status().text, v.status().bad)
 	}
 }
 

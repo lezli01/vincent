@@ -71,8 +71,8 @@ func TestTriggersInvalidCannotBeEnabled(t *testing.T) {
 	v := triggersFixture()
 	v.list.Triggers[0].Valid = false
 	v.updateKey(registryKey(t, "space"))
-	if v.confirm != nil || v.err == "" {
-		t.Fatalf("an invalid trigger offered to enable: confirm=%v err=%q", v.confirm != nil, v.err)
+	if v.confirm != nil || v.status().text == "" {
+		t.Fatalf("an invalid trigger offered to enable: confirm=%v err=%q", v.confirm != nil, v.status().text)
 	}
 }
 

@@ -83,8 +83,8 @@ func TestNextFailureOnACleanTaskSaysSo(t *testing.T) {
 	if v.tab != taskTabOverview || v.detail.selectedRun != before {
 		t.Errorf("N moved a clean task to tab %v, cursor %d", v.tab, v.detail.selectedRun)
 	}
-	if !strings.Contains(v.detail.actions.status, "no failures") {
-		t.Errorf("status = %q, want it to say there are no failures", v.detail.actions.status)
+	if !strings.Contains(v.detail.actions.status().text, "no failures") {
+		t.Errorf("status = %q, want it to say there are no failures", v.detail.actions.status().text)
 	}
 }
 

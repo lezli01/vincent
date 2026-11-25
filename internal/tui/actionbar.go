@@ -210,14 +210,11 @@ type actionBar struct {
 	// named — "cancel #21?" must never kill #22 (review finding 1).
 	pendingID int64
 
-	status    string
-	statusBad bool
-	// statusNote marks status as an explanation of a key that did nothing
-	// ("approve: not available while running"), set by setNote. It is about
-	// the row or tab the key was pressed on, so moving off either drops it
-	// (dropNote, #1138); an action's result, set by setStatus, is news the
-	// human may not have read yet and stays until something replaces it.
-	statusNote bool
+	// statusPoster is the status line the bar reports to (#1164): an
+	// action's result there stays until a newer message replaces it, and a
+	// key's "not available" explanation (#1138) is a note the next key,
+	// cursor move or tab change drops.
+	statusPoster
 }
 
 // capturing reports that a confirmation owns the keyboard, so the shell stops
@@ -434,7 +431,8 @@ func (a *actionBar) applyResult(msg actionResultMsg) {
 	if isDirtyWorktree(msg.action, msg.err) {
 		a.pending, a.force = apiclient.ActionArchive, true
 		a.pendingIDs, a.bulkTotal = nil, 0
-		a.pendingID, a.status = msg.taskID, ""
+		a.pendingID = msg.taskID
+		a.status().clear()
 		return
 	}
 	if isStuckArchive(msg.action, msg.err) {
@@ -443,7 +441,8 @@ func (a *actionBar) applyResult(msg actionResultMsg) {
 		a.pending, a.force = actionForceDelete, false
 		a.pendingIDs, a.bulkTotal = nil, 0
 		a.pendingID = msg.taskID
-		a.cause, a.status = actionErrString(msg.err), ""
+		a.cause = actionErrString(msg.err)
+		a.status().clear()
 		return
 	}
 	var apiErr *apiclient.Error
@@ -460,25 +459,16 @@ func (a *actionBar) applyResult(msg actionResultMsg) {
 	a.setStatus(msg.action+": "+errString(msg.err), true)
 }
 
-func (a *actionBar) setStatus(text string, bad bool) {
-	a.status, a.statusBad, a.statusNote = text, bad, false
-}
+// setStatus posts an action's result to the status line (#1164).
+func (a *actionBar) setStatus(text string, bad bool) { a.status().result(text, bad) }
 
-// setNote says why a key did nothing. Unlike setStatus it lasts only while
-// the cursor and the tab stay where the key was pressed (#1138).
-func (a *actionBar) setNote(text string) {
-	a.status, a.statusBad, a.statusNote = text, false, true
-}
+// setNote says why a key did nothing (#1138): a note, which the next key,
+// cursor move or tab change drops (#1164).
+func (a *actionBar) setNote(text string) { a.status().note(text, false) }
 
-// dropNote takes a setNote explanation away when the cursor or the tab has
-// moved on, and leaves any other status alone (#1138).
-func (a *actionBar) dropNote() {
-	if a != nil && a.statusNote {
-		a.status, a.statusNote = "", false
-	}
-}
-
-// clear drops transient state when the bar moves to another task.
+// clear drops a pending question when the bar moves to another task. The
+// status line is not the bar's to clear (#1164): a result stays until a
+// newer message replaces it.
 //
 // A pending *bulk* question survives it, because it is a question about the
 // selection rather than about the row under the cursor — and the cursor moves
@@ -491,7 +481,6 @@ func (a *actionBar) clear() {
 		return
 	}
 	a.resetPending()
-	a.status, a.statusBad = "", false
 }
 
 // resetPending drops the question, whatever it was about.
@@ -591,12 +580,8 @@ func (a *actionBar) render(t taskActions) string {
 	if len(parts) == 0 {
 		line = styleDim.Render(" no actions available")
 	}
-	if a.status != "" {
-		style := styleDim
-		if a.statusBad {
-			style = styleBad
-		}
-		line += style.Render("   " + a.status)
+	if st := a.status().shown(); st != "" {
+		line += "   " + st
 	}
 	return line
 }

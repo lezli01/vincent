@@ -38,23 +38,23 @@ func TestOptionGlyphNotesOnceInTheComposer(t *testing.T) {
 	v := m.views[viewChat].(*chatView)
 
 	m.Update(key("∂"))
-	if v.note != "" {
-		t.Fatalf("∂ alone was taken for a chord before the next key: %s", v.note)
+	if v.status().text != "" {
+		t.Fatalf("∂ alone was taken for a chord before the next key: %s", v.status().text)
 	}
 	if got := v.composer.Value(); got != "∂" {
 		t.Fatalf("the glyph was not typed: %q", got)
 	}
 	m.Update(backspace())
 	for _, want := range []string{"Option+d typed ∂", "alt+d", "Use Option as Meta key", "Esc+", "ctrl+p"} {
-		if !strings.Contains(v.note, want) {
-			t.Errorf("note misses %q: %s", want, v.note)
+		if !strings.Contains(v.status().text, want) {
+			t.Errorf("note misses %q: %s", want, v.status().text)
 		}
 	}
-	v.note = ""
+	v.status().text = ""
 	m.Update(key("ß"))
 	m.Update(backspace())
-	if v.note != "" {
-		t.Errorf("the note was said twice in one run: %s", v.note)
+	if v.status().text != "" {
+		t.Errorf("the note was said twice in one run: %s", v.status().text)
 	}
 }
 
@@ -67,8 +67,8 @@ func TestOptionGlyphTypedOnPurposeSaysNothing(t *testing.T) {
 		m := connectedChatRoot(t)
 		v := m.views[viewChat].(*chatView)
 		pressText(m, text)
-		if v.note != "" {
-			t.Errorf("typing %q raised: %s", text, v.note)
+		if v.status().text != "" {
+			t.Errorf("typing %q raised: %s", text, v.status().text)
 		}
 	}
 }
@@ -79,8 +79,8 @@ func TestOptionGlyphTwiceNotes(t *testing.T) {
 	m := connectedChatRoot(t)
 	v := m.views[viewChat].(*chatView)
 	pressText(m, "ßß")
-	if !strings.Contains(v.note, "Option+s typed ß") || !strings.Contains(v.note, "alt+s") {
-		t.Fatalf("a repeated ß said: %q", v.note)
+	if !strings.Contains(v.status().text, "Option+s typed ß") || !strings.Contains(v.status().text, "alt+s") {
+		t.Fatalf("a repeated ß said: %q", v.status().text)
 	}
 }
 
@@ -103,8 +103,8 @@ func TestOptionGlyphsBeyondLetters(t *testing.T) {
 		v := m.views[viewChat].(*chatView)
 		m.Update(key(c.glyph))
 		m.Update(backspace())
-		if !strings.Contains(v.note, c.want) {
-			t.Errorf("%s: note %q, want %q", c.glyph, v.note, c.want)
+		if !strings.Contains(v.status().text, c.want) {
+			t.Errorf("%s: note %q, want %q", c.glyph, v.status().text, c.want)
 		}
 	}
 }
@@ -133,11 +133,11 @@ func TestOptionDeadKeyGlyphs(t *testing.T) {
 			v := m.views[viewChat].(*chatView)
 			m.Update(key(c.glyph))
 			m.Update(backspace())
-			if c.want == "" && v.note != "" {
-				t.Errorf("an unbound dead key raised %q", v.note)
+			if c.want == "" && v.status().text != "" {
+				t.Errorf("an unbound dead key raised %q", v.status().text)
 			}
-			if !strings.Contains(v.note, c.want) {
-				t.Errorf("note %q, want %q", v.note, c.want)
+			if !strings.Contains(v.status().text, c.want) {
+				t.Errorf("note %q, want %q", v.status().text, c.want)
 			}
 		})
 	}
@@ -153,8 +153,8 @@ func TestOptionGlyphNeedsABoundChord(t *testing.T) {
 		m.Update(key(g))
 		m.Update(backspace())
 	}
-	if v.note != "" {
-		t.Fatalf("an unbound chord's glyph raised: %s", v.note)
+	if v.status().text != "" {
+		t.Fatalf("an unbound chord's glyph raised: %s", v.status().text)
 	}
 }
 
@@ -170,8 +170,8 @@ func TestOptionGlyphOffATextField(t *testing.T) {
 		t.Fatal("fixture: the conversation focus captures input")
 	}
 	m.Update(key("˝"))
-	if !strings.Contains(v.note, "Option+Shift+g typed ˝") {
-		t.Fatalf("˝ in the conversation said %q", v.note)
+	if !strings.Contains(v.status().text, "Option+Shift+g typed ˝") {
+		t.Fatalf("˝ in the conversation said %q", v.status().text)
 	}
 }
 
@@ -185,8 +185,8 @@ func TestOptionGlyphOnTheBoard(t *testing.T) {
 		t.Fatalf("fixture: board context %q captures input or does not bind alt+t", m.activeContext())
 	}
 	m.Update(key("†"))
-	if !strings.Contains(m.selNotice, "Option+t typed †") {
-		t.Fatalf("† on the board said %q", m.selNotice)
+	if !strings.Contains(m.status.text, "Option+t typed †") {
+		t.Fatalf("† on the board said %q", m.status.text)
 	}
 }
 
@@ -197,8 +197,8 @@ func TestOptionGlyphOnlyOnMacOS(t *testing.T) {
 	m := connectedChatRoot(t)
 	v := m.views[viewChat].(*chatView)
 	pressText(m, "∂∂")
-	if v.note != "" {
-		t.Fatalf("linux noted: %s", v.note)
+	if v.status().text != "" {
+		t.Fatalf("linux noted: %s", v.status().text)
 	}
 }
 

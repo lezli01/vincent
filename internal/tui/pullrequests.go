@@ -198,9 +198,9 @@ type pullRequestsView struct {
 	// state is the listing's `state=` parameter, cycled by `s` (task 064
 	// decision 9). It starts at `open` — 052's default and still the answer
 	// to the question this screen usually asks.
-	state       string
-	note        string
-	noteBad     bool
+	state string
+	// statusPoster is where the screen's results and notes go (#1164).
+	statusPoster
 	refreshWait bool
 
 	width, height int
@@ -566,12 +566,12 @@ func (v *pullRequestsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		v.filter.Focus()
 		return v, nil
 	case "esc":
-		// One layer per press (§15): a committed filter or a note clears
-		// first; with nothing left, the takeover closes.
-		if v.filter.Value() != "" || v.note != "" {
+		// One layer per press (§15): a committed filter clears first; with
+		// nothing left, the takeover closes. A note is gone already — the
+		// root drops it on any key (#1164).
+		if v.filter.Value() != "" {
 			sel := v.selectedKey()
 			v.filter.SetValue("")
-			v.note = ""
 			v.reselect(sel)
 			return v, nil
 		}
@@ -619,7 +619,7 @@ func (v *pullRequestsView) cycleState() {
 	for i, s := range pullStates {
 		if s == v.state {
 			v.state = pullStates[(i+1)%len(pullStates)]
-			v.setNote("listing "+v.state+" pull requests…", false)
+			v.status().result("listing "+v.state+" pull requests…", false)
 			return
 		}
 	}
@@ -640,13 +640,13 @@ func (v *pullRequestsView) createTask() tea.Cmd {
 		return nil
 	}
 	if row.pull.TaskID != nil {
-		v.setNote("pull request #"+strconv.Itoa(row.pull.Number)+
+		v.status().note("pull request #"+strconv.Itoa(row.pull.Number)+
 			" is already claimed by task "+strconv.FormatInt(*row.pull.TaskID, 10)+
 			" — press enter to open it", true)
 		return nil
 	}
 	if strings.TrimSpace(row.pull.HeadBranch) == "" {
-		v.setNote("pull request #"+strconv.Itoa(row.pull.Number)+
+		v.status().note("pull request #"+strconv.Itoa(row.pull.Number)+
 			" names no head branch, so there is no branch to run a task on", true)
 		return nil
 	}
@@ -663,16 +663,16 @@ func (v *pullRequestsView) openSelected() tea.Cmd {
 	if !ok {
 		return nil
 	}
-	v.setNote("opening "+row.pull.URL+"…", false)
+	v.status().result("opening "+row.pull.URL+"…", false)
 	return openURLCmd(row.pull.URL)
 }
 
 func (v *pullRequestsView) applyOpened(msg openedURLMsg) {
 	if msg.err != nil {
-		v.setNote(openFailure(msg), true)
+		v.status().result(openFailure(msg), true)
 		return
 	}
-	v.note = ""
+	v.status().clear()
 }
 
 // openTask jumps to the workspace of the task that claims the row. A row no
@@ -687,7 +687,7 @@ func (v *pullRequestsView) openTask() tea.Cmd {
 	}
 	if row.pull.TaskID == nil {
 		// Nothing to open: say which keys give it a task (#1064).
-		v.setNote("no task claims this pull request — "+opKey(keymap.Add)+" creates one from it, l links an existing one", false)
+		v.status().note("no task claims this pull request — "+opKey(keymap.Add)+" creates one from it, l links an existing one", false)
 		return nil
 	}
 	id := *row.pull.TaskID
@@ -706,7 +706,6 @@ func (v *pullRequestsView) openLinkPicker() {
 	if !ok {
 		return
 	}
-	v.note = ""
 	v.pickerCreate = false
 	v.pickerPull = row.pull.Number
 	v.pickerRepo = row.pull.Repo
@@ -729,10 +728,9 @@ func (v *pullRequestsView) openLinkPicker() {
 func (v *pullRequestsView) openCreatePicker() {
 	options := v.createOptions()
 	if len(options) == 0 {
-		v.setNote("no task here has a branch without a pull request", true)
+		v.status().note("no task here has a branch without a pull request", true)
 		return
 	}
-	v.note = ""
 	v.pickerCreate = true
 	v.picker = newPicker(0, "task to open a pull request for", options, false, "")
 }
@@ -824,7 +822,7 @@ func (v *pullRequestsView) openTaskWithPRForm(taskID int64) tea.Cmd {
 func (v *pullRequestsView) linkCmd(taskID int64, number int) tea.Cmd {
 	client := v.client
 	if client == nil {
-		v.setNote("not connected", true)
+		v.status().result("not connected", true)
 		return nil
 	}
 	return func() tea.Msg {
@@ -841,10 +839,9 @@ func (v *pullRequestsView) linkCmd(taskID int64, number int) tea.Cmd {
 func (v *pullRequestsView) askUnlink() {
 	row, ok := v.current()
 	if !ok || row.pull.TaskID == nil {
-		v.setNote("no task claims this pull request", true)
+		v.status().note("no task claims this pull request", true)
 		return
 	}
-	v.note = ""
 	v.confirm = &unlinkPrompt{
 		taskID: *row.pull.TaskID,
 		number: row.pull.Number,
@@ -867,7 +864,7 @@ func (v *pullRequestsView) updateConfirmKey(msg tea.KeyPressMsg) (panel, tea.Cmd
 	v.confirm = nil
 	client := v.client
 	if client == nil {
-		v.setNote("not connected", true)
+		v.status().result("not connected", true)
 		return v, nil
 	}
 	return v, func() tea.Msg {
@@ -888,11 +885,11 @@ func (v *pullRequestsView) applyLinked(msg prLinkedMsg) tea.Cmd {
 		verb = "unlinked"
 	}
 	if msg.err != nil {
-		v.setNote("could not "+strings.TrimSuffix(verb, "ed")+" #"+
+		v.status().result("could not "+strings.TrimSuffix(verb, "ed")+" #"+
 			strconv.Itoa(msg.number)+": "+githubReasonMessage(msg.err), true)
 		return nil
 	}
-	v.setNote("#"+strconv.Itoa(msg.number)+" "+verb+" "+
+	v.status().result("#"+strconv.Itoa(msg.number)+" "+verb+" "+
 		linkPreposition(msg.unlink)+" task #"+strconv.FormatInt(msg.taskID, 10), false)
 	return v.loadCmd()
 }
@@ -902,10 +899,6 @@ func linkPreposition(unlink bool) string {
 		return "from"
 	}
 	return "to"
-}
-
-func (v *pullRequestsView) setNote(text string, bad bool) {
-	v.note, v.noteBad = text, bad
 }
 
 // rows is the filtered selection order, the daemon's order within it.

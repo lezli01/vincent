@@ -347,7 +347,6 @@ func (v *chatView) openRewindPicker(fork bool) {
 		return
 	}
 	v.rewind = newChatRewindPicker(v.chat, v.everyTurn(), fork, v.agents)
-	v.note = ""
 	v.hideInline("")
 	v.hideFiles()
 }
@@ -478,7 +477,7 @@ func (v *chatView) applyRewound(msg chatRewoundMsg) tea.Cmd {
 		if v.rewind != nil {
 			v.rewind.busy, v.rewind.err = false, text
 		} else {
-			v.note, v.noteBad = text, true
+			v.status().result(text, true)
 		}
 		return nil
 	}
@@ -506,7 +505,7 @@ func (v *chatView) applyRewound(msg chatRewoundMsg) tea.Cmd {
 	if res.Seeded {
 		note += "; the next turn is seeded, not resumed"
 	}
-	v.note, v.noteBad = note+skippedNote(res.Skipped), len(res.Skipped) > 0
+	v.status().result(note+skippedNote(res.Skipped), len(res.Skipped) > 0)
 	// The draft is re-read rather than set here: the daemon holds it, and a
 	// composer with unsaved typing keeps it (applyRemoteDraft's rule).
 	return v.loadCmd()
@@ -551,16 +550,16 @@ func rewoundCount(all []apiclient.ChatTurn) int {
 func (v *chatView) toggleRewound() {
 	n := rewoundCount(v.everyTurn())
 	if n == 0 && !v.showRewound {
-		v.note, v.noteBad = "no turn of this chat has been rewound", false
+		v.status().note("no turn of this chat has been rewound", false)
 		return
 	}
 	v.showRewound = !v.showRewound
 	v.turns = visibleTurns(v.everyTurn(), v.showRewound)
 	v.bodyDirty = true
 	if v.showRewound {
-		v.note, v.noteBad = "showing "+plural(n, "rewound turn", "rewound turns")+", dimmed", false
+		v.status().result("showing "+plural(n, "rewound turn", "rewound turns")+", dimmed", false)
 	} else {
-		v.note, v.noteBad = "rewound turns hidden", false
+		v.status().result("rewound turns hidden", false)
 	}
 }
 
@@ -756,7 +755,7 @@ func preambleEditable(c *apiclient.Chat) bool {
 // `PATCH /v1/chats/{id}` with pending_preamble.
 func (v *chatView) editPreamble() tea.Cmd {
 	if !preambleEditable(v.chat) {
-		v.note, v.noteBad = "no seeded context to edit — this chat's next turn is not seeded", false
+		v.status().note("no seeded context to edit — this chat's next turn is not seeded", false)
 		return nil
 	}
 	chatID, original := v.chatID, v.chat.PendingPreamble
@@ -765,7 +764,7 @@ func (v *chatView) editPreamble() tea.Cmd {
 			return chatPreambleEditedMsg{chatID: chatID, original: original, text: text, err: err}
 		})
 	if err != nil {
-		v.note, v.noteBad = "editor: "+errString(err), true
+		v.status().result("editor: "+errString(err), true)
 		return nil
 	}
 	return cmd
@@ -781,7 +780,7 @@ func (v *chatView) applyPreambleEdit(msg chatPreambleEditedMsg) tea.Cmd {
 		return nil
 	}
 	if msg.err != nil {
-		v.note, v.noteBad = "editor: "+errString(msg.err)+" — turn 0 is unchanged", true
+		v.status().result("editor: "+errString(msg.err)+" — turn 0 is unchanged", true)
 		return nil
 	}
 	text := msg.text
@@ -789,15 +788,15 @@ func (v *chatView) applyPreambleEdit(msg chatPreambleEditedMsg) tea.Cmd {
 		text = ""
 	}
 	if text == msg.original {
-		v.note, v.noteBad = "turn 0 is unchanged", false
+		v.status().result("turn 0 is unchanged", false)
 		return nil
 	}
 	client, id := v.client, v.chatID
 	if client == nil {
-		v.note, v.noteBad = "not connected", true
+		v.status().result("not connected", true)
 		return nil
 	}
-	v.note, v.noteBad = "saving turn 0…", false
+	v.status().result("saving turn 0…", false)
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), actionTimeout)
 		defer cancel()
@@ -824,16 +823,16 @@ func (v *chatView) applyPreambleSaved(msg chatPreambleSavedMsg) {
 		if errors.As(msg.err, &apiErr) && apiErr.Code == "chat_preamble_not_pending" {
 			text = "turn 0 can no longer be edited — a turn has started, or the chat no longer resumes seeded"
 		}
-		v.note, v.noteBad = text, true
+		v.status().result(text, true)
 		return
 	}
 	v.chat = msg.chat
 	v.bodyDirty = true
 	if msg.cleared {
-		v.note, v.noteBad = "turn 0 cleared — the next turn starts a fresh session with no earlier context", false
+		v.status().result("turn 0 cleared — the next turn starts a fresh session with no earlier context", false)
 		return
 	}
-	v.note, v.noteBad = "turn 0 saved — the next turn starts with the edited context", false
+	v.status().result("turn 0 saved — the next turn starts with the edited context", false)
 }
 
 // applyCompared settles the compare picker: a refusal stays on it, in plain
@@ -854,7 +853,7 @@ func (v *chatView) applyCompared(msg chatComparedMsg) tea.Cmd {
 		if v.rewind != nil {
 			v.rewind.busy, v.rewind.err = false, text
 		} else {
-			v.note, v.noteBad = text, true
+			v.status().result(text, true)
 		}
 		return nil
 	}

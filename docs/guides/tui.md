@@ -88,6 +88,17 @@ answers. The delete confirmation's `b` is the one extra answer; the offers on
 the daemon screen (status line, skills, font) are choices rather than y/n
 questions and keep their own keys.
 
+**One status line says what happened.** Whatever screen you are on, the left
+end of the footer is where vincent answers a key: what an action did
+(`retry · now running`), why it failed, why a key did nothing
+(`approve: not available while running`), or a hint (`nothing to copy`). An
+explanation or a hint goes away with your next key, click, wheel turn or tab
+change; a result or an error stays until a newer message replaces it, even
+across screens, so you can read it after looking elsewhere. Only the newest
+message is shown. A long one is cut at the right edge, keeping its start, and
+the keys follow it while there is room. A question that waits for your answer
+is not a message: it takes the footer until you answer it.
+
 ### Main tabs
 
 The board, the issues list and the chats board can be **main tabs**: the
@@ -144,11 +155,11 @@ that project once, by the first of these rules that names a registered project:
 4. The project you had selected last time, kept in `tui.json`.
 5. The first project by name.
 
-A rule that names a project that is not registered is skipped, and a line under
-the header says what was skipped and what was shown instead, for example
+A rule that names a project that is not registered is skipped, and the
+[status line](#layout) says what was skipped and what was shown instead, for example
 ``tui.default_project `api` is not registered — showing `web` (last used)``. A
 pick by the directory is announced too (`◆ web — from the working directory`);
-the other rules are silent. The line goes away at your next key.
+the other rules are silent. The note goes away at your next key.
 
 Every selection is remembered as the last used, the startup pick included, so a
 `--project` launch makes that project the one the next plain `vincent` opens on.
@@ -341,8 +352,9 @@ which the switch saves.
 Opening a task, chat or issue of another project switches to that project
 first, so its screen never draws under the wrong header. This happens from the
 board, a pull request, an issue's linked tasks, a trigger's delivery ledger, a
-lane or parent jump, and when a task you just created belongs elsewhere. One
-line says so — ``switched to `web` `` — until your next key. The task
+lane or parent jump, and when a task you just created belongs elsewhere. The
+status line says so — ``switched to `web` `` — until something newer replaces
+it. The task
 workspace's `esc` history starts over in the new project. If you are holding a
 draft, the same confirmation asks, and `n` cancels the open too.
 
@@ -1079,10 +1091,8 @@ Under the rows the picker prints the selected row's **whole** destination, so
 you can read exactly what `enter` would open before you press it. Only `http`
 and `https` links open; anything else — `mailto:`, `file:`, `javascript:`, a
 relative path — is marked `copy only`, and `enter` on it opens nothing and says
-why. The result is a notice where you pressed the key — the pane's status
-line, or the chat's note: `opened <url>`, the reason it could not be opened, or
-the copy notice above. A screen with no notice of its own, such as an issue,
-shows a copy's outcome on the line under the header until your next key. Raw mode (`ctrl+o`)
+why. The result is said on the [status line](#layout): `opened <url>`, the
+reason it could not be opened, or the copy notice above. Raw mode (`ctrl+o`)
 does not change the list.
 
 ### What `v` adds
@@ -1436,12 +1446,12 @@ Below the panes, the action bar shows **exactly the actions valid in the
 current state** — the daemon computes that list, the TUI renders it. With tasks
 selected on the board it acts on all of them; see
 [Acting on several tasks at once](#acting-on-several-tasks-at-once). An action
-key the task does not offer does nothing and says why on the same line:
-`retry: not available while running`, or that the cursor is on a group, or
-that a chat holds the task. `R`, `F`, `T` and `Q` say why in the task workspace
-too. The explanation is about the card and the tab it was given on: moving the
-cursor to another card, or switching tabs, clears it, while the result of an
-action you took stays until something replaces it.
+key the task does not offer does nothing and says why on the
+[status line](#layout): `retry: not available while running`, or that the
+cursor is on a group, or that a chat holds the task. `R`, `F`, `T` and `Q` say
+why in the task workspace too. The explanation goes with your next key, so
+moving the cursor to another card or switching tabs clears it, while the result
+of an action you took stays until something replaces it.
 
 | Key | Action | Valid from |
 |---|---|---|
@@ -3017,8 +3027,7 @@ instead: Option+d types `∂`. Set Terminal's **Use Option as Meta key**
 Keys). Until then `ctrl+p` opens the palette, which reaches every command, and
 [`tui.keys`](#rebinding-keys) rebinds any of them.
 
-The TUI notices once per run and says so — on a chat's note line, elsewhere on
-the status line — on any screen with an `alt+` key: the board's and an issue's
+The TUI notices once per run and says so on the status line, on any screen with an `alt+` key: the board's and an issue's
 `alt+t`, the task and issue screens' `alt+.`, the chats board's `alt+w` and
 `alt+1` … `alt+9`, and the chat's own. It knows what the US layout's Option
 types for a letter (`∂`), a digit (`¡` for `alt+1`), a punctuation key (`≥` for

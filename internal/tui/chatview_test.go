@@ -103,8 +103,8 @@ func TestChatViewTypedDraftEditsAndSends(t *testing.T) {
 func TestChatViewRefusesCapReached(t *testing.T) {
 	v := chatViewFixture()
 	v.applySent(chatSentMsg{chatID: 1, err: &apiclient.Error{Code: "chat_cap_reached"}})
-	if !v.noteBad || v.note == "" {
-		t.Fatalf("a cap refusal rendered as %q (bad=%v), want a refusal", v.note, v.noteBad)
+	if !v.status().bad || v.status().text == "" {
+		t.Fatalf("a cap refusal rendered as %q (bad=%v), want a refusal", v.status().text, v.status().bad)
 	}
 	if len(v.turns) != 0 {
 		t.Fatalf("a refused send created %d turn rows, want none", len(v.turns))

@@ -212,8 +212,8 @@ func TestRewindSendsTheChosenTurnAndMode(t *testing.T) {
 		t.Fatal("the picker stayed open after the rewind")
 	}
 	for _, want := range []string{"2 turns hidden", "seeded, not resumed", "locked.db"} {
-		if !strings.Contains(v.note, want) {
-			t.Fatalf("note %q does not say %q", v.note, want)
+		if !strings.Contains(v.status().text, want) {
+			t.Fatalf("note %q does not say %q", v.status().text, want)
 		}
 	}
 }

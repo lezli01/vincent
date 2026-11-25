@@ -143,8 +143,8 @@ func TestTaskChatKeyOpensAndReopensLive(t *testing.T) {
 	})
 	board := h.m.views[viewChats].(*chatsView)
 	h.press(t, "A")
-	if board.confirm != nil || !strings.Contains(board.note, "which that task owns") {
-		t.Fatalf("A on a linked chat asked %v / noted %q, want the linked refusal", board.confirm, board.note)
+	if board.confirm != nil || !strings.Contains(board.status().text, "which that task owns") {
+		t.Fatalf("A on a linked chat asked %v / noted %q, want the linked refusal", board.confirm, board.status().text)
 	}
 }
 
@@ -255,8 +255,8 @@ func TestChatWithSendsTheChosenAgentLive(t *testing.T) {
 	if err != nil || len(turns) != 0 {
 		t.Fatalf("turns = %+v, %v; want none without a runner", turns, err)
 	}
-	if chat.composer.Value() != "why did it stop?" || !chat.noteBad {
-		t.Fatalf("composer %q (note %q), want the unsent first message back", chat.composer.Value(), chat.note)
+	if chat.composer.Value() != "why did it stop?" || !chat.status().bad {
+		t.Fatalf("composer %q (note %q), want the unsent first message back", chat.composer.Value(), chat.status().text)
 	}
 
 	// Locked now: chat_with navigates rather than opening the form.

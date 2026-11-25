@@ -258,8 +258,9 @@ type chatView struct {
 	ticking bool
 	frame   int
 
-	note    string
-	noteBad bool
+	// statusPoster is where the chat's results and notes go (#1164);
+	// questions and the chat's own hints stay on its note line.
+	statusPoster
 	loadErr string
 
 	// closing is the close confirmation on screen (task 119). It owns the
@@ -425,7 +426,7 @@ func (v *chatView) paste(text string) tea.Cmd {
 // pasteText is a paste into the composer as text.
 func (v *chatView) pasteText(text string) tea.Cmd {
 	if v.ended() {
-		v.note, v.noteBad = endedChatNote(v.chat), false
+		v.status().note(endedChatNote(v.chat), false)
 		return nil
 	}
 	var cmd tea.Cmd
@@ -481,11 +482,6 @@ func (v *chatView) updateVimKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	return tea.Batch(cmd, v.draftEdited(before), v.syncInline()), true
 }
 
-// noteOption says the macOS Option note on the chat's note line, where #1061
-// first said it; the root decides when (#1140). The character was typed all
-// the same: it may be meant.
-func (v *chatView) noteOption(note string) { v.note, v.noteBad = note, false }
-
 func (v *chatView) bindingContext() bindingContext {
 	switch {
 	case v.form != nil:
@@ -532,7 +528,7 @@ func (v *chatView) openAt(id int64, seq int) tea.Cmd {
 	v.showRewound, v.rewind = false, nil
 	v.form, v.formAway = nil, nil
 	v.resetRecords()
-	v.note, v.loadErr = "", ""
+	v.loadErr = ""
 	v.closing, v.sending, v.compacting = false, false, false
 	v.resending = 0
 	v.raising, v.picker, v.clampTask = false, nil, 0
@@ -701,12 +697,6 @@ func (v *chatView) updateMsg(msg tea.Msg) (panel, tea.Cmd) {
 		return v, nil
 	case chatSwitchListMsg:
 		return v, v.applySwitchList(msg)
-	case clipboardResultMsg:
-		v.note, v.noteBad = msg.notice()
-		return v, nil
-	case linkOpenedMsg:
-		v.note, v.noteBad = msg.notice()
-		return v, nil
 	case chatTranscriptMsg:
 		v.applyTranscript(msg)
 		return v, nil
@@ -809,7 +799,7 @@ func (v *chatView) updateMsg(msg tea.Msg) (panel, tea.Cmd) {
 		return v, v.openChatMarkdown(msg)
 	case chatMarkdownClosedMsg:
 		if msg.err != nil {
-			v.note, v.noteBad = "editor: "+errString(msg.err), true
+			v.status().result("editor: "+errString(msg.err), true)
 		}
 		return v, nil
 	case chatTickMsg:
@@ -905,7 +895,7 @@ func (v *chatView) applyLoaded(msg chatLoadedMsg) (finished bool) {
 	// the edit ends with it, and what was typed stays in the composer.
 	if v.editingQueued != 0 && !v.queueHas(v.editingQueued) {
 		v.editingQueued = 0
-		v.note, v.noteBad = "the queued message already started — what you typed stays here", true
+		v.status().result("the queued message already started — what you typed stays here", true)
 	}
 	v.syncPlaceholder()
 	v.bodyDirty = true
@@ -1240,13 +1230,13 @@ func (v *chatView) applySent(msg chatSentMsg) tea.Cmd {
 		// showed one pending would be inventing state (§11, decision 1).
 		var apiErr *apiclient.Error
 		if errors.As(msg.err, &apiErr) && apiErr.Code == "chat_cap_reached" {
-			v.note, v.noteBad = "too many chats are running — "+
-				"finish or cancel one and send again", true
+			v.status().result("too many chats are running — "+
+				"finish or cancel one and send again", true)
 			return v.flushDraft()
 		}
 		// A refused send keeps the stored draft too (task 164): it is
 		// saved now rather than waiting out a debounce enter cut short.
-		v.note, v.noteBad = errString(msg.err), true
+		v.status().result(errString(msg.err), true)
 		return v.flushDraft()
 	}
 	// The draft leaves the composer only once the daemon has taken the turn:
@@ -1262,11 +1252,11 @@ func (v *chatView) applySent(msg chatSentMsg) tea.Cmd {
 	saveCmd := v.flushDraft()
 	// The draft the inline hints were about is gone with it (task 124.14).
 	v.skills.inlineNote, v.skills.noteFor = "", ""
-	v.note = ""
+	v.status().clear()
 	if msg.result != nil && msg.result.Queued != nil {
 		// Queued behind the live turn (task 156): nothing new is running,
 		// so the live seam stays where it is.
-		v.note, v.noteBad = "queued — it runs after the current turn", false
+		v.status().result("queued — it runs after the current turn", false)
 		v.bodyDirty = true
 		return tea.Batch(saveCmd, v.loadCmd())
 	}
@@ -1311,10 +1301,10 @@ func (v *chatView) applyAnswered(msg chatAnsweredMsg) tea.Cmd {
 
 func (v *chatView) applyCanceled(msg chatCanceledMsg) tea.Cmd {
 	if msg.err != nil {
-		v.note, v.noteBad = errString(msg.err), true
+		v.status().result(errString(msg.err), true)
 		return nil
 	}
-	v.note, v.noteBad = "turn canceled", false
+	v.status().result("turn canceled", false)
 	return v.loadCmd()
 }
 
@@ -1351,7 +1341,7 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 			return v, v.closeCmd()
 		case no:
 			v.closing = false
-			v.note, v.noteBad = "the chat stays open", false
+			v.status().result("the chat stays open", false)
 		}
 		return v, nil
 	}
@@ -1363,7 +1353,7 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 			return v, v.sendMessage(v.compactCommand())
 		case no:
 			v.compacting = false
-			v.note, v.noteBad = "nothing was sent", false
+			v.status().result("nothing was sent", false)
 		}
 		return v, nil
 	}
@@ -1376,7 +1366,7 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 			return v, v.patchSettingsCmd(apiclient.PatchChatRequest{PermissionMode: &mode})
 		case no:
 			v.raising = false
-			v.note, v.noteBad = "the chat stays restricted", false
+			v.status().result("the chat stays restricted", false)
 		}
 		return v, nil
 	}
@@ -1388,7 +1378,7 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 			return v, v.clearQueueCmd()
 		case no:
 			v.clearingQueue = false
-			v.note, v.noteBad = "the queue stays", false
+			v.status().result("the queue stays", false)
 		}
 		return v, nil
 	}
@@ -1465,7 +1455,7 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		// The composer's own keys on a chat with no composer (#1135): each
 		// would put text where it is never drawn nor sent — ctrl+g's
 		// $EDITOR text, a picked or recalled prompt — so each says why.
-		v.note, v.noteBad = op+": not available — the chat has ended", false
+		v.status().note(op+": not available — the chat has ended", false)
 		return v, nil
 	}
 	if key := opKey(keymap.Compact); key != "" && msg.String() == key {
@@ -1558,7 +1548,7 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	case "ctrl+x":
 		if v.runningTurn() == nil {
 			// Said, not silent (#1070).
-			v.note, v.noteBad = "no turn is running — nothing to stop", false
+			v.status().note("no turn is running — nothing to stop", false)
 			return v, nil
 		}
 		return v, v.cancelCmd()
@@ -1633,7 +1623,7 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		// No text where nothing can be sent (#1054): an ended chat stores
 		// no draft, so what was typed would be lost on leaving.
 		if msg.Text != "" {
-			v.note, v.noteBad = endedChatNote(v.chat), false
+			v.status().note(endedChatNote(v.chat), false)
 		}
 		return v, nil
 	}
@@ -1709,7 +1699,7 @@ func (v *chatView) openSkills() tea.Cmd {
 		return nil
 	}
 	if chatstate.Terminal(chatstate.State(chat.State)) {
-		v.note, v.noteBad = "this chat has ended — no turn will run here", true
+		v.status().note("this chat has ended — no turn will run here", true)
 		return nil
 	}
 	v.skills.mode = skillModeBrowse
@@ -1724,11 +1714,10 @@ func (v *chatView) openSkills() tea.Cmd {
 	}
 	client, id := v.client, v.chatID
 	if client == nil {
-		v.note, v.noteBad = "not connected", true
+		v.status().result("not connected", true)
 		return nil
 	}
 	v.skills.open, v.skills.loading = true, true
-	v.note, v.noteBad = "", false
 	return func() tea.Msg {
 		// Not loadTimeout: a cold cache spawns the agent CLI to answer, so
 		// this call is held to the client's probe deadline rather than to a
@@ -1757,7 +1746,7 @@ func (v *chatView) applySkills(msg chatSkillsMsg) {
 	if msg.err != nil {
 		v.skills.open = false
 		v.skills.err = errString(msg.err)
-		v.note, v.noteBad = "could not list skills: "+v.skills.err, true
+		v.status().result("could not list skills: "+v.skills.err, true)
 		return
 	}
 	v.skills.data = msg.skills
@@ -1774,13 +1763,12 @@ func (v *chatView) showSkills() {
 	case d.ListVerdict == "supported":
 		v.skills.open = true
 		v.skills.build()
-		v.note, v.noteBad = "", false
 	case d.ListVerdict == "unsupported":
 		v.skills.open = false
-		v.note, v.noteBad = chatSkillsUnsupportedNote(d), false
+		v.status().note(chatSkillsUnsupportedNote(d), false)
 	default:
 		v.skills.open = false
-		v.note, v.noteBad = "could not list skills: "+chatSkillsUnknownWhy(d), true
+		v.status().result("could not list skills: "+chatSkillsUnknownWhy(d), true)
 	}
 }
 
@@ -1824,7 +1812,7 @@ func (v *chatView) acceptSkill() tea.Cmd {
 		return nil
 	}
 	if row.disabled {
-		v.note, v.noteBad = row.reason, true
+		v.status().note(row.reason, true)
 		return nil
 	}
 	inline := v.skills.mode == skillModeInline
@@ -2221,7 +2209,7 @@ func (v *chatView) acceptFile() {
 		return
 	}
 	if row.disabled {
-		v.note, v.noteBad = row.reason, true
+		v.status().note(row.reason, true)
 		return
 	}
 	v.replaceDraftToken(row.insert + " ")
@@ -2284,11 +2272,11 @@ func (v *chatView) handoffCmd() tea.Cmd {
 		// The daemon refuses it too (409 chat_linked_to_task). Saying so here
 		// is what stops a form being filled in for a transfer that cannot
 		// happen: the worktree is the task's already.
-		v.note, v.noteBad = linkedChatDecline(*chat), true
+		v.status().note(linkedChatDecline(*chat), true)
 		return nil
 	}
 	if chat.State != "idle" {
-		v.note, v.noteBad = "only an idle chat can be handed off to a task", true
+		v.status().note("only an idle chat can be handed off to a task", true)
 		return nil
 	}
 	seed := *chat
@@ -2307,12 +2295,11 @@ func (v *chatView) askClose() {
 	case chat == nil:
 		return
 	case chat.LinkedTaskID == nil && chat.IssueID == nil:
-		v.note, v.noteBad = "only a chat opened on a task or an issue can be closed — archive this one from the chats board", true
+		v.status().note("only a chat opened on a task or an issue can be closed — archive this one from the chats board", true)
 	case chatstate.Terminal(chatstate.State(chat.State)):
-		v.note, v.noteBad = "this chat is already "+chatStateLabel(chat.State), true
+		v.status().note("this chat is already "+chatStateLabel(chat.State), true)
 	default:
 		v.closing = true
-		v.note = ""
 		// The confirmation owns the next key, so an inline list under it
 		// would be offering keys it will never get.
 		v.hideInline("")
@@ -2381,10 +2368,10 @@ const chatFormAwayNote = "the agent is waiting on an answer — alt+a reopens th
 func (v *chatView) closeCmd() tea.Cmd {
 	client, id := v.client, v.chatID
 	if client == nil {
-		v.note, v.noteBad = "not connected", true
+		v.status().result("not connected", true)
 		return nil
 	}
-	v.note, v.noteBad = "closing…", false
+	v.status().result("closing…", false)
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), actionTimeout)
 		defer cancel()
@@ -2398,12 +2385,13 @@ func (v *chatView) applyClosed(msg chatClosedMsg) tea.Cmd {
 		return nil
 	}
 	if msg.err != nil {
-		v.note, v.noteBad = errString(msg.err), true
+		v.status().result(errString(msg.err), true)
 		return nil
 	}
-	v.note, v.noteBad = fmt.Sprintf("chat closed — task #%d is unlocked", derefID(msg.chat.LinkedTaskID)), false
 	if msg.chat.IssueID != nil {
-		v.note = fmt.Sprintf("chat closed — issue #%d's main worktree is free for its next main task", *msg.chat.IssueID)
+		v.status().result(fmt.Sprintf("chat closed — issue #%d's main worktree is free for its next main task", *msg.chat.IssueID), false)
+	} else {
+		v.status().result(fmt.Sprintf("chat closed — task #%d is unlocked", derefID(msg.chat.LinkedTaskID)), false)
 	}
 	return v.loadCmd()
 }
@@ -2525,14 +2513,14 @@ func (v *chatView) sendMessage(message string) tea.Cmd {
 	}
 	client, id := v.client, v.chatID
 	if client == nil {
-		v.note, v.noteBad = "not connected", true
+		v.status().result("not connected", true)
 		return nil
 	}
 	// A chat that has not loaded has no state to check the send against,
 	// and a failed load is not an empty chat (issue #801 F9): the draft is
 	// kept and nothing is sent until the daemon has answered.
 	if v.chat == nil {
-		v.note, v.noteBad = "this chat has not loaded — nothing was sent", true
+		v.status().note("this chat has not loaded — nothing was sent", true)
 		return nil
 	}
 	// A live chat takes the message too, and queues it behind the running
@@ -2540,12 +2528,12 @@ func (v *chatView) sendMessage(message string) tea.Cmd {
 	// kept, the way close and hand-off are. A message sent while the agent
 	// waits on a question never answers it — the popup does.
 	if chatstate.Terminal(chatstate.State(v.chat.State)) {
-		v.note, v.noteBad = sendRefusal(chatstate.State(v.chat.State)), true
+		v.status().note(sendRefusal(chatstate.State(v.chat.State)), true)
 		return nil
 	}
 	if v.sending {
 		// Said, not silent (#1070): the draft stays for when it has gone.
-		v.note, v.noteBad = "the last message is still being sent — this one waits in the composer", false
+		v.status().note("the last message is still being sent — this one waits in the composer", false)
 		return nil
 	}
 	v.sending = true
@@ -2603,10 +2591,6 @@ func (v *chatView) resolveDoc(seq int64) (string, bool) {
 	return "", false
 }
 
-// notesClipboard marks the chat as saying a copy's outcome itself, on its
-// note line, so the root's status line stands down.
-func (v *chatView) notesClipboard() {}
-
 // ended is whether the chat is terminal: closed, archived or handed off. It
 // takes no more turns, so it has no composer (#1054).
 func (v *chatView) ended() bool {
@@ -2656,17 +2640,17 @@ func (v *chatView) failedTurn() *apiclient.ChatTurn {
 func (v *chatView) retryFailedTurn() tea.Cmd {
 	t := v.failedTurn()
 	if t == nil {
-		v.note, v.noteBad = "the last turn did not fail — nothing to retry", false
+		v.status().note("the last turn did not fail — nothing to retry", false)
 		return nil
 	}
 	if strings.TrimSpace(t.Prompt) == "" {
-		v.note, v.noteBad = "the failed turn has no prompt to send again", false
+		v.status().note("the failed turn has no prompt to send again", false)
 		return nil
 	}
 	if v.resending == t.Seq {
 		// Once per resend (#1149), the way the forms submit once per
 		// request (#1052, #1134).
-		v.note, v.noteBad = "already sent again — waiting for the new turn", false
+		v.status().note("already sent again — waiting for the new turn", false)
 		return nil
 	}
 	cmd := v.sendMessage(t.Prompt)

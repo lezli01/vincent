@@ -153,8 +153,8 @@ func TestProjectListSelection(t *testing.T) {
 	if m.sel != (projectSel{id: 9, name: "other"}) {
 		t.Fatalf("a vanished selection became %+v, want other", m.sel)
 	}
-	if want := "project `beta` was deleted — showing `other` (first by name)"; m.selNotice != want {
-		t.Errorf("notice = %q, want %q", m.selNotice, want)
+	if want := "project `beta` was deleted — showing `other` (first by name)"; m.status.text != want {
+		t.Errorf("notice = %q, want %q", m.status.text, want)
 	}
 	// A stale answer is dropped.
 	m.sel = projectSel{}

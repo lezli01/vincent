@@ -172,8 +172,8 @@ func TestSettingsRefusalRestoresTheValue(t *testing.T) {
 	v.updateKey(namedKey("right"))
 	v.applySaved(configSavedMsg{path: "max_parallel_tasks", err: errDaemonUnreachable})
 	k := mustSetting(t, v, "max_parallel_tasks")
-	if v.value(k) != "3" || !v.noteBad {
-		t.Fatalf("value %q, note %q", v.value(k), v.note)
+	if v.value(k) != "3" || !v.status().bad {
+		t.Fatalf("value %q, note %q", v.value(k), v.status().text)
 	}
 }
 
@@ -318,8 +318,8 @@ func TestSettingsSaysWhatItWasAndUndoes(t *testing.T) {
 	if v.undo == nil || v.undo.was != before {
 		t.Fatalf("undo = %+v, want the value it replaced (%q)", v.undo, before)
 	}
-	if !strings.Contains(v.note, "was "+before) || !strings.Contains(v.note, "u puts it back") {
-		t.Fatalf("note = %q", v.note)
+	if !strings.Contains(v.status().text, "was "+before) || !strings.Contains(v.status().text, "u puts it back") {
+		t.Fatalf("note = %q", v.status().text)
 	}
 	v.updateKey(tea.KeyPressMsg{Code: 'u', Text: "u"})
 	if got := v.value(k); got != before {
@@ -328,12 +328,12 @@ func TestSettingsSaysWhatItWasAndUndoes(t *testing.T) {
 	restored := changed
 	restored.MaxParallelTasks--
 	v.update(configSavedMsg{path: k.path, cfg: restored})
-	if v.undo != nil || !strings.Contains(v.note, "put back") {
-		t.Fatalf("after the undo: undo %+v, note %q", v.undo, v.note)
+	if v.undo != nil || !strings.Contains(v.status().text, "put back") {
+		t.Fatalf("after the undo: undo %+v, note %q", v.undo, v.status().text)
 	}
 	v.updateKey(tea.KeyPressMsg{Code: 'u', Text: "u"})
-	if v.note != "nothing to undo" {
-		t.Fatalf("a second u said %q", v.note)
+	if v.status().text != "nothing to undo" {
+		t.Fatalf("a second u said %q", v.status().text)
 	}
 }
 
@@ -350,8 +350,8 @@ func TestSettingsUndoClearsOnEscAndOnFailure(t *testing.T) {
 		changed := v.config
 		changed.MaxParallelTasks++
 		v.update(configSavedMsg{path: k.path, cfg: changed})
-		if strings.Contains(v.note, "put back") || !strings.Contains(v.note, "u puts it back") || v.undo == nil || v.undo.key.path != k.path {
-			t.Fatalf("the next change: note %q, undo %+v", v.note, v.undo)
+		if strings.Contains(v.status().text, "put back") || !strings.Contains(v.status().text, "u puts it back") || v.undo == nil || v.undo.key.path != k.path {
+			t.Fatalf("the next change: note %q, undo %+v", v.status().text, v.undo)
 		}
 	}
 
@@ -412,7 +412,7 @@ func TestSettingsUndoNamesTheSettingAndShowsIt(t *testing.T) {
 	restored := changed
 	restored.MaxParallelTasks--
 	v.update(configSavedMsg{path: k.path, cfg: restored})
-	if !strings.Contains(v.note, label+" put back") {
-		t.Fatalf("the undo's note %q does not name %q", v.note, label)
+	if !strings.Contains(v.status().text, label+" put back") {
+		t.Fatalf("the undo's note %q does not name %q", v.status().text, label)
 	}
 }

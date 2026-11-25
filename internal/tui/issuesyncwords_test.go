@@ -101,8 +101,8 @@ func TestSyncAskedDoesNotSurviveAProjectSwitch(t *testing.T) {
 	v.applyLoaded(issuesLoadedMsg{showDone: v.showDone, stamp: v.stamps.next(2), sync: &apiclient.IssueSyncStatus{
 		Enabled: true, Provider: "github", Source: "octo/web", OK: true, LastSyncedAt: &synced,
 	}})
-	if v.note != "" {
-		t.Errorf("the next project reports a sync nobody asked for: %q", v.note)
+	if v.status().text != "" {
+		t.Errorf("the next project reports a sync nobody asked for: %q", v.status().text)
 	}
 }
 
@@ -137,7 +137,7 @@ func TestSyncRequestOnASwitchedOffSourceIsNotAFailure(t *testing.T) {
 	v.update(issuesSyncedMsg{projectID: v.project.id, status: apiclient.IssueSyncStatus{
 		Provider: "github", Source: "octo/web", Reason: "github_disabled",
 	}})
-	if !strings.Contains(v.note, "import is off") || v.noteBad {
-		t.Errorf("note %q (bad %v)", v.note, v.noteBad)
+	if !strings.Contains(v.status().text, "import is off") || v.status().bad {
+		t.Errorf("note %q (bad %v)", v.status().text, v.status().bad)
 	}
 }

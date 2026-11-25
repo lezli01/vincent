@@ -29,8 +29,8 @@ func TestBoardWorkspaceKeysOpenTheTask(t *testing.T) {
 	if cmd != nil {
 		t.Fatal("F opened a blocked task for a follow-up it does not offer")
 	}
-	if !strings.Contains(b.actions.status, "follow-up: not available while") {
-		t.Fatalf("F said %q, want why it did nothing", b.actions.status)
+	if !strings.Contains(b.actions.status().text, "follow-up: not available while") {
+		t.Fatalf("F said %q, want why it did nothing", b.actions.status().text)
 	}
 }
 

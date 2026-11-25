@@ -103,9 +103,6 @@ func (p *projectsView) wideNotices(width int) []string {
 	if p.loadErr != nil {
 		out = append(out, styleBad.Render(ansi.Truncate(" ⚠ refresh failed: "+errString(p.loadErr), width, "…")))
 	}
-	if p.err != "" {
-		out = append(out, styleBad.Render(ansi.Truncate(" ⚠ "+p.err, width, "…")))
-	}
 	if p.confirm != nil {
 		out = append(out, styleWarn.Render(" "+p.confirm.text+" ")+styleKey.Render("y")+styleDim.Render("/")+styleKey.Render("n"))
 	}
@@ -236,12 +233,6 @@ func (v *triggersView) renderWide(width, height int) string {
 	lines = append(lines, v.bannerLines(width)...)
 	if v.loadErr != nil {
 		lines = append(lines, " "+styleBad.Render("could not read the triggers: "+errString(v.loadErr)))
-	}
-	if v.note != "" {
-		lines = append(lines, " "+styleOK.Render(v.note))
-	}
-	if v.err != "" {
-		lines = append(lines, " "+styleBad.Render("⚠ "+v.err))
 	}
 	lines = truncateRows(lines, width)
 	h := max(height-len(lines), 4)
@@ -386,12 +377,6 @@ func (v *pullRequestsView) renderWide(width, height int) string {
 		}
 	case v.confirm != nil:
 		lines = append(lines, styleWarn.Render(ansi.Truncate(" "+v.confirm.text+" (y/n)", width, "…")))
-	case v.note != "":
-		style := styleDim
-		if v.noteBad {
-			style = styleBad
-		}
-		lines = append(lines, style.Render(ansi.Truncate(" "+v.note, width, "…")))
 	}
 	h := max(height-len(lines), 4)
 	paneW := min(width*30/100, 58)

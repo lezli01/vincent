@@ -94,8 +94,8 @@ func TestDoneTaskNamesItsNextSteps(t *testing.T) {
 func TestPullRefusalOnTheOverviewIsOnTheStatusLine(t *testing.T) {
 	v := cardView(t, apiclient.TaskDetail{Task: apiclient.Task{ID: 4, State: stateDone, StepTotal: 1}})
 	v.openPullCmd()
-	if v.detail.actions.status != "no pull request is linked to this task" || !v.detail.actions.statusBad {
-		t.Fatalf("status = %q", v.detail.actions.status)
+	if v.detail.actions.status().text != "no pull request is linked to this task" || !v.detail.actions.status().bad {
+		t.Fatalf("status = %q", v.detail.actions.status().text)
 	}
 }
 

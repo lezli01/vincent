@@ -135,8 +135,8 @@ func TestIssuesBrowserOnlyForImported(t *testing.T) {
 	if len(*opened) != 0 {
 		t.Fatalf("o on a local issue opened %v", *opened)
 	}
-	if !v.noteBad || !strings.Contains(v.note, "local") {
-		t.Fatalf("o on a local issue said %q, want a note that it is local", v.note)
+	if !v.status().bad || !strings.Contains(v.status().text, "local") {
+		t.Fatalf("o on a local issue said %q, want a note that it is local", v.status().text)
 	}
 }
 

@@ -49,7 +49,7 @@ func (v *chatView) composeInEditor() tea.Cmd {
 			return chatEditorMsg{chatID: chatID, queued: queued, original: original, text: text, err: err}
 		})
 	if err != nil {
-		v.note, v.noteBad = "editor: "+errString(err), true
+		v.status().result("editor: "+errString(err), true)
 		return nil
 	}
 	return cmd
@@ -70,42 +70,38 @@ func (v *chatView) applyEditorDraft(msg chatEditorMsg) tea.Cmd {
 		// clipboard, through the copy keys' own write (task 076).
 		text := trimEditorNewline(msg.text, msg.original)
 		if strings.TrimSpace(text) == "" {
-			v.note, v.noteBad = "editor: the chat has ended — nothing was written, so nothing is kept", false
+			v.status().result("editor: the chat has ended — nothing was written, so nothing is kept", false)
 			return nil
 		}
-		v.note, v.noteBad = "editor: the chat has ended — putting what you wrote on the clipboard", false
+		v.status().result("editor: the chat has ended — putting what you wrote on the clipboard", false)
 		return writeClipboardCmdSaying("editor: the chat has ended — what you wrote",
 			"editor: the chat has ended — what you wrote is on the clipboard", text)
 	}
 	if msg.err != nil {
-		v.note, v.noteBad = "editor: "+errString(msg.err)+" — the draft is unchanged", true
+		v.status().result("editor: "+errString(msg.err)+" — the draft is unchanged", true)
 		return nil
 	}
 	if msg.queued != v.editingQueued {
 		// The queued message the session started on is no longer the one in
 		// the composer: writing the text over another draft would lose it.
-		v.note, v.noteBad = "the queued message being edited changed meanwhile — the editor's text was dropped", true
+		v.status().result("the queued message being edited changed meanwhile — the editor's text was dropped", true)
 		return nil
 	}
 	if msg.text == msg.original {
-		v.note, v.noteBad = "the draft is unchanged", false
+		v.status().result("the draft is unchanged", false)
 		return nil
 	}
 	text := trimEditorNewline(msg.text, msg.original)
 	if strings.TrimSpace(text) == "" {
-		v.note, v.noteBad = "the file was empty — the draft is unchanged", false
+		v.status().result("the file was empty — the draft is unchanged", false)
 		return nil
 	}
 	if text == msg.original {
-		v.note, v.noteBad = "the draft is unchanged", false
+		v.status().result("the draft is unchanged", false)
 		return nil
 	}
 	// SetValue leaves the cursor at the end of the text.
 	v.composer.SetValue(text)
-	v.note, v.noteBad = "", false
-	if v.editingQueued != 0 {
-		v.note = "editing the queued message — enter saves, " + chatQueueDeleteKey + " deletes it, esc stops editing"
-	}
 	return tea.Batch(v.syncInlineSkills(), v.syncInlineFiles())
 }
 
@@ -130,10 +126,10 @@ func (v *chatView) fetchChatMarkdown() tea.Cmd {
 	}
 	client, id := v.client, v.chatID
 	if client == nil {
-		v.note, v.noteBad = "not connected", true
+		v.status().result("not connected", true)
 		return nil
 	}
-	v.note, v.noteBad = "opening the conversation…", false
+	v.status().result("opening the conversation…", false)
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), actionTimeout)
 		defer cancel()
@@ -153,15 +149,15 @@ func (v *chatView) openChatMarkdown(msg chatMarkdownMsg) tea.Cmd {
 		return nil
 	}
 	if msg.err != nil {
-		v.note, v.noteBad = "conversation: "+errString(msg.err), true
+		v.status().result("conversation: "+errString(msg.err), true)
 		return nil
 	}
 	path, err := writeReadOnlyFile(fmt.Sprintf("chat%d", msg.chatID), ".md", msg.doc)
 	if err != nil {
-		v.note, v.noteBad = "conversation: "+errString(err), true
+		v.status().result("conversation: "+errString(err), true)
 		return nil
 	}
-	v.note, v.noteBad = "", false
+	v.status().result("", false)
 	return openEditorPath(v.exec, path, func(runErr error) tea.Msg {
 		removeReadOnly(path)
 		return chatMarkdownClosedMsg{err: runErr}

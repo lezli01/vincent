@@ -144,7 +144,7 @@ func TestNextAttentionWalksTasksAndChats(t *testing.T) {
 	if m.active != viewChat || cv.chatID != 20 || cv.back != viewHome {
 		t.Fatalf("cross: active %v chat %d back %v, want chat 20 back to the board", m.active, cv.chatID, cv.back)
 	}
-	if m.selNotice == "" {
+	if m.status.text == "" {
 		t.Error("crossing projects raised no notice")
 	}
 }

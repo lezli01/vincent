@@ -68,7 +68,7 @@ func TestIssueThreadAgainstTheRealAPI(t *testing.T) {
 	// An empty buffer is the way out: nothing is posted.
 	detail.w.exec = fakeExec(t, func(path string) error { return os.WriteFile(path, []byte("  \n"), 0o600) }, nil)
 	h.sendKey(keyPress("W"))
-	h.p.until(5*time.Second, "the empty draft's note", func() bool { return strings.Contains(detail.note, "nothing posted") })
+	h.p.until(5*time.Second, "the empty draft's note", func() bool { return strings.Contains(detail.status().text, "nothing posted") })
 	if list, err := h.st.ListIssueComments(ctx, local.ID); err != nil || len(list) != 1 {
 		t.Fatalf("an empty draft wrote a comment: %d comments, %v", len(list), err)
 	}
@@ -79,8 +79,8 @@ func TestIssueThreadAgainstTheRealAPI(t *testing.T) {
 	h.p.until(10*time.Second, "the new comment in the thread", func() bool {
 		return len(detail.comments) == 2 && detail.comments[1].Body == "looks **good**"
 	})
-	if detail.noteBad || !strings.Contains(detail.note, "commented on issue") {
-		t.Errorf("note = %q (bad %v), want the comment confirmed", detail.note, detail.noteBad)
+	if detail.status().bad || !strings.Contains(detail.status().text, "commented on issue") {
+		t.Errorf("note = %q (bad %v), want the comment confirmed", detail.status().text, detail.status().bad)
 	}
 	if c := detail.comments[1]; c.Remote || c.Author == "" {
 		t.Errorf("the posted comment is %+v, want a local one with a daemon-derived author", c)
@@ -113,8 +113,8 @@ func TestIssueThreadAgainstTheRealAPI(t *testing.T) {
 		return nil
 	}, nil)
 	h.sendKey(keyPress("W"))
-	if !detail.noteBad || !strings.Contains(detail.note, "mirrored") {
-		t.Errorf("note = %q, want the mirrored refusal", detail.note)
+	if !detail.status().bad || !strings.Contains(detail.status().text, "mirrored") {
+		t.Errorf("note = %q, want the mirrored refusal", detail.status().text)
 	}
 
 	// A mirrored edit updates in place and re-reads on issue.comment_updated.
@@ -135,7 +135,7 @@ func TestIssueThreadAgainstTheRealAPI(t *testing.T) {
 	detail.w.exec = fakeExec(t, func(path string) error { return os.WriteFile(path, []byte("too late"), 0o600) }, nil)
 	h.sendKey(keyPress("W"))
 	h.p.until(10*time.Second, "the refused comment's error", func() bool {
-		return !detail.posting && detail.noteBad && strings.Contains(detail.note, "comment on issue")
+		return !detail.posting && detail.status().bad && strings.Contains(detail.status().text, "comment on issue")
 	})
 	if list, err := h.st.ListIssueComments(ctx, imported.ID); err != nil || len(list) != 1 {
 		t.Fatalf("a refused comment was written: %d comments, %v", len(list), err)
@@ -172,8 +172,8 @@ func TestIssueThreadAgainstTheRealAPI(t *testing.T) {
 	h.p.until(10*time.Second, "the moved issue's comment", func() bool {
 		return len(detail.comments) == 1 && detail.comments[0].Body == "still ours"
 	})
-	if detail.noteBad {
-		t.Errorf("note = %q, want the comment confirmed", detail.note)
+	if detail.status().bad {
+		t.Errorf("note = %q, want the comment confirmed", detail.status().text)
 	}
 }
 

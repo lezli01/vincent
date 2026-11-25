@@ -144,16 +144,16 @@ func TestArchivedBoardBulkReportCountsRefusalsAndDeletions(t *testing.T) {
 		}}},
 		branches: 1,
 	})
-	if !strings.Contains(b.delNote, "2 of 3") {
-		t.Fatalf("the report does not count the deletions: %s", b.delNote)
+	if !strings.Contains(b.status().text, "2 of 3") {
+		t.Fatalf("the report does not count the deletions: %s", b.status().text)
 	}
-	if !strings.Contains(b.delNote, "1 refused") {
-		t.Fatalf("the report does not count the refusals: %s", b.delNote)
+	if !strings.Contains(b.status().text, "1 refused") {
+		t.Fatalf("the report does not count the refusals: %s", b.status().text)
 	}
-	if !strings.Contains(b.delNote, "branch deleted") {
-		t.Fatalf("the report does not say what happened to the branch: %s", b.delNote)
+	if !strings.Contains(b.status().text, "branch deleted") {
+		t.Fatalf("the report does not say what happened to the branch: %s", b.status().text)
 	}
-	if !b.delNoteBad {
+	if !b.status().bad {
 		t.Fatal("a report carrying a refusal is not marked as a problem")
 	}
 }
@@ -210,8 +210,8 @@ func TestArchivedChatsBoardRefusesToAskAboutAHandedOffChat(t *testing.T) {
 	if v.delPrompt != nil {
 		t.Fatal("the board asked about deleting a handed-off chat")
 	}
-	if !v.noteBad || !strings.Contains(v.note, "handed off") {
-		t.Fatalf("the refusal does not name what is holding on: %q", v.note)
+	if !v.status().bad || !strings.Contains(v.status().text, "handed off") {
+		t.Fatalf("the refusal does not name what is holding on: %q", v.status().text)
 	}
 }
 

@@ -354,18 +354,6 @@ func (d *detail) updateMsg(msg tea.Msg) tea.Cmd {
 			d.actions.setStatus(strings.Join(notes, " · "), false)
 		}
 		return nil
-	case clipboardResultMsg:
-		// The copy's outcome, said where every other action's is said: a
-		// key press a human made never fails silently (task 076).
-		text, bad := msg.notice()
-		d.actions.setStatus(text, bad)
-		return nil
-	case linkOpenedMsg:
-		// A link opened from the output pane reports here, beside the copy
-		// notice, and never in the pull-request note (task 112 decision 5).
-		text, bad := msg.notice()
-		d.actions.setStatus(text, bad)
-		return nil
 	case detailTranscriptMsg:
 		d.applyTranscript(msg)
 		return nil

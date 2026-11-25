@@ -122,9 +122,10 @@ type projectsView struct {
 
 	form    *projectForm
 	confirm *deletePrompt
-	// err is a failure that belongs to the view rather than a form row —
-	// including the 409 no confirmation can resolve.
-	err string
+	// statusPoster is where a failure that belongs to the view rather than
+	// a form row goes — including the 409 no confirmation can resolve
+	// (#1164).
+	statusPoster
 
 	// stamps orders the view's loads. It is seq-only: every stamp carries
 	// project 0 (task 132.5).
@@ -400,11 +401,10 @@ func (p *projectsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		p.filter.Focus()
 		return p, nil
 	case "esc":
-		// One layer per press (§15): a committed filter or an error note
-		// clears first; with nothing left, the takeover closes.
-		if p.filter.Value() != "" || p.err != "" {
+		// One layer per press (§15): a committed filter clears first; with
+		// nothing left, the takeover closes.
+		if p.filter.Value() != "" {
 			p.filter.SetValue("")
-			p.err = ""
 			return p, nil
 		}
 		return p, backToTab
@@ -420,7 +420,6 @@ func (p *projectsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		return p, p.pick()
 	case "e":
 		if pr, ok := p.current(); ok {
-			p.err = ""
 			p.form = newProjectForm(p.client, &pr)
 			return p, p.form.loadCmd()
 		}
@@ -470,7 +469,6 @@ func (p *projectsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 // picker offers. Both ways in — `a` here and @ with nothing registered —
 // come through it (#1161), so neither can show the form without its load.
 func (p *projectsView) openAdd() tea.Cmd {
-	p.err = ""
 	p.form = newProjectForm(p.client, nil)
 	return p.form.loadCmd()
 }
@@ -532,7 +530,6 @@ func (p *projectsView) askDelete() {
 	if !ok {
 		return
 	}
-	p.err = ""
 	p.confirm = &deletePrompt{
 		id:   pr.ID,
 		name: pr.Name,
@@ -557,7 +554,7 @@ func (p *projectsView) updateConfirm(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 func (p *projectsView) deleteCmd(id int64, force bool) tea.Cmd {
 	client := p.client
 	if client == nil {
-		p.err = "not connected"
+		p.status().result("not connected", true)
 		return nil
 	}
 	return func() tea.Msg {
@@ -575,7 +572,6 @@ func (p *projectsView) deleteCmd(id int64, force bool) tea.Cmd {
 // "yes" that cannot work.
 func (p *projectsView) applyDeleted(msg projectDeletedMsg) tea.Cmd {
 	if msg.err == nil {
-		p.err = ""
 		return p.loadCmd()
 	}
 	text := errString(msg.err)
@@ -588,7 +584,7 @@ func (p *projectsView) applyDeleted(msg projectDeletedMsg) tea.Cmd {
 		}
 		return nil
 	}
-	p.err = text
+	p.status().result(text, true)
 	return nil
 }
 

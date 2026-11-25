@@ -108,7 +108,9 @@ type workflowsView struct {
 
 	cursor   int
 	expanded bool
-	err      string
+	// statusPoster is where the screen's errors and notes go (#1164); it
+	// replaced the view's own error line.
+	statusPoster
 
 	// resolutions caches what the daemon says each expanded entry resolves
 	// to, keyed by scope + name. A registry reload drops the cache: the file
@@ -289,7 +291,7 @@ func (w *workflowsView) update(msg tea.Msg) (panel, tea.Cmd) {
 		return w, nil
 	case workflowEditedMsg:
 		if msg.err != nil {
-			w.err = "editor: " + errString(msg.err)
+			w.status().result("editor: "+errString(msg.err), true)
 		}
 		// Nothing else: the watcher reloads the registry, the daemon writes
 		// workflow.registry_changed, and the refetch that event triggers is
@@ -438,19 +440,13 @@ func (w *workflowsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		w.openCreate(true)
 		return w, nil
 	case opKey(keymap.Refresh):
-		w.err = ""
 		if g := w.preview; g != nil {
 			g.err, g.loading = "", true
 			return w, tea.Batch(w.loadCmd(), w.definitionCmd(g.key))
 		}
 		return w, w.loadCmd()
 	case "esc":
-		// One layer per press (§15): an error note clears first; with
-		// nothing left, the takeover closes.
-		if w.err != "" {
-			w.err = ""
-			return w, nil
-		}
+		// The takeover closes; a note went with the key (#1164).
 		return w, backToTab
 	}
 	return w, nil
@@ -490,10 +486,9 @@ func (w *workflowsView) editCmd() tea.Cmd {
 		return nil
 	}
 	if line.entry.File == "" {
-		w.err = line.entry.Name + " is built in — there is no file to edit"
+		w.status().note(line.entry.Name+" is built in — there is no file to edit", true)
 		return nil
 	}
-	w.err = ""
 	return openEditorPath(w.exec, line.entry.File, func(err error) tea.Msg {
 		return workflowEditedMsg{err: err}
 	})

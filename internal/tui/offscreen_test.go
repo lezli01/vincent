@@ -48,8 +48,8 @@ func TestLaneKeyOnlyWhereItApplies(t *testing.T) {
 	}
 	b.cardHeader = nil
 	b.toggleCardLanes()
-	if !strings.Contains(b.actions.status, "is not a fan-out") {
-		t.Fatalf("L on a task with no lanes said %q", b.actions.status)
+	if !strings.Contains(b.actions.status().text, "is not a fan-out") {
+		t.Fatalf("L on a task with no lanes said %q", b.actions.status().text)
 	}
 }
 

@@ -213,13 +213,6 @@ func contextBindsKey(ctx bindingContext, key string) bool {
 	return false
 }
 
-// optionNoter is a view that says the Option note on a line of its own — a
-// chat, on its note line, where #1061 first said it. Any other surface gets
-// the root's status line.
-type optionNoter interface {
-	noteOption(note string)
-}
-
 // watchOption runs the detection for one key press: surface and typing are
 // read before the key is routed, since the key may change them, and the note
 // is placed after, so the routing's own clearing of notes does not take it.
@@ -241,10 +234,6 @@ func (m *root) watchOption(msg tea.KeyPressMsg, route func() (tea.Model, tea.Cmd
 		return model, cmd
 	}
 	optionNoted.Store(true)
-	if v, isNoter := m.views[m.active].(optionNoter); isNoter && !popup && !m.popupOpen() {
-		v.noteOption(note)
-	} else {
-		m.selNotice, m.selNoticeWarn = note, false
-	}
+	m.status.note(note, false)
 	return model, cmd
 }

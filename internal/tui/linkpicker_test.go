@@ -218,8 +218,8 @@ func TestLinkPickerThroughTheChatRoot(t *testing.T) {
 	if len(*opened) != 1 || (*opened)[0] != "https://example.test/guide" {
 		t.Fatalf("the opener got %v, want the guide", *opened)
 	}
-	if v.note != "opened https://example.test/guide" || v.noteBad {
-		t.Fatalf("the chat said %q (bad=%v)", v.note, v.noteBad)
+	if v.status().text != "opened https://example.test/guide" || v.status().bad {
+		t.Fatalf("the chat said %q (bad=%v)", v.status().text, v.status().bad)
 	}
 
 	// enter on a refused row opens nothing and says why.
@@ -232,8 +232,8 @@ func TestLinkPickerThroughTheChatRoot(t *testing.T) {
 	if len(*opened) != 1 {
 		t.Fatalf("a refused destination reached the opener: %v", *opened)
 	}
-	if !v.noteBad || !strings.Contains(v.note, `"mailto"`) {
-		t.Fatalf("the chat said %q (bad=%v), want the refusal naming the scheme", v.note, v.noteBad)
+	if !v.status().bad || !strings.Contains(v.status().text, `"mailto"`) {
+		t.Fatalf("the chat said %q (bad=%v), want the refusal naming the scheme", v.status().text, v.status().bad)
 	}
 
 	// ctrl+y copies it all the same.
@@ -249,8 +249,8 @@ func TestLinkPickerThroughTheChatRoot(t *testing.T) {
 	if len(*wrote) != 1 || (*wrote)[0] != "mailto:ops@example.test" {
 		t.Fatalf("the clipboard got %v, want the mailto destination", *wrote)
 	}
-	if v.note != "link [5] copied" || v.noteBad {
-		t.Fatalf("the chat said %q (bad=%v)", v.note, v.noteBad)
+	if v.status().text != "link [5] copied" || v.status().bad {
+		t.Fatalf("the chat said %q (bad=%v)", v.status().text, v.status().bad)
 	}
 }
 
@@ -295,7 +295,7 @@ func yielded[T tea.Msg](t *testing.T, cmd tea.Cmd) T {
 }
 
 // taskOutputRoot is the task workspace on its Output tab, showing linkDoc.
-func taskOutputRoot(t *testing.T) (*root, *taskView) {
+func taskOutputRoot(t *testing.T) *root {
 	t.Helper()
 	m := newRoot(testCtx(t), fakeConnector(), ackedDir(t))
 	m.phase = phaseConnected
@@ -305,14 +305,13 @@ func taskOutputRoot(t *testing.T) (*root, *taskView) {
 	loadDetail(d, []apiclient.StepRun{attempt(1, 0, 1, "implement", "running", true)})
 	d.records = []apiclient.TranscriptRecord{{Type: "agent.output", Text: linkDoc}}
 	m.switchTo(viewTask)
-	tv := m.views[viewTask].(*taskView)
-	tv.setTab(taskTabOutput)
-	return m, tv
+	m.views[viewTask].(*taskView).setTab(taskTabOutput)
+	return m
 }
 
 // TestLinkPickerThroughTheTaskRoot is the same path in the task workspace,
-// and the half decision 5 is about: the notices land in the pane's status,
-// never in the pull-request note.
+// and the half decision 5 is about: the notices land on the status line
+// (#1164).
 func TestLinkPickerThroughTheTaskRoot(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
@@ -325,7 +324,7 @@ func TestLinkPickerThroughTheTaskRoot(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			opened := withFakeOpener(t, tc.openErr)
-			m, tv := taskOutputRoot(t)
+			m := taskOutputRoot(t)
 			d := detailOf(m)
 
 			_, cmd := m.Update(tea.KeyPressMsg{Code: 'l', Mod: tea.ModCtrl})
@@ -338,18 +337,15 @@ func TestLinkPickerThroughTheTaskRoot(t *testing.T) {
 			if len(*opened) != 1 || (*opened)[0] != "https://example.test/spec" {
 				t.Fatalf("the opener got %v", *opened)
 			}
-			if d.actions.status != tc.want || d.actions.statusBad != tc.bad {
-				t.Fatalf("the pane said %q (bad=%v), want %q", d.actions.status, d.actions.statusBad, tc.want)
-			}
-			if tv.pullNote != "" || tv.pullNoteBad {
-				t.Fatalf("the pull-request note spoke for a link: %q", tv.pullNote)
+			if d.actions.status().text != tc.want || d.actions.status().bad != tc.bad {
+				t.Fatalf("the pane said %q (bad=%v), want %q", d.actions.status().text, d.actions.status().bad, tc.want)
 			}
 		})
 	}
 
 	t.Run("copies", func(t *testing.T) {
 		wrote := stubClipboard(t, nil)
-		m, _ := taskOutputRoot(t)
+		m := taskOutputRoot(t)
 		_, cmd := m.Update(tea.KeyPressMsg{Code: 'l', Mod: tea.ModCtrl})
 		m.Update(yielded[openLinkPickerMsg](t, cmd))
 		_, cmd = m.Update(tea.KeyPressMsg{Code: 'y', Mod: tea.ModCtrl})
@@ -357,7 +353,7 @@ func TestLinkPickerThroughTheTaskRoot(t *testing.T) {
 		if len(*wrote) != 1 || (*wrote)[0] != "https://example.test/spec" {
 			t.Fatalf("the clipboard got %v", *wrote)
 		}
-		if got := detailOf(m).actions.status; got != "link [1] copied" {
+		if got := detailOf(m).actions.status().text; got != "link [1] copied" {
 			t.Fatalf("the pane said %q", got)
 		}
 	})
@@ -569,7 +565,7 @@ func TestPaletteRunsTheLinkPicker(t *testing.T) {
 	}
 	chat := connectedChatRoot(t)
 	chat.views[viewChat].(*chatView).turnRecords[1] = []apiclient.TranscriptRecord{{Type: "agent.output", Text: linkDoc}}
-	task, _ := taskOutputRoot(t)
+	task := taskOutputRoot(t)
 
 	for name, m := range map[string]*root{"chat": chat, "task": task} {
 		t.Run(name, func(t *testing.T) {

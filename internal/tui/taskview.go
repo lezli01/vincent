@@ -118,12 +118,10 @@ type taskView struct {
 	pullKept     bool
 	pullFallback taskViewTab
 	// createPR is the pull-request form, open only while a human has it up.
-	pull        apiclient.GitHubTaskPull
-	pullLoaded  bool
-	pullErr     string
-	pullNote    string
-	pullNoteBad bool
-	createPR    *createPRForm
+	pull       apiclient.GitHubTaskPull
+	pullLoaded bool
+	pullErr    string
+	createPR   *createPRForm
 	// pullTab is the §15 Pull Request tab (task 068). Its checks are fetched
 	// and never stored, so it holds a rollup and a cursor and nothing else —
 	// everything about the pull request itself is read off `pull` above, so
@@ -440,7 +438,6 @@ func (t *taskView) route(msg tea.Msg) (panel, tea.Cmd) {
 		t.pullMerge, t.pullComment = nil, nil
 		t.pull, t.pullLoaded, t.pullErr = apiclient.GitHubTaskPull{}, false, ""
 		t.detail.pullRecord = nil
-		t.pullNote, t.pullNoteBad = "", false
 		t.pullTab = taskPullTab{}
 		t.pullFormPending = msg.openPR
 		t.thenOp, t.thenID = msg.then, msg.id
@@ -555,9 +552,7 @@ func (t *taskView) route(msg tea.Msg) (panel, tea.Cmd) {
 			return t, nil
 		}
 		if msg.err != nil {
-			t.pullNote, t.pullNoteBad = openFailure(msg), true
-		} else {
-			t.pullNote, t.pullNoteBad = "", false
+			t.status().result(openFailure(msg), true)
 		}
 		return t, nil
 	case noteMsg:
@@ -993,8 +988,6 @@ func (t *taskView) setTab(tab taskViewTab) tea.Cmd {
 		return nil
 	}
 	t.tab = tab
-	// A key's "not available" note was said on the tab being left (#1138).
-	t.detail.actions.dropNote()
 	if tab == taskTabDiff {
 		t.detail.tab = tabDiff
 		t.detail.diff.openTask(t.detail.taskID)
@@ -2655,10 +2648,6 @@ func treeCost(own, children *float64) *float64 {
 	return &sum
 }
 
-// notesClipboard marks the workspace as saying a copy's outcome itself, on
-// its action bar (detail.update), so the root's status line stands down.
-func (t *taskView) notesClipboard() {}
-
 // syncDiffScope keeps a Diff scoped to one attempt on the attempt selected
 // (task 168.6): moving the selection — the rail, ←/→ — while the Diff is on
 // one attempt moves it to the new one.
@@ -2709,3 +2698,10 @@ func (t *taskView) outputPane() *detail {
 	}
 	return t.detail
 }
+
+// setStatusHolder hands the root's status line to the workspace's action
+// bar (#1164) — the shell's own, when the root built both.
+func (t *taskView) setStatusHolder(h *statusHolder) { t.detail.actions.setStatusHolder(h) }
+
+// status is the line the workspace posts to.
+func (t *taskView) status() *statusHolder { return t.detail.actions.status() }

@@ -363,12 +363,6 @@ func (v *pullRequestsView) footerLines(width int) []string {
 		// line (#804 PL-6).
 		out := append([]string{""}, pullStyleLines(styleWarn, wrapText(v.confirm.text, width, wrapOpts{prefix: "  ", indent: 2}))...)
 		return append(out, styleDim.Render("  y unlink · n keep the link"))
-	case v.note != "":
-		style := styleDim
-		if v.noteBad {
-			style = styleBad
-		}
-		return append([]string{""}, pullStyleLines(style, wrapText(v.note, width, wrapOpts{prefix: "  ", indent: 2}))...)
 	}
 	return nil
 }

@@ -60,8 +60,8 @@ func TestActionKeyNotOfferedSaysWhy(t *testing.T) {
 	if cmd, handled := bar.handleKey("s", nil, running); !handled || cmd != nil {
 		t.Errorf("skip on a running task: handled = %v, cmd = %v", handled, cmd != nil)
 	}
-	if bar.status != "skip: not available while running" {
-		t.Errorf("status = %q", bar.status)
+	if bar.status().text != "skip: not available while running" {
+		t.Errorf("status = %q", bar.status().text)
 	}
 	if _, handled := bar.handleKey("p", nil, running); !handled {
 		t.Error("pause on a running task was not handled")
@@ -71,18 +71,18 @@ func TestActionKeyNotOfferedSaysWhy(t *testing.T) {
 	}
 	done := targetFor(taskstate.Done)
 	bar.handleKey("a", nil, done)
-	if bar.status != "approve: not available while done" {
-		t.Errorf("approve on a done task: status = %q", bar.status)
+	if bar.status().text != "approve: not available while done" {
+		t.Errorf("approve on a done task: status = %q", bar.status().text)
 	}
 	bar.handleKey("r", nil, taskActions{})
-	if !strings.Contains(bar.status, "select a task") {
-		t.Errorf("retry on a group row: status = %q", bar.status)
+	if !strings.Contains(bar.status().text, "select a task") {
+		t.Errorf("retry on a group row: status = %q", bar.status().text)
 	}
 	locked := targetFor(taskstate.Blocked)
 	locked.actions, locked.openChatID = nil, 9
 	bar.handleKey("r", nil, locked)
-	if !strings.Contains(bar.status, "chat #9 holds the task") {
-		t.Errorf("retry on a locked task: status = %q", bar.status)
+	if !strings.Contains(bar.status().text, "chat #9 holds the task") {
+		t.Errorf("retry on a locked task: status = %q", bar.status().text)
 	}
 }
 
@@ -179,8 +179,8 @@ func TestConflictReportsTheStateItFound(t *testing.T) {
 			Details: map[string]string{"state": "running"},
 		},
 	})
-	if !strings.Contains(bar.status, "running") || !bar.statusBad {
-		t.Errorf("status = %q (bad = %v), want it to name the found state", bar.status, bar.statusBad)
+	if !strings.Contains(bar.status().text, "running") || !bar.status().bad {
+		t.Errorf("status = %q (bad = %v), want it to name the found state", bar.status().text, bar.status().bad)
 	}
 }
 
@@ -192,8 +192,8 @@ func TestSuccessReportsTheNewState(t *testing.T) {
 		taskID: 7, action: apiclient.ActionApprove,
 		task: apiclient.Task{ID: 7, State: "queued"},
 	})
-	if !strings.Contains(bar.status, "queued") || bar.statusBad {
-		t.Errorf("status = %q (bad = %v), want the new state", bar.status, bar.statusBad)
+	if !strings.Contains(bar.status().text, "queued") || bar.status().bad {
+		t.Errorf("status = %q (bad = %v), want the new state", bar.status().text, bar.status().bad)
 	}
 }
 

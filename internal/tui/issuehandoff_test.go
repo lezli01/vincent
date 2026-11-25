@@ -81,8 +81,8 @@ func TestIssueHandoffSelection(t *testing.T) {
 	v := handoffBoardFixture()
 	cursorOn(t, v, 11)
 	v.update(registryKey(t, issueSelectKey))
-	if len(v.picked) != 0 || !strings.Contains(v.note, "already in handoff H7") {
-		t.Fatalf("a claimed card was selected (picked %v, note %q)", v.picked, v.note)
+	if len(v.picked) != 0 || !strings.Contains(v.status().text, "already in handoff H7") {
+		t.Fatalf("a claimed card was selected (picked %v, note %q)", v.picked, v.status().text)
 	}
 	cursorOn(t, v, 10)
 	v.update(registryKey(t, issueSelectKey))
@@ -151,8 +151,8 @@ func TestHandoffFormRequest(t *testing.T) {
 func TestHandoffFormRefusesWithoutWorkflow(t *testing.T) {
 	v := handoffBoardFixture()
 	v.openHandoff(handoffWorkflowsMsg{projectID: 1, issueIDs: []int64{10}, workflows: []apiclient.WorkflowEntry{{Name: "default"}}})
-	if v.handoff != nil || !strings.Contains(v.note, "no `role: handoff` workflow") {
-		t.Fatalf("form opened with no handoff workflow (note %q)", v.note)
+	if v.handoff != nil || !strings.Contains(v.status().text, "no `role: handoff` workflow") {
+		t.Fatalf("form opened with no handoff workflow (note %q)", v.status().text)
 	}
 }
 
@@ -180,8 +180,8 @@ func TestNewTaskRefusedOnClaimedIssue(t *testing.T) {
 	v := handoffBoardFixture()
 	cursorOn(t, v, 11)
 	_, cmd := v.update(registryKey(t, "a"))
-	if cmd != nil || v.note != "issue #11 is in handoff H7 — return it first" {
-		t.Fatalf("a on a claimed issue: cmd %v, note %q", cmd != nil, v.note)
+	if cmd != nil || v.status().text != "issue #11 is in handoff H7 — return it first" {
+		t.Fatalf("a on a claimed issue: cmd %v, note %q", cmd != nil, v.status().text)
 	}
 }
 

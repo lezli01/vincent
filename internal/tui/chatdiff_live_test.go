@@ -267,8 +267,8 @@ func TestChatDiffPaneLive(t *testing.T) {
 	if got := l.screen(); !strings.Contains(got, "2 files +2 -1") {
 		t.Fatalf("the changes row was not read again after the reject:\n%s", got)
 	}
-	if v.noteBad || !strings.Contains(v.note, "hunk rejected") {
-		t.Fatalf("after the reject the note is %q (bad %v)", v.note, v.noteBad)
+	if v.status().bad || !strings.Contains(v.status().text, "hunk rejected") {
+		t.Fatalf("after the reject the note is %q (bad %v)", v.status().text, v.status().bad)
 	}
 
 	// s switches the scope; this chat's turn has no checkpoint, which is an
@@ -344,8 +344,8 @@ func TestChatDiffRejectUnsavedEditRejectLive(t *testing.T) {
 	l.until("the second reject", func() bool {
 		return !v.diff.busy && !v.diff.fetching && strings.Contains(v.composer.Value(), second.header)
 	})
-	if v.noteBad {
-		t.Fatalf("the second reject said %q", v.note)
+	if v.status().bad {
+		t.Fatalf("the second reject said %q", v.status().text)
 	}
 
 	want := []string{first.path + " " + first.header, second.path + " " + second.header, "typed since"}

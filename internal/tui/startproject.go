@@ -340,8 +340,11 @@ func (m *root) resolveStartup(msg startupWorktreesMsg) tea.Cmd {
 	if !pick.ok {
 		return nil
 	}
-	m.selNotice = pick.notice
-	m.selNoticeWarn = strings.Contains(pick.notice, "is not registered")
+	if strings.Contains(pick.notice, "is not registered") {
+		m.status.note(pick.notice, true)
+	} else {
+		m.status.note(pick.notice, false)
+	}
 	return m.selectProject(pick.project, pick.why)
 }
 

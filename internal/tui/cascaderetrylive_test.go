@@ -107,7 +107,7 @@ func TestDetailRetriesParkedParentLive(t *testing.T) {
 	// The key itself, not only the hint: pressing it must not reach the
 	// editor, and says why it did nothing (#1059).
 	h.press(t, "E")
-	if status := detailOf(h.m).actions.status; !strings.Contains(status, "no prompt or command to edit") {
+	if status := detailOf(h.m).actions.status().text; !strings.Contains(status, "no prompt or command to edit") {
 		t.Errorf("E on a parked parent: status = %q", status)
 	}
 
@@ -119,7 +119,7 @@ func TestDetailRetriesParkedParentLive(t *testing.T) {
 	// The parent is where it was — the join is still open — so the count is
 	// the only account of what the key did.
 	h.p.until(30*time.Second, "the bar to report the cascade", func() bool {
-		return strings.Contains(detailOf(h.m).actions.status, "2 lanes re-admitted")
+		return strings.Contains(detailOf(h.m).actions.status().text, "2 lanes re-admitted")
 	})
 	if got := h.state(t, parent.ID); got != store.TaskAwaitingChildren &&
 		got != store.TaskQueued && got != store.TaskRunning && got != store.TaskDone {

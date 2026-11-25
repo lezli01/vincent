@@ -87,8 +87,8 @@ func TestSwitchFallsBackFromTheWorkspace(t *testing.T) {
 	if tv.detail.active {
 		t.Fatal("the workspace still counts itself watched after the switch")
 	}
-	if h.m.selNotice != "" {
-		t.Fatalf("a picked switch raised %q; only a follow does", h.m.selNotice)
+	if h.m.status.text != "" {
+		t.Fatalf("a picked switch raised %q; only a follow does", h.m.status.text)
 	}
 }
 
@@ -428,8 +428,8 @@ func TestOpenFollowsTheObject(t *testing.T) {
 	h.p.push(cmd)
 	_, cmd = h.m.Update(openTaskMsg{id: here.ID, from: 77, projectID: h.first.ID})
 	h.p.push(cmd)
-	if h.m.selNotice != "" || len(tv.stack) != 1 {
-		t.Fatalf("a same-project open: notice %q, stack %v; want none and [77]", h.m.selNotice, tv.stack)
+	if h.m.status.text != "" || len(tv.stack) != 1 {
+		t.Fatalf("a same-project open: notice %q, stack %v; want none and [77]", h.m.status.text, tv.stack)
 	}
 
 	_, cmd = h.m.Update(openTaskMsg{id: there.ID, from: here.ID, projectID: h.second.ID})
@@ -438,8 +438,8 @@ func TestOpenFollowsTheObject(t *testing.T) {
 		t.Fatalf("follow: selection %d, active %v, task %d; want %d, the workspace, %d",
 			h.m.sel.id, h.m.active, tv.detail.taskID, h.second.ID, there.ID)
 	}
-	if h.m.selNotice != "switched to `zeta`" {
-		t.Fatalf("notice = %q, want the switch named", h.m.selNotice)
+	if h.m.status.text != "switched to `zeta`" {
+		t.Fatalf("notice = %q, want the switch named", h.m.status.text)
 	}
 	if len(tv.stack) != 0 {
 		t.Fatalf("stack after a follow = %v, want empty", tv.stack)
@@ -449,8 +449,8 @@ func TestOpenFollowsTheObject(t *testing.T) {
 	// A created task follows the same way.
 	_, cmd = h.m.Update(taskCreatedMsg{task: apiclient.TaskDetail{Task: apiclient.Task{ID: here.ID, ProjectID: h.first.ID}}})
 	h.p.push(cmd)
-	if h.m.sel.id != h.first.ID || h.m.selNotice != "switched to `board`" {
-		t.Fatalf("created: selection %d, notice %q", h.m.sel.id, h.m.selNotice)
+	if h.m.sel.id != h.first.ID || h.m.status.text != "switched to `board`" {
+		t.Fatalf("created: selection %d, notice %q", h.m.sel.id, h.m.status.text)
 	}
 }
 

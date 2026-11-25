@@ -113,7 +113,7 @@ func TestChatComposerEditorRoundTrip(t *testing.T) {
 		t.Helper()
 		_, cmd := v.updateKey(registryKey(t, "ctrl+g"))
 		if cmd == nil {
-			t.Fatalf("ctrl+g returned no command (note %q)", v.note)
+			t.Fatalf("ctrl+g returned no command (note %q)", v.status().text)
 		}
 		msg, ok := cmd().(chatEditorMsg)
 		if !ok {
@@ -138,8 +138,8 @@ func TestChatComposerEditorRoundTrip(t *testing.T) {
 		if got := v.composer.Value(); got != "a longer prompt\nover two lines" {
 			t.Fatalf("composer = %q, want the editor's text without its trailing newline", got)
 		}
-		if v.noteBad {
-			t.Fatalf("a good round trip noted a failure: %q", v.note)
+		if v.status().bad {
+			t.Fatalf("a good round trip noted a failure: %q", v.status().text)
 		}
 		raw, err := os.ReadFile(argsFile)
 		if err != nil {
@@ -176,8 +176,8 @@ func TestChatComposerEditorRoundTrip(t *testing.T) {
 		if got := v.composer.Value(); got != "still here" {
 			t.Fatalf("composer = %q, want the draft kept", got)
 		}
-		if !v.noteBad || !strings.Contains(v.note, "editor") {
-			t.Fatalf("note = %q (bad %v), want the failure on the status line", v.note, v.noteBad)
+		if !v.status().bad || !strings.Contains(v.status().text, "editor") {
+			t.Fatalf("note = %q (bad %v), want the failure on the status line", v.status().text, v.status().bad)
 		}
 	})
 }
@@ -223,7 +223,7 @@ func TestChatComposerEditorEditsTheQueuedMessage(t *testing.T) {
 	// A session that began on another queued message is dropped, not
 	// written over this one.
 	v.applyEditorDraft(chatEditorMsg{chatID: 1, queued: 9, original: "x", text: "stray"})
-	if v.composer.Value() != "queued, edited" || !v.noteBad {
+	if v.composer.Value() != "queued, edited" || !v.status().bad {
 		t.Fatalf("a stale session overwrote the queued edit: %q", v.composer.Value())
 	}
 }
@@ -294,7 +294,7 @@ func TestChatMarkdownOpensTheDaemonsDocument(t *testing.T) {
 
 	_, cmd := v.updateKey(registryKey(t, "alt+v"))
 	if cmd == nil {
-		t.Fatalf("alt+v fetched nothing (note %q)", v.note)
+		t.Fatalf("alt+v fetched nothing (note %q)", v.status().text)
 	}
 	fetched, ok := cmd().(chatMarkdownMsg)
 	if !ok || fetched.err != nil {
@@ -302,7 +302,7 @@ func TestChatMarkdownOpensTheDaemonsDocument(t *testing.T) {
 	}
 	_, cmd = v.update(fetched)
 	if cmd == nil {
-		t.Fatalf("the fetched document opened nothing (note %q)", v.note)
+		t.Fatalf("the fetched document opened nothing (note %q)", v.status().text)
 	}
 	closed := drainOne(cmd)
 	if _, ok := closed.(chatMarkdownClosedMsg); !ok {

@@ -84,19 +84,19 @@ func TestIssueSyncKeyFollowsTheSyncStatus(t *testing.T) {
 			want := "POST /v1/projects/" + strconv.FormatInt(h.projectID, 10) + "/issues/sync"
 			if !tc.offered {
 				// Hidden is not refused: the key does nothing at all.
-				if got := rec.matching(want); len(got) != 0 || list.note != "" {
-					t.Fatalf("a hidden S sent %v, note %q", got, list.note)
+				if got := rec.matching(want); len(got) != 0 || list.status().text != "" {
+					t.Fatalf("a hidden S sent %v, note %q", got, list.status().text)
 				}
 				return
 			}
 			h.p.until(10*time.Second, "the sync answer", func() bool {
-				return strings.HasPrefix(list.note, "sync requested")
+				return strings.HasPrefix(list.status().text, "sync requested")
 			})
 			if got := rec.matching(want); len(got) != 1 {
 				t.Fatalf("S sent %v, want one %s", got, want)
 			}
-			if tc.source.Provider == store.IssueProviderJira && !strings.Contains(list.note, "acme.atlassian.net/PROJ") {
-				t.Errorf("the note does not name the Jira source: %q", list.note)
+			if tc.source.Provider == store.IssueProviderJira && !strings.Contains(list.status().text, "acme.atlassian.net/PROJ") {
+				t.Errorf("the note does not name the Jira source: %q", list.status().text)
 			}
 		})
 	}

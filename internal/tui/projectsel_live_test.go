@@ -151,8 +151,8 @@ func TestProjectFlagOpensOnItsProject(t *testing.T) {
 	_, cmd := m.Update(connectedMsg{client: apiclient.New(ts.URL, token), dataDir: dataDir})
 	p := newPump(t, m, cmd)
 	p.until(10*time.Second, "the flag's project to be selected", func() bool { return m.sel.id == apiID })
-	if m.selWhy != whyFlag || m.selNotice != "" {
-		t.Errorf("chosen by %q with notice %q, want a silent --project pick", m.selWhy, m.selNotice)
+	if m.selWhy != whyFlag || m.status.text != "" {
+		t.Errorf("chosen by %q with notice %q, want a silent --project pick", m.selWhy, m.status.text)
 	}
 	p.until(10*time.Second, "the pick to reach tui.json", func() bool {
 		sp := readTUIState(dataDir).SelectedProject

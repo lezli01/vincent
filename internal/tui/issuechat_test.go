@@ -57,7 +57,7 @@ func TestIssueChatCloseAsksAboutTheWorktree(t *testing.T) {
 	v.chatID, v.chat = 3, &apiclient.Chat{ID: 3, State: "idle", IssueID: &issue}
 	v.askClose()
 	if !v.closing {
-		t.Fatalf("an issue chat's close was refused: %q", v.note)
+		t.Fatalf("an issue chat's close was refused: %q", v.status().text)
 	}
 	if q := v.closeQuestion(); !strings.Contains(q, "issue #9") || strings.Contains(q, "task #") {
 		t.Errorf("close question = %q, want it to name issue #9's main worktree", q)
@@ -65,8 +65,8 @@ func TestIssueChatCloseAsksAboutTheWorktree(t *testing.T) {
 	closed := *v.chat
 	closed.State = "closed"
 	v.applyClosed(chatClosedMsg{chatID: 3, chat: &closed})
-	if !strings.Contains(v.note, "issue #9") {
-		t.Errorf("closed note = %q, want it to name the issue", v.note)
+	if !strings.Contains(v.status().text, "issue #9") {
+		t.Errorf("closed note = %q, want it to name the issue", v.status().text)
 	}
 }
 

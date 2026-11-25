@@ -180,8 +180,8 @@ func TestPopupDetailsTabIsReadOnly(t *testing.T) {
 	if v.detail.repair != nil || v.detail.followUp != nil {
 		t.Fatal("a popup key raised a second popup")
 	}
-	if v.pullNote != "" {
-		t.Fatalf("a pull-request key spoke from the popup: %q", v.pullNote)
+	if v.status().text != "" {
+		t.Fatalf("a pull-request key spoke from the popup: %q", v.status().text)
 	}
 	if v.popupTab != popupTabDetails || !v.popup {
 		t.Fatal("a read-only key changed tab or closed the popup")
@@ -370,7 +370,7 @@ func TestCreatePRPopupHasNoTabs(t *testing.T) {
 		t.Fatalf("P posted a command: %v", cmd)
 	}
 	if v.createPR == nil {
-		t.Fatalf("P did not open the create-PR form: %q", v.pullNote)
+		t.Fatalf("P did not open the create-PR form: %q", v.status().text)
 	}
 	screen := ansi.Strip(v.render(v.width, v.height))
 	if strings.Contains(screen, "Task details │") || strings.Contains(screen, "ctrl+t") {

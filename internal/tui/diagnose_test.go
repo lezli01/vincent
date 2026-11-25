@@ -326,7 +326,7 @@ func TestDiagnoseRefusedFirstTurnUnlocksLive(t *testing.T) {
 	h.p.until(30*time.Second, "the refusal on the action bar", func() bool {
 		return strings.Contains(ansi.Strip(content(h.m)), "chat_cap_reached")
 	})
-	if got := detailOf(h.m).actions.status; !strings.Contains(got, "closed so task #") ||
+	if got := detailOf(h.m).actions.status().text; !strings.Contains(got, "closed so task #") ||
 		!strings.Contains(got, "chat_cap_reached") {
 		t.Errorf("the bar says %q, want the chat closed and the daemon's reason", got)
 	}

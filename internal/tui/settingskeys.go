@@ -35,8 +35,6 @@ type keyBindings struct {
 	// it makes, which becomes Settings' undo slot when it lands (#1158).
 	sending map[string]string
 	pending *settingsUndo
-	note    string
-	noteBad bool
 }
 
 func newKeyBindings(cfg apiclient.Config) *keyBindings {
@@ -86,7 +84,7 @@ func (v *settingsView) saveKeys(next map[string]string, op keymap.Op) tea.Cmd {
 	b := v.bindings
 	if v.client == nil {
 		v.undoing = false
-		b.note, b.noteBad = "the daemon is not reachable", true
+		v.status().result("the daemon is not reachable", true)
 		return nil
 	}
 	b.pending = &settingsUndo{op: op, opWas: b.overrides[string(op)]}
@@ -94,7 +92,8 @@ func (v *settingsView) saveKeys(next map[string]string, op keymap.Op) tea.Cmd {
 		b.pending.key, b.pending.was = k, k.read(v.config)
 	}
 	b.sending = next
-	b.saving, b.note, b.noteBad = true, "saving…", false
+	b.saving = true
+	v.status().result("saving…", false)
 	client := v.client
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), loadTimeout)
@@ -111,12 +110,13 @@ func (v *settingsView) applyKeysSaved(msg configSavedMsg) {
 	b.saving, b.sending, b.pending = false, nil, nil
 	if msg.err != nil {
 		v.undoing = false // #1158: an undo that failed is not pending
-		b.note, b.noteBad = errString(msg.err), true
+		v.status().result(errString(msg.err), true)
 		return
 	}
 	v.config, v.configOK, v.configErr = msg.cfg, true, nil
 	b.adopt(msg.cfg)
-	b.note, b.noteBad = "saved — the new key works now", false
+	note := "saved — the new key works now"
+	defer func() { v.status().result(note, false) }()
 	if pending == nil {
 		return
 	}
@@ -126,13 +126,13 @@ func (v *settingsView) applyKeysSaved(msg configSavedMsg) {
 		// itself undoable.
 		v.undoing, v.undo = false, nil
 		now, _ := b.current(info)
-		b.note += " · " + string(pending.op) + " put back to " + now
+		note += " · " + string(pending.op) + " put back to " + now
 		return
 	}
 	// #1158: backspace reset a binding with nothing to take it back. What
 	// it was, and the key that puts it back — Settings' one undo slot.
 	v.undo = pending
-	b.note += " · was " + valueOr(pending.opWas, info.Default) + " · u puts it back"
+	note += " · was " + valueOr(pending.opWas, info.Default) + " · u puts it back"
 }
 
 // undoBinding is `u` for a change made on this screen: the operation's own
@@ -152,7 +152,7 @@ func (v *settingsView) undoBinding(u *settingsUndo) tea.Cmd {
 	}
 	next, err := b.propose(u.op, u.opWas)
 	if err != nil {
-		b.note, b.noteBad = "not put back — "+err.Error(), true
+		v.status().result("not put back — "+err.Error(), true)
 		return nil
 	}
 	v.undoing = true
@@ -169,23 +169,23 @@ func (v *settingsView) updateBindings(msg tea.KeyPressMsg) tea.Cmd {
 		b.capturing = false
 		k := msg.String()
 		if k == "esc" {
-			b.note, b.noteBad = "nothing changed", false
+			v.status().note("nothing changed", false)
 			return nil
 		}
 		info := b.ops[b.cursor]
 		key, err := keymap.ParseKey(k)
 		if err != nil {
-			b.note, b.noteBad = fmt.Sprintf("%s cannot be bound: %v", k, err), true
+			v.status().result(fmt.Sprintf("%s cannot be bound: %v", k, err), true)
 			return nil
 		}
 		if cur, _ := b.current(info); cur == key {
-			b.note, b.noteBad = string(info.Op)+" is already "+key, false
+			v.status().note(string(info.Op)+" is already "+key, false)
 			return nil
 		}
 		next, err := b.propose(info.Op, key)
 		if err != nil {
 			// The clash is named here, before anything is written.
-			b.note, b.noteBad = "not saved — "+err.Error(), true
+			v.status().result("not saved — "+err.Error(), true)
 			return nil
 		}
 		return v.saveKeys(next, info.Op)
@@ -206,8 +206,9 @@ func (v *settingsView) updateBindings(msg tea.KeyPressMsg) tea.Cmd {
 	case "end", "G":
 		b.cursor = len(b.ops) - 1
 	case "enter":
+		// A question that owns the keyboard, drawn by this screen rather
+		// than posted to the status line (#1164).
 		b.capturing = true
-		b.note, b.noteBad = "press the new key for "+string(b.ops[b.cursor].Op)+" — esc keeps it", false
 	case opKey(keymap.FreeText):
 		// Every pair as one line of text, to paste a whole keymap; the
 		// daemon checks it on save as it always did.
@@ -218,18 +219,18 @@ func (v *settingsView) updateBindings(msg tea.KeyPressMsg) tea.Cmd {
 	case "backspace":
 		info := b.ops[b.cursor]
 		if _, isDefault := b.current(info); isDefault {
-			b.note, b.noteBad = string(info.Op)+" is already on its default, "+info.Default, false
+			v.status().note(string(info.Op)+" is already on its default, "+info.Default, false)
 			return nil
 		}
 		next, err := b.propose(info.Op, "")
 		if err != nil {
-			b.note, b.noteBad = "not reset — "+err.Error(), true
+			v.status().result("not reset — "+err.Error(), true)
 			return nil
 		}
 		return v.saveKeys(next, info.Op)
 	case "u":
 		if v.undo == nil {
-			b.note, b.noteBad = "nothing to undo", false
+			v.status().note("nothing to undo", false)
 			return nil
 		}
 		return v.undoLast()
@@ -256,15 +257,8 @@ func (v *settingsView) renderBindings(width, height int) string {
 		styleDim.Render("  enter set by pressing the key · backspace back to the default · u undo · " + opKey(keymap.FreeText) + " type them all as text · esc back to Settings"),
 	}
 	note := ""
-	if b.note != "" {
-		st := styleDim
-		if b.noteBad {
-			st = styleBad
-		}
-		if b.capturing {
-			st = styleAsk
-		}
-		note = st.Render("  " + b.note)
+	if b.capturing {
+		note = styleAsk.Render("  press the new key for " + string(b.ops[b.cursor].Op) + " — esc keeps it")
 	}
 	room := max(height-len(head)-3, 3)
 	// Every line first, headings included, then a window around the
