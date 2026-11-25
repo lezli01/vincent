@@ -19756,6 +19756,25 @@ drop the tab already open (`5 workflow` on Workflow) and the second hint for
 one operation (`[/] views` beside `tab views`), and `?` lists `d`, `l`, `U`
 and the digit jumps on every workspace tab, since every tab answers them.
 
+*Amended 2026-11-25 (issue #1152).* **The selected task's state decides which
+of its actions lead.** The action segments still read the §6 order above, but
+the actions that move a task in its state on come first: the answer on
+`awaiting_input`, `a` approve and `x` reject on `awaiting_gate`, `r` retry (with
+`E` edit+retry beside it) and `R` repair on `blocked`, `F` follow up and `A`
+archive on `done` and `aborted`, `p` resume on `paused`. Lead is position, and
+position is what a short line keeps, since the segments give their place up
+from the end. Under a bulk selection the state is only the cursor row's, so the
+§6 order stands. Only the task's own segments are reordered: the surface's
+hints keep their registry priority, so priority still means priority. On the
+board the answer is a screen away — `enter` opens the workspace, and the form
+is the next press — so a task waiting on a question offers `enter open to
+answer` there, leading its segments and never dropped, and the board's `enter
+open` hint gives way to it rather than naming the key twice; before, the board
+offered no answer segment at all, and at 80 columns `enter open` lost the width
+contest to the attention count. The triggers screen's `e`, `D`, `B` and `/` and
+the projects screen's `e` gained hints, so the line can name them; the
+projects screen's `e`, a fixed key, has a registry row of its own for it.
+
 `?` remains, as a compact cheat sheet grouped by panel, rendered from the registry.
 
 ### Keys

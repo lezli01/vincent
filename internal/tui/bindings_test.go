@@ -2318,6 +2318,14 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatalf("enter = %+v, want project 1 picked", msg)
 			}
 		},
+		"e": func(t *testing.T) {
+			p := newProjectsView()
+			loadedProjects(p, []apiclient.Project{testProject(1, "api")}, nil)
+			p.updateKey(registryKey(t, "e"))
+			if p.form == nil {
+				t.Fatal("e did not open the project's edit form")
+			}
+		},
 		"tab": func(t *testing.T) {
 			p := newProjectsView()
 			loadedProjects(p, []apiclient.Project{testProject(1, "api")},
@@ -4247,6 +4255,10 @@ var vocabularyExceptions = map[string]string{
 	// Task 052 decision 6: link and unlink are the two writes to vincent's own
 	// column, and they live on the one screen that can see a pull request no
 	// task claims. `l` there is not a lane, and the takeover has none.
+	// Task 132 decision 42: on the project overview `e` edits the
+	// highlighted project in its form — a fixed key in keymap.fixed — and
+	// the screen opens no file in $EDITOR. A row since #1152, for its hint.
+	"panel/projects/e":      "task 132.42 — edit the project in its form, on a screen with no $EDITOR row",
 	"panel/pull requests/l": "task 052.6 — link, on a screen with no fan-out lanes",
 	// Issue #595: `d` switches Output and Diff from every workspace tab; the
 	// keymap's exception on `d` records why no draft is ever open there.
