@@ -7,6 +7,7 @@ as something started it.
 ```sh
 vincent service install     # register and start
 vincent service status      # installed? running?
+vincent service restart     # restart the daemon, keeping it under the service
 vincent service uninstall   # stop and remove
 ```
 

@@ -137,6 +137,22 @@ func uninstall(ctx context.Context) error {
 	return nil
 }
 
+// restart is `systemctl --user restart` (#1160): systemd stops the unit —
+// SIGTERM, the daemon's §12.4 shutdown — and starts it again as the unit's own
+// process. A plain stop would not do: the daemon exits 0, and
+// Restart=on-failure leaves a clean exit stopped.
+func restart(ctx context.Context) error {
+	path, err := unitPath()
+	if err != nil {
+		return err
+	}
+	if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
+		return ErrNotInstalled
+	}
+	_, err = run(ctx, "systemctl", "--user", "restart", Label+".service")
+	return err
+}
+
 func query(ctx context.Context) (Status, error) {
 	path, err := unitPath()
 	if err != nil {

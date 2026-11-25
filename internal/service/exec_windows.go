@@ -12,8 +12,9 @@ import (
 // removes the task. It is preferred over the scheduler's COM API for the same
 // reason the POSIX backends shell out to launchctl and systemctl rather than
 // linking a service library: one subprocess call per verb, and the tool's own
-// diagnosis when something is rejected (W decision).
-func schtasks(ctx context.Context, args ...string) (string, error) {
+// diagnosis when something is rejected (W decision). A variable so a test can
+// record the commands a verb issues without a Task Scheduler to receive them.
+var schtasks = func(ctx context.Context, args ...string) (string, error) {
 	return combined(
 		exec.CommandContext(ctx, "schtasks.exe", args...), //nolint:gosec // fixed tool name, arguments built here
 		"schtasks "+strings.Join(args, " "),
