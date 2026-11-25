@@ -394,8 +394,9 @@ func (v *chatView) capturesInput() bool {
 	}
 	if v.diff.open {
 		// The diff's keys are single letters typed nowhere (task 169
-		// decision 3), exactly as the conversation focus's are.
-		return false
+		// decision 3), exactly as the conversation focus's are — but for its
+		// search line while it is typed (#1163).
+		return v.diff.pane.find.typing
 	}
 	if v.convFocus {
 		return v.search.typing
@@ -491,6 +492,9 @@ func (v *chatView) bindingContext() bindingContext {
 		return ctxForm
 	case v.shell.prompt:
 		return ctxChatShell
+	case v.diff.open && v.diff.rejectAsk == nil && v.diff.pane.find.active():
+		// The task Diff's search layer (#1163), with its keys.
+		return ctxPaneFind
 	case v.diff.open:
 		return ctxChatDiff
 	case v.convFocus && v.search.typing:

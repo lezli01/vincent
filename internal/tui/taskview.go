@@ -634,6 +634,15 @@ func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		// §6 letters wait for its answer; n or esc declines it.
 		return t.updatePullConfirmKey(msg)
 	}
+	if t.detail.actions.capturing() {
+		// A pending §6 confirmation owns its answers (#1162) ahead of a
+		// committed search, whose n, N and esc would otherwise walk or end
+		// it and leave the question up (#1163) — and ahead of esc's pop.
+		if yes, no := confirmAnswer(msg.String()); yes || no {
+			cmd, _ := t.detail.actions.handleKey(msg.String(), t.detail.client, t.detail.target())
+			return cmd
+		}
+	}
 
 	// A search on Output or Diff takes its own keys first (#1074): n and N
 	// walk its matches while it runs, and mean what they always mean after.

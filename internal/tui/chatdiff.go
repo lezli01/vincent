@@ -27,7 +27,8 @@ import (
 // the cursors are this view's.
 //
 // Nothing here follows the event stream. The diff routes run git per call,
-// so the diff is read when the pane opens, on a scope switch, on `r`, after
+// so the diff is read when the pane opens, on a scope switch, on ctrl+r
+// (diffReloadKey, the task Diff's key since #1163), after
 // a reject, and when a turn ends while the pane is open; the Details pane's
 // `changes` row is read on open, when a turn ends and after a reject
 // (decision 10).
@@ -124,6 +125,9 @@ func (v *chatView) closeDiff() {
 	// A question about a hunk the pane no longer shows is not left armed
 	// for the next time it opens.
 	v.diff.rejectAsk = nil
+	// Nor is a search (#1163, as the task Diff's ends with its task, #1154):
+	// a scope switch or a reload keeps it, leaving the pane does not.
+	v.diff.pane.find.end()
 	v.composer.Focus()
 	v.bodyDirty = true
 }
@@ -448,11 +452,29 @@ func (v *chatView) updateDiffKey(msg tea.KeyPressMsg) tea.Cmd {
 		v.closeDiff()
 		return nil
 	}
-	// A pending reject owns the keyboard until it is answered (#1055).
+	// A pending reject owns the keyboard until it is answered (#1055) —
+	// ahead of a committed search, whose n and esc would otherwise take the
+	// answers (#1163, under #1162's rule that a pending y/n owns them).
 	if v.diff.rejectAsk != nil {
 		return v.answerRejectHunk(msg.String())
 	}
+	// The task Diff's search, run on the same pane type (#1163): its own
+	// keys first, so n, N and esc walk and end it while it runs.
+	if v.diff.pane.findKey(msg) {
+		return nil
+	}
 	switch msg.String() {
+	case opKey(keymap.Filter):
+		v.diff.pane.find.open()
+		return nil
+	case copyPickKey:
+		// The hunk and the file's diff, as the task Diff offers them
+		// (#1076, #1163).
+		if items := v.diff.pane.diffCopyItems(); len(items) > 0 {
+			return openCopyItems(items)
+		}
+		v.note, v.noteBad = "nothing to copy — open a file or move to a hunk with ]", false
+		return nil
 	case "esc":
 		v.closeDiff()
 		return nil
@@ -480,7 +502,8 @@ func (v *chatView) updateDiffKey(msg tea.KeyPressMsg) tea.Cmd {
 		v.diff.loaded, v.diff.unavailable, v.diff.err = false, "", ""
 		v.note = ""
 		return v.diffFetchCmd()
-	case "r":
+	case diffReloadKey:
+		// ctrl+r, the task Diff's key (#1163): `r` was this pane's alone.
 		return tea.Batch(v.diffFetchCmd(), v.diffStatCmd())
 	}
 	return v.diff.pane.updateKey(msg)

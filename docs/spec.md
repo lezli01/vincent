@@ -17151,6 +17151,20 @@ stream for the live tail.
    board's preview), when a turn ends and after a reject — never per event,
    the route running git per call.
 
+   *Amended 2026-11-25 (issue #1163).* **The chat's diff answers the task
+   Diff tab's keys.** `ctrl+r` reads the diff again in both — the chat
+   pane's `r` above moved to it, and `r` now does nothing there; the
+   conversation's `ctrl+r` (the detail level) is untouched, since the pane
+   holds the keyboard while it is up. `/` searches the chat's diff with the
+   task Diff's own search: every file opens, `enter` lands on the first
+   match, `n`/`N` walk the matches and `esc` ends the search before it
+   leaves the pane; a reload or a scope switch keeps the search, leaving the
+   pane ends it. `ctrl+y` copies the selected hunk or the file's whole diff,
+   as plain text, as the task Diff does. A pending y/n owns `y`/`Y`/`n`/`N`/
+   `esc` over a committed search (the #1162 rule): the chat pane's reject
+   question and the task workspace's §6 confirmations are answered before a
+   search on Output or Diff sees the key.
+
    *Amended 2026-09-19 (issue #500).* `ctrl+j`, `shift+enter` and `alt+enter`
    insert a newline in the draft; `enter` still sends it. This makes the
    multi-line editing above reachable without pasting. `ctrl+j` is the one the
